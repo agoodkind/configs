@@ -59,24 +59,44 @@
     group: root
     mode: "0644"
 
+# The unit files this run writes. In check mode the unit and timer tasks
+# above write nothing, and the systemd module fails on a unit file that does
+# not exist. In check mode the systemd tasks below skip each unit in this
+# list; a real run starts every unit.
+- name: Record the storage recording unit files this run installs or changes
+  ansible.builtin.set_fact:
+    storage_recording_changed_units: >-
+      {{
+        (storage_recording_units.results + storage_recording_static_timers.results)
+        | selectattr('changed')
+        | map(attribute='item')
+        | map('basename')
+        | list
+      }}
+
 - name: Start the per-minute zpool iostat recorder
   ansible.builtin.systemd:
     name: storage-recording-iostat.service
     enabled: true
     state: started
     daemon_reload: "{{ storage_recording_units.changed }}"
+  when: >-
+    not ansible_check_mode
+    or 'storage-recording-iostat.service' not in storage_recording_changed_units
 
 # A changed unit restarts the recorder; an unchanged one keeps appending.
 - name: Restart the zpool iostat recorder after its unit changed
   ansible.builtin.systemd:
     name: storage-recording-iostat.service
     state: restarted
-  when: >-
-    storage_recording_units.results
-    | selectattr('item', 'equalto', 'services/storage-recording-iostat.service')
-    | selectattr('changed')
-    | list
-    | length > 0
+  when:
+    - not ansible_check_mode
+    - >-
+      storage_recording_units.results
+      | selectattr('item', 'equalto', 'services/storage-recording-iostat.service')
+      | selectattr('changed')
+      | list
+      | length > 0
 
 - name: Enable the storage recording timers
   ansible.builtin.systemd:
@@ -93,3 +113,4 @@
     - storage-recording-objset.timer
     - storage-recording-histogram.timer
     - storage-recording-fdb-restarts.timer
+  when: not ansible_check_mode or item not in storage_recording_changed_units
