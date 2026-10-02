@@ -517,35 +517,11 @@ mwan_providers:
 
   - name: webpass
     connection_id: webpass
-    owner: networkd
+    owner: mwan
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
-    link_files: rendered
     link:
-      match: { driver: virtio_net }
-      hardware_address: "{{ mwan_webpass_mac | lower }}"
-    # Reproduce the legacy driver selector without matching every virtio link.
-    networkd:
-      link:
-        - name: Match
-          entries:
-            - key: MACAddress
-              value: "{{ mwan_webpass_mac | lower }}"
-      network:
-        - name: IPv6AcceptRA
-          entries:
-            - { key: UseAutonomousPrefix, value: "no" }
-            - { key: UseGateway, value: "yes" }
-            - { key: UseDNS, value: "yes" }
-        - name: DHCPv6
-          entries:
-            - { key: DUIDType, value: vendor }
-            - { key: DUIDRawData, value: "00:00:ab:11:11:18:28:f5:2b:50:d8:af" }
-            - { key: IAID, value: "1370549548" }
-            - { key: UseAddress, value: "no" }
-            - { key: UseDelegatedPrefix, value: "yes" }
-            - { key: WithoutRA, value: solicit }
-            - { key: UseDNS, value: "yes" }
+      match: { hardware_address: "{{ mwan_webpass_mac | lower }}" }
     ipv4:
       translation:
         mode: ietf-nat:napt44
@@ -572,6 +548,10 @@ mwan_providers:
       accept_ra: true
       delegation:
         hint: "::/56"
+        iaid: 1370549548
+        duid_type: vendor
+        duid: "00:02:00:00:ab:11:11:18:28:f5:2b:50:d8:af"
+        without_ra: solicit
     table: 200
     mark: 2
     mark_prio: 200
