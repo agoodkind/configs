@@ -382,6 +382,10 @@ tack_backup_restore_drill_randomized_delay: 300
 tack_alarm_email_recipient: "alex@goodkind.io"
 
 tack_ledger_bootstrap: false
+# Run A of a from-empty rebuild also passes
+# --extra-var tack_ledger_audit_bootstrap=true, which runs
+# ops ledger audit-bootstrap on yb1 after it starts. Run B leaves it off.
+tack_ledger_audit_bootstrap: false
 tack_ledger_join_target: >-
   {{ ('' if (tack_ledger_bootstrap | bool and tack_ledger_node_name == 'yb1')
       else 'yugabyte' if tack_ledger_legacy_node_present

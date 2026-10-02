@@ -41,6 +41,25 @@
       run_once: true
       delegate_to: localhost
 
+    # tack_ledger_audit_bootstrap runs ops ledger audit-bootstrap on the first
+    # ledger node, which migrates the ledger and seeds the audit logins before
+    # it records. It belongs only to run A of a from-empty rebuild outside
+    # production.
+    - name: Refuse the ledger audit bootstrap outside a from-empty rebuild
+      ansible.builtin.assert:
+        that:
+          - not (tack_ledger_audit_bootstrap | default(false) | bool) or (tack_ledger_bootstrap | bool)
+          - >-
+            not (tack_ledger_audit_bootstrap | default(false) | bool
+                 and (ansible_play_hosts_all | intersect(groups['tack_prod_all'] | default([]))) | length > 0)
+        fail_msg: >-
+          tack_ledger_audit_bootstrap=true needs tack_ledger_bootstrap=true and a
+          run with no production guest. It is only for run A of a from-empty
+          rebuild.
+        quiet: true
+      run_once: true
+      delegate_to: localhost
+
     # The operator identity flags (group_vars/tack_all.yml) are checked here,
     # before any play changes a guest. An agent shell without an agent service
     # would record the human from the control machine's git config as the
@@ -857,18 +876,41 @@
         # Every other run keeps the rolling wait, which is what preserves
         # quorum while one node at a time restarts.
         #
-        # A from-empty rebuild (tack_ledger_bootstrap) only starts the node.
-        # node-prepare and node-wait record to the ledger's audit outbox
-        # before they run, and on that run no ledger node, outbox, or
-        # operator login exists until provision creates them. On a fresh node
-        # node-prepare finds no saved config and changes nothing. The next run
-        # without the flag runs both commands against the provisioned ledger.
-        # The first play refuses the flag on a run with a production guest.
+        # A from-empty rebuild (tack_ledger_bootstrap) skips node-prepare and
+        # node-wait: both record to the ledger's audit outbox before they
+        # run. On a fresh node node-prepare finds no saved config and changes
+        # nothing. The next run without the flag runs both commands. On that
+        # run each node starts and waits for its own health check; the wait
+        # timeout covers the check's 180 s start period and 10 failed 20 s
+        # attempts. In run A only (tack_ledger_audit_bootstrap), the first
+        # node then runs audit-bootstrap, which creates the outbox and the
+        # audit logins on the empty ledger and records itself after; run B
+        # leaves the flag off and provision runs as usual. Every later node
+        # waits until the masters and tablet servers started so far are
+        # alive. A node that
+        # joins before two masters and two tablet servers answer leaves the
+        # universe at one replica (Mira M5). The last node also waits for one
+        # replica per node and no under-replicated tablet, under the
+        # replication deadline in the Tack command. The first play refuses
+        # the flag on a run with a production guest.
         - name: Prepare, start, and wait on the ledger node (one guest at a time; first start joins)
+          vars:
+            tack_ledger_bootstrap_nodes: "{{ tack_ledger_node_addresses | dict2items | map(attribute='key') | sort }}"
+            tack_ledger_bootstrap_position: "{{ tack_ledger_bootstrap_nodes.index(tack_ledger_node_name) + 1 }}"
+            tack_ledger_bootstrap_last: "{{ tack_ledger_node_name == tack_ledger_bootstrap_nodes | last }}"
           ansible.builtin.shell:
             cmd: >-
               {% if tack_ledger_bootstrap | bool %}
-              docker compose up -d yugabyte
+              docker compose up -d --wait --wait-timeout 420 yugabyte
+              {% if tack_ledger_bootstrap_position | int == 1 %}
+              {{ '&& docker compose run --rm tack-ops ops ledger audit-bootstrap --execute ' + tack_ops_identity_flags
+                 if tack_ledger_audit_bootstrap | bool else '' }}
+              {% else %}
+              && docker compose run --rm tack-ops ops ledger bootstrap-wait --execute
+              --masters {{ tack_ledger_bootstrap_position }} --tablet-servers {{ tack_ledger_bootstrap_position }}
+              {{ '--replicas ' ~ tack_ledger_bootstrap_position if tack_ledger_bootstrap_last | bool else '' }}
+              {{ tack_ops_identity_flags }}
+              {% endif %}
               {% else %}
               docker compose run --rm tack-ops ops ledger node-prepare --execute {{ tack_ops_identity_flags }};
               prepare_status=$?;
