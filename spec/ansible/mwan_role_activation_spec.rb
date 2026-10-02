@@ -55,7 +55,9 @@ RSpec.describe 'MWAN role activation with actual systemd' do
         'role_test_prior_network' => prior, 'role_test_current_network' => current,
         'role_test_prepared' => options.fetch(:prepared), 'role_test_corrupt_unit' => options.fetch(:corrupt),
         'mwan_dns_domain' => options.fetch(:domain), 'role_test_publish' => options.fetch(:publish, false),
-        'mwan_transfer_packet_checks' => options.fetch(:packet_checks, [])
+        'mwan_transfer_packet_checks' => options.fetch(:packet_checks, []),
+        'mwan_operation_inbound_check_connections' => {},
+        'mwan_controller_artifact_root' => directory
       }
     )
   rescue RuntimeError => e

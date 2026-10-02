@@ -3,7 +3,7 @@
 require 'yaml'
 require_relative '../support/task_expressions'
 
-RSpec.describe 'MWAN legacy mutation completion' do
+RSpec.describe 'MWAN mutation completion' do
   let(:tasks) do
     path = File.join(AnsibleRender::REPOSITORY_ROOT, 'ansible/playbooks/tasks/adopt-mwan-legacy-npt.yml')
     YAML.safe_load_file(path).find { |entry| entry.fetch('name') == 'Complete normal WAN activation under the original adoption lease' }
@@ -57,5 +57,30 @@ RSpec.describe 'MWAN legacy mutation completion' do
       expect(pending?(name, variable, { 'finished' => false })).to be(true)
       expect(pending?(name, variable, {})).to be(true)
     end
+  end
+
+  def transfer_pending?(file, variable, result)
+    path = File.join(AnsibleRender::REPOSITORY_ROOT, "ansible/playbooks/tasks/#{file}.yml")
+    completion = YAML.safe_load_file(path).find { |entry| entry.key?('always') }.fetch('always').first
+    TaskExpressions.evaluate(
+      variables: { 'mwan_transfer_lease_active' => true, 'mwan_transfer_mutation_pending' => true, variable => result },
+      facts: [TaskExpressions.fact_task(completion)],
+      renders: [TaskExpressions.render_task({}, 'pending' => '{{ mwan_transfer_mutation_pending }}')]
+    ).fetch('renders').first.fetch('pending')
+  end
+
+  it 'releases proved handover completion while retaining lost or unfinished remote work' do
+    { 'reload-mwan-networkd' => 'mwan_networkd_reload_result',
+      'release-mwan-connection' => 'mwan_transfer_reconfigure_result' }.each do |file, variable|
+      expect(transfer_pending?(file, variable, { 'finished' => true, 'failed' => true, 'rc' => 1 })).to be(false)
+      expect(transfer_pending?(file, variable, { 'finished' => false })).to be(true)
+      expect(transfer_pending?(file, variable, { 'finished' => true, 'failed' => true, 'msg' => 'could not find job' })).to be(true)
+    end
+    result = { 'finished' => true, 'failed' => true,
+               'invocation' => { 'module_args' => { 'name' => 'mwan-ifmgr@wan', 'state' => 'restarted' } } }
+    expect(transfer_pending?('restart-mwan-ifmgr', 'mwan_ifmgr_restart_result', result)).to be(false)
+    result['invocation'] = { 'module_args' => { 'jid' => 'missing-job', 'mode' => 'status' } }
+    expect(transfer_pending?('restart-mwan-ifmgr', 'mwan_ifmgr_restart_result', result)).to be(true)
+    expect(transfer_pending?('restart-mwan-ifmgr', 'mwan_ifmgr_restart_result', {})).to be(true)
   end
 end

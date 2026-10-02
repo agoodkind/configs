@@ -4,6 +4,7 @@
     dest: /etc/mwan/network.json
     mode: "0600"
   notify: Restart mwan-ifmgr@wan
+  when: not mwan_transfer_active | bool
 
 - name: Stage the actual first-install daemon configuration
   ansible.builtin.copy:

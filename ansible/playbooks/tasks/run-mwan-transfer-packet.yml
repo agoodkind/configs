@@ -6,6 +6,7 @@
   when: "'ipv6_translation_edge' in mwan_transfer_packet_check"
   block:
     - name: Read the current operational interfaces for the packet operation
+      timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
       ansible.builtin.command:
         argv:
           - /usr/bin/sysrepocfg
@@ -58,6 +59,7 @@
              + mwan_transfer_packet_check.argv[edge.argument_index + 1:] }}
 
 - name: Verify the downstream packet result
+  timeout: "{{ mwan_operation_native_timeout_seconds }}"
   ansible.builtin.command:
     argv: "{{ mwan_transfer_packet_argv }}"
   delegate_to: "{{ mwan_transfer_packet_check.host }}"

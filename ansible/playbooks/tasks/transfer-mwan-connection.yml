@@ -2,11 +2,11 @@
   ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
   vars:
     mwan_operation_phase: gateway-preparation
-    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (3) + 30 }}"
+    mwan_operation_budget_seconds: "{{ (mwan_operation_copy_timeout_seconds | int + mwan_operation_native_timeout_seconds | int) * 3 }}"
     mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
 
 - name: Preserve every validated connection transition document
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  timeout: "{{ mwan_operation_copy_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ mwan_transfer_controller_directory.path }}/{{ item }}.json"
     dest: "{{ mwan_role_backup.path }}/transfer-{{ item }}.json"
@@ -14,6 +14,7 @@
   loop: [source, external, replacement]
 
 - name: Validate each staged transition through the installed loader
+  timeout: "{{ mwan_operation_native_timeout_seconds }}"
   ansible.builtin.command:
     argv:
       - /usr/local/bin/mwan
@@ -24,111 +25,188 @@
   loop: [source, external, replacement]
   changed_when: false
 
-- name: Apply source exclusion before transferring ownership
-  ansible.builtin.meta: flush_handlers
-
-- name: Verify the source daemon has stopped selecting the connection
-  ansible.builtin.include_tasks: read-mwan-transfer-state.yml
+- name: Acquire the exact bounded connection transfer lease
+  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
   vars:
-    mwan_transfer_expected_owner: "{{ mwan_transfer_previous['goodkind-mwan-steering:owner'] }}"
-    mwan_transfer_excluded: true
+    mwan_operation_phase: "connection-handover-{{ mwan_transfer_connection_id }}"
+    mwan_operation_budget_seconds: "{{ mwan_operation_handover_budget_seconds }}"
+    mwan_operation_lease_seconds: "{{ mwan_operation_handover_lease_seconds }}"
 
-- name: Require usable source assignments before recording owner release
-  ansible.builtin.include_tasks: verify-mwan-transfer-acquisition.yml
-  vars:
-    mwan_transfer_acquisition_connection: "{{ mwan_transfer_previous }}"
-
-- name: Verify downstream forwarding through the unaffected connection
-  ansible.builtin.include_tasks: run-mwan-transfer-packets.yml
-  vars:
-    mwan_transfer_packet_phase: excluded
-
-- name: Set the previous writer for forward release and recovery
+- name: Record the active connection transfer lease
   ansible.builtin.set_fact:
-    mwan_transfer_release_owner: "{{ mwan_transfer_previous['goodkind-mwan-steering:owner'] }}"
-    mwan_transfer_snapshot_ready: true
+    mwan_transfer_lease_active: true
 
-- name: Release the source owner through external ownership
-  ansible.builtin.include_tasks: release-mwan-connection.yml
+- name: Complete the selected connection transfer
+  block:
+    - name: Apply source exclusion before transferring ownership
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: true
 
-- name: Set the replacement writer for any subsequent recovery
-  ansible.builtin.set_fact:
-    mwan_transfer_release_owner: "{{ mwan_transfer_replacement['goodkind-mwan-steering:owner'] }}"
+    - name: Install source exclusion under the exact transfer lease
+      timeout: "{{ mwan_operation_copy_timeout_seconds }}"
+      ansible.builtin.copy:
+        remote_src: true
+        src: "{{ mwan_role_backup.path }}/transfer-source.json"
+        dest: /etc/mwan/network.json
+        mode: "0600"
 
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: gateway-preparation
+    - name: Record completed source document installation
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: false
 
-- name: Install the excluded replacement connection
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  ansible.builtin.copy:
-    remote_src: true
-    src: "{{ mwan_role_backup.path }}/transfer-replacement.json"
-    dest: /etc/mwan/network.json
-    mode: "0600"
+    - name: Complete source exclusion startup
+      ansible.builtin.include_tasks: restart-mwan-ifmgr.yml
+      vars:
+        mwan_ifmgr_restart_timeout_seconds: "{{ mwan_role_job_timeout_seconds }}"
 
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: gateway-preparation
+    - name: Verify the source daemon has stopped selecting the connection
+      ansible.builtin.include_tasks: read-mwan-transfer-state.yml
+      vars:
+        mwan_transfer_expected_owner: "{{ mwan_transfer_previous['goodkind-mwan-steering:owner'] }}"
+        mwan_transfer_excluded: true
 
-- name: Restore networkd authority only after the previous owner released
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  ansible.builtin.file:
-    path: "/etc/systemd/network/00-mwan-release-{{ mwan_transfer_connection_id }}.network"
-    state: absent
-  when: mwan_transfer_release_owner == 'networkd'
+    - name: Require usable source assignments before recording owner release
+      ansible.builtin.include_tasks: verify-mwan-transfer-acquisition.yml
+      vars:
+        mwan_transfer_acquisition_connection: "{{ mwan_transfer_previous }}"
 
-- name: Start the complete replacement connection
-  ansible.builtin.include_tasks: restart-mwan-ifmgr.yml
-  vars:
-    mwan_ifmgr_restart_timeout_seconds: "{{ mwan_role_job_timeout_seconds }}"
+    - name: Verify downstream forwarding through the unaffected connection
+      ansible.builtin.include_tasks: run-mwan-transfer-packets.yml
+      vars:
+        mwan_transfer_packet_phase: excluded
 
-- name: Apply replacement networkd configuration
-  ansible.builtin.include_tasks: reload-mwan-networkd.yml
-  when: mwan_transfer_release_owner == 'networkd'
+    - name: Set the previous writer for forward release and recovery
+      ansible.builtin.set_fact:
+        mwan_transfer_release_owner: "{{ mwan_transfer_previous['goodkind-mwan-steering:owner'] }}"
+        mwan_transfer_snapshot_ready: true
 
-- name: Verify loaded replacement ownership before restoring selection
-  ansible.builtin.include_tasks: read-mwan-transfer-state.yml
-  vars:
-    mwan_transfer_expected_owner: "{{ mwan_transfer_release_owner }}"
-    mwan_transfer_excluded: true
+    - name: Release the source owner through external ownership
+      ansible.builtin.include_tasks: release-mwan-connection.yml
 
-- name: Require the phase's acquired assignments and downstream replies
-  ansible.builtin.include_tasks: verify-mwan-transfer-acquisition.yml
-  vars:
-    mwan_transfer_acquisition_connection: "{{ mwan_transfer_replacement }}"
+    - name: Set the replacement writer for any subsequent recovery
+      ansible.builtin.set_fact:
+        mwan_transfer_release_owner: "{{ mwan_transfer_replacement['goodkind-mwan-steering:owner'] }}"
 
-- name: Require the phase's downstream replies after verified acquisition
-  ansible.builtin.include_tasks: run-mwan-transfer-packets.yml
-  vars:
-    mwan_transfer_packet_phase: acquired
+    - name: Authorize the next gateway mutation
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+      vars:
+        mwan_operation_phase: "connection-handover-{{ mwan_transfer_connection_id }}"
+        mwan_operation_reuse_lease: true
+        mwan_operation_budget_seconds: "{{ mwan_operation_copy_timeout_seconds }}"
 
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: gateway-preparation
+    - name: Record the pending replacement document write
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: true
 
-- name: Restore the validated target selection policy
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  ansible.builtin.copy:
-    src: "{{ mwan_network_json_local }}"
-    dest: /etc/mwan/network.json
-    mode: "0600"
+    - name: Install the excluded replacement connection
+      timeout: "{{ mwan_operation_copy_timeout_seconds }}"
+      ansible.builtin.copy:
+        remote_src: true
+        src: "{{ mwan_role_backup.path }}/transfer-replacement.json"
+        dest: /etc/mwan/network.json
+        mode: "0600"
 
-- name: Restart with the accepted target selection policy
-  ansible.builtin.include_tasks: restart-mwan-ifmgr.yml
-  vars:
-    mwan_ifmgr_restart_timeout_seconds: "{{ mwan_role_job_timeout_seconds }}"
+    - name: Record completed replacement document installation
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: false
 
-- name: Verify the accepted replacement serves its configured owner
-  ansible.builtin.include_tasks: read-mwan-transfer-state.yml
-  vars:
-    mwan_transfer_expected_owner: "{{ mwan_transfer_release_owner }}"
-    mwan_transfer_excluded: false
+    - name: Authorize the next gateway mutation
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+      vars:
+        mwan_operation_phase: "connection-handover-{{ mwan_transfer_connection_id }}"
+        mwan_operation_reuse_lease: true
+        mwan_operation_budget_seconds: "{{ mwan_operation_copy_timeout_seconds }}"
 
-- name: Verify downstream replies after restoring selection
-  ansible.builtin.include_tasks: run-mwan-transfer-packets.yml
-  vars:
-    mwan_transfer_packet_phase: selected
+    - name: Record the pending networkd authority write
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: true
+      when: mwan_transfer_release_owner == 'networkd'
+
+    - name: Restore networkd authority only after the previous owner released
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
+      ansible.builtin.file:
+        path: "/etc/systemd/network/00-mwan-release-{{ mwan_transfer_connection_id }}.network"
+        state: absent
+      when: mwan_transfer_release_owner == 'networkd'
+
+    - name: Record completed networkd authority restoration
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: false
+      when: mwan_transfer_release_owner == 'networkd'
+
+    - name: Start the complete replacement connection
+      ansible.builtin.include_tasks: restart-mwan-ifmgr.yml
+      vars:
+        mwan_ifmgr_restart_timeout_seconds: "{{ mwan_role_job_timeout_seconds }}"
+
+    - name: Apply replacement networkd configuration
+      ansible.builtin.include_tasks: reload-mwan-networkd.yml
+      when: mwan_transfer_release_owner == 'networkd'
+
+    - name: Verify loaded replacement ownership before restoring selection
+      ansible.builtin.include_tasks: read-mwan-transfer-state.yml
+      vars:
+        mwan_transfer_expected_owner: "{{ mwan_transfer_release_owner }}"
+        mwan_transfer_excluded: true
+
+    - name: Require the phase's acquired assignments and downstream replies
+      ansible.builtin.include_tasks: verify-mwan-transfer-acquisition.yml
+      vars:
+        mwan_transfer_acquisition_connection: "{{ mwan_transfer_replacement }}"
+
+    - name: Require the phase's downstream replies after verified acquisition
+      ansible.builtin.include_tasks: run-mwan-transfer-packets.yml
+      vars:
+        mwan_transfer_packet_phase: acquired
+
+    - name: Authorize the next gateway mutation
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+      vars:
+        mwan_operation_phase: "connection-handover-{{ mwan_transfer_connection_id }}"
+        mwan_operation_reuse_lease: true
+        mwan_operation_budget_seconds: "{{ mwan_operation_copy_timeout_seconds }}"
+
+    - name: Record the pending target selection write
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: true
+
+    - name: Restore the validated target selection policy
+      timeout: "{{ mwan_operation_copy_timeout_seconds }}"
+      ansible.builtin.copy:
+        src: "{{ mwan_network_json_local }}"
+        dest: /etc/mwan/network.json
+        mode: "0600"
+
+    - name: Record completed target selection installation
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: false
+
+    - name: Restart with the accepted target selection policy
+      ansible.builtin.include_tasks: restart-mwan-ifmgr.yml
+      vars:
+        mwan_ifmgr_restart_timeout_seconds: "{{ mwan_role_job_timeout_seconds }}"
+
+    - name: Verify the accepted replacement serves its configured owner
+      ansible.builtin.include_tasks: read-mwan-transfer-state.yml
+      vars:
+        mwan_transfer_expected_owner: "{{ mwan_transfer_release_owner }}"
+        mwan_transfer_excluded: false
+
+    - name: Verify downstream replies after restoring selection
+      ansible.builtin.include_tasks: run-mwan-transfer-packets.yml
+      vars:
+        mwan_transfer_packet_phase: selected
+
+  always:
+    - name: Release the exact completed connection transfer lease
+      ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+      vars:
+        mwan_operation_phase: "connection-handover-{{ mwan_transfer_connection_id }}"
+        mwan_operation_acquire: false
+        mwan_operation_reuse_lease: false
+      when: not mwan_transfer_mutation_pending | bool
+
+    - name: Record completed connection transfer accounting
+      ansible.builtin.set_fact:
+        mwan_transfer_lease_active: false
+      when: not mwan_transfer_mutation_pending | bool

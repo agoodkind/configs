@@ -17,13 +17,27 @@ mwan_operation_acquire: true
 mwan_operation_completion_only: false
 mwan_operation_reuse_lease: false
 mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
-mwan_operation_handover_lease_seconds: 1800
+mwan_operation_handover_lease_seconds: "{{ mwan_operation_handover_budget_seconds | int + 30 }}"
+mwan_transfer_prepared: false
+mwan_transfer_active: false
+mwan_transfer_provider: false
+mwan_transfer_connection_id: ""
+mwan_transfer_snapshot_ready: false
+mwan_transfer_controller_created: false
+mwan_transfer_capture_paths: []
+mwan_transfer_recovery_excluded: false
+mwan_transfer_lease_active: false
+mwan_transfer_mutation_pending: false
+mwan_transfer_expected_interruptions: []
+mwan_role_first_install: false
 mwan_operation_task_timeout_seconds: 120
 mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds }}"
 mwan_operation_reconnect_timeout_seconds: 120
 mwan_operation_poll_budget_seconds: 120
 mwan_operation_duration_seconds: >-
-  {{ 7200 + mwan_operation_legacy_activation_budget_seconds | int }}
+  {{ 7200 + mwan_operation_legacy_activation_budget_seconds | int
+     + (mwan_operation_handover_lease_seconds | int + mwan_operation_restore_budget_seconds | int
+        if mwan_transfer_active | bool else 0) }}
 mwan_operation_poll_seconds: 5
 mwan_operation_observation_timeout_seconds: 15
 mwan_operation_checkpoint_timeout_seconds: 5
@@ -31,6 +45,28 @@ mwan_operation_metadata_timeout_seconds: 15
 mwan_operation_native_timeout_seconds: 30
 mwan_operation_copy_timeout_seconds: 30
 mwan_operation_restore_budget_seconds: 600
+mwan_transfer_read_poll_budget_seconds: "{{ 31 * mwan_operation_checkpoint_timeout_seconds | int + 30 }}"
+# The reconnect delay includes the complete remote execution deadline.
+# Two final status attempts follow the async wrapper's five-second cadence.
+mwan_transfer_remote_budget_seconds: >-
+  {{ mwan_operation_metadata_timeout_seconds | int + mwan_role_job_timeout_seconds | int
+     + mwan_operation_reconnect_timeout_seconds | int + 5
+     + (4 + 1 + 2) * mwan_operation_checkpoint_timeout_seconds | int + 5 }}
+mwan_operation_handover_budget_seconds: >-
+  {{ mwan_transfer_remote_budget_seconds | int * 6
+     + (8 + (1 if mwan_transfer_previous['goodkind-mwan-steering:owner'] == 'networkd' else 0))
+       * mwan_transfer_read_poll_budget_seconds | int
+     + mwan_operation_copy_timeout_seconds | int * 5
+     + mwan_operation_checkpoint_timeout_seconds | int * 2
+     + mwan_operation_metadata_timeout_seconds | int
+     + (mwan_operation_checkpoint_timeout_seconds | int
+        if mwan_transfer_previous['goodkind-mwan-steering:owner'] == 'networkd'
+        else mwan_operation_metadata_timeout_seconds | int)
+     + ((4 + (1 if mwan_transfer_replacement['goodkind-mwan-steering:owner'] == 'networkd' else 0)) * 4 + 8)
+       * mwan_operation_checkpoint_timeout_seconds | int
+     + (mwan_transfer_packet_checks | selectattr('phase', 'in', ['excluded', 'acquired', 'selected']) | list | length)
+       * mwan_operation_native_timeout_seconds | int
+     + mwan_transfer_packet_edge_count | int * mwan_operation_checkpoint_timeout_seconds | int }}
 mwan_legacy_status_timeout_seconds: 5
 # Async stop execution is bounded by the task timeout. Each poll consumes its
 # command timeout plus five seconds; allow one final completion read.
@@ -69,6 +105,7 @@ mwan_operation_legacy_activation_budget_seconds: >-
      + mwan_legacy_health_budget_seconds | int }}
 mwan_operation_max_lease_seconds: >-
   {{ [mwan_operation_legacy_activation_budget_seconds | int + 30,
+      mwan_operation_handover_lease_seconds | int if mwan_transfer_active | bool else 0,
       mwan_operation_task_timeout_seconds | int * 8
       + mwan_operation_reconnect_timeout_seconds | int
       + mwan_operation_poll_budget_seconds | int + 60,
@@ -85,6 +122,11 @@ mwan_operation_observer_vmids:
   - "{{ service_mapping.isp_att_suburban.vmid }}"
   - "{{ service_mapping.mwan_test_client_a_suburban.vmid }}"
   - "{{ service_mapping.mwan_test_client_b_suburban.vmid }}"
+mwan_operation_inbound_check_connections:
+  inbound-webpass-ipv4: webpass
+  inbound-webpass-ipv6: webpass
+  inbound-att-ipv4: att
+  inbound-att-ipv6: att
 mwan_operation_inbound_checks:
   - id: inbound-webpass-ipv4
     operation: http
