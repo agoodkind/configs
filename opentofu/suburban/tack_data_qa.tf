@@ -62,7 +62,7 @@ resource "proxmox_virtual_environment_container" "tack_data1_suburban" {
   unprivileged = true
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes = [
       # Proxmox does not return injected SSH keys, so a re-import would read
       # the configured keys as an addition that forces replacement.
@@ -131,7 +131,7 @@ resource "proxmox_virtual_environment_container" "tack_data2_suburban" {
   unprivileged = true
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes = [
       # Proxmox does not return injected SSH keys, so a re-import would read
       # the configured keys as an addition that forces replacement.
@@ -200,7 +200,7 @@ resource "proxmox_virtual_environment_container" "tack_data3_suburban" {
   unprivileged = true
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes = [
       # Proxmox does not return injected SSH keys, so a re-import would read
       # the configured keys as an addition that forces replacement.
@@ -269,7 +269,7 @@ resource "proxmox_virtual_environment_container" "tack_app2_suburban" {
   unprivileged = true
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes = [
       # Proxmox does not return injected SSH keys, so a re-import would read
       # the configured keys as an addition that forces replacement.
