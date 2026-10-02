@@ -41,6 +41,35 @@
       run_once: true
       delegate_to: localhost
 
+    # The operator identity flags (group_vars/tack_all.yml) are checked here,
+    # before any play changes a guest. An agent shell without an agent service
+    # would record the human from the control machine's git config as the
+    # actor of every ops command. The ops tasks split the session and the
+    # operator email into command arguments and run them through bash; each
+    # must be one token: a session of letters, digits, and hyphens, and an
+    # email with one @. An empty email leaves --operator-email without a
+    # value, and the command line then reads --deploy-commit as the email.
+    - name: Refuse an operator identity the ops commands cannot record truthfully
+      ansible.builtin.assert:
+        that:
+          - (tack_ops_agent_service == '') == (tack_ops_agent_session == '')
+          - not (tack_ops_agent_run | bool) or tack_ops_agent_service != ''
+          - tack_ops_agent_service == '' or tack_ops_agent_service is match('[a-z][a-z0-9-]*\Z')
+          - tack_ops_agent_session == '' or tack_ops_agent_session is match('[A-Za-z0-9-]{1,64}\Z')
+          - tack_ops_agent_service != '' or tack_ops_accountable_email == ''
+          - deploy_operator_email is match('[^@\s]+@[^@\s]+\Z')
+        fail_msg: >-
+          An agent deploy sets tack_ops_agent_service (lowercase letters,
+          digits, hyphens) and tack_ops_agent_session (letters, digits,
+          hyphens, at most 64), and a deploy from an agent shell sets them.
+          tack_ops_accountable_email applies only to an agent deploy. The
+          operator email must be one address. Service
+          "{{ tack_ops_agent_service }}", session "{{ tack_ops_agent_session }}",
+          accountable email "{{ tack_ops_accountable_email }}", operator email
+          "{{ deploy_operator_email }}", agent shell {{ tack_ops_agent_run }}.
+      run_once: true
+      delegate_to: localhost
+
     - name: Group each host by whether this deploy configures it
       ansible.builtin.group_by:
         key: >-
@@ -219,25 +248,6 @@
 
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
-    # The operator identity every audited ops command in this play carries
-    # (TACK-328). It names the human running this deploy in the compliance
-    # ledger. The ops container has no git config, so the deploy reads the
-    # control machine's git config instead; lookups run on the control
-    # machine, never on the guest. The id is derived from the lowercased
-    # email with the same version 5 UUID namespace the application uses
-    # (internal/cli/operator_git.go), verified to produce byte-identical ids,
-    # so one person keeps one actor id everywhere. The deploy commit ties
-    # each run to the code it installed (TACK-443): the actor answers who
-    # deployed, the commit answers what. It is the same ref the
-    # docker-compose fetches below pin.
-    deploy_operator_email: "{{ lookup('pipe', 'git config user.email') | lower }}"
-    deploy_operator_name: "{{ lookup('pipe', 'git config user.name') }}"
-    deploy_operator_id: "{{ deploy_operator_email | to_uuid(namespace='0a6f7572-cafe-dead-beef-000000000004') }}"
-    tack_ops_identity_flags: >-
-      --operator-id {{ deploy_operator_id }}
-      --operator-email {{ deploy_operator_email }}
-      --operator-name "{{ deploy_operator_name }}"
-      --deploy-commit {{ tack_commit }}
 
   tasks:
     # This check refuses a replica count that is not below the member count

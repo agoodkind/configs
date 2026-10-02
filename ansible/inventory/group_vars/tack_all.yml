@@ -18,6 +18,45 @@ container_features: "nesting=1"
 
 tack_install_dir: /root/tack
 
+# deploy-tack passes these operator identity flags to every audited ops
+# command (TACK-328). The ops container has no git config. A human deploy
+# reads the control machine's git config; lookups run on the control machine,
+# never on the guest. The id is derived from the lowercased email with the
+# version 5 UUID namespace of internal/cli/operator_git.go, and one person
+# keeps one actor id everywhere. The deploy commit records the code each run
+# installed (TACK-443).
+#
+# On an agent run, the git config on the control machine identifies the
+# person who started the agent, not the agent. An agent deploy passes
+#   --extra-var tack_ops_agent_service=<agent name, such as claude-rowan>
+#   --extra-var tack_ops_agent_session=<agent session id>
+# and passes --extra-var tack_ops_accountable_email=<email> when the
+# accountable person differs from that git config. The flags then record the
+# agent service and its session as the actor and the accountable person as
+# on_behalf_of. Tack images before the agent attribution change refuse
+# --operator-session and refuse --operator-service with --operator-id. An
+# agent deploy needs an image with that change. The first play of
+# deploy-tack checks these values before any guest changes.
+tack_ops_agent_service: ""
+tack_ops_agent_session: ""
+tack_ops_accountable_email: ""
+# Claude Code and Codex set these variables in every shell they start.
+tack_ops_agent_run: "{{ lookup('env', 'CLAUDECODE') != '' or lookup('env', 'CODEX_THREAD_ID') != '' }}"
+deploy_operator_email: >-
+  {{ ((tack_ops_accountable_email if tack_ops_agent_service else '')
+      or lookup('pipe', 'git config user.email')) | lower }}
+deploy_operator_name: "{{ lookup('pipe', 'git config user.name') }}"
+deploy_operator_id: "{{ deploy_operator_email | to_uuid(namespace='0a6f7572-cafe-dead-beef-000000000004') }}"
+tack_ops_identity_flags: >-
+  {% if tack_ops_agent_service %}--operator-service {{ tack_ops_agent_service }}
+  --operator-session {{ tack_ops_agent_session }}
+  --operator-id {{ deploy_operator_id }}
+  --operator-email {{ deploy_operator_email }}
+  {% else %}--operator-id {{ deploy_operator_id }}
+  --operator-email {{ deploy_operator_email }}
+  --operator-name "{{ deploy_operator_name }}"
+  {% endif %}--deploy-commit {{ tack_commit }}
+
 # Engine packages the deploy holds against the weekly package updater
 # (TACK-487): an unattended upgrade of any of these restarts the daemon and
 # every container with it. docker-ce-rootless-extras arrives as a recommend
