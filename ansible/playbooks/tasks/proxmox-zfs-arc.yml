@@ -1,0 +1,53 @@
+---
+# tasks/proxmox-host.yml imports this file on every hypervisor. With
+# proxmox_zfs_arc_max_bytes above zero, the modprobe file sets the ZFS ARC
+# ceiling at module load. With zero, the tasks remove that file only when its
+# first line is the managed header below; the tasks leave a host without the
+# file, or with a hand-written file of the same name, unchanged. A change
+# notifies the handlers, which write the value into the running module, rebuild
+# the initramfs that loads the module on a root-on-ZFS host, and require the
+# ARC statistics c_max to equal that value.
+
+- name: Configure the ZFS ARC ceiling
+  ansible.builtin.copy:
+    dest: "{{ proxmox_zfs_arc_modprobe_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ proxmox_zfs_arc_managed_header }}
+      options zfs zfs_arc_max={{ proxmox_zfs_arc_max_bytes }}
+  when: proxmox_zfs_arc_max_bytes | int > 0
+  notify:
+    - Apply the ZFS ARC ceiling
+    - Rebuild the initramfs for the ZFS ARC ceiling
+    - Verify the ZFS ARC ceiling the module accepted
+
+- name: Check for the ZFS ARC ceiling file from an earlier ceiling
+  ansible.builtin.stat:
+    path: "{{ proxmox_zfs_arc_modprobe_path }}"
+  register: proxmox_zfs_arc_stat
+  when: proxmox_zfs_arc_max_bytes | int == 0
+
+# A read error on an existing file fails the play; the rollback never treats
+# an unreadable file as absent.
+- name: Read the ZFS ARC ceiling file from an earlier ceiling
+  ansible.builtin.slurp:
+    src: "{{ proxmox_zfs_arc_modprobe_path }}"
+  register: proxmox_zfs_arc_existing
+  when:
+    - proxmox_zfs_arc_max_bytes | int == 0
+    - proxmox_zfs_arc_stat.stat.exists
+
+- name: Remove the managed ZFS ARC ceiling file
+  ansible.builtin.file:
+    path: "{{ proxmox_zfs_arc_modprobe_path }}"
+    state: absent
+  when:
+    - proxmox_zfs_arc_max_bytes | int == 0
+    - proxmox_zfs_arc_stat.stat.exists
+    - (proxmox_zfs_arc_existing.content | b64decode).startswith(proxmox_zfs_arc_managed_header)
+  notify:
+    - Apply the ZFS ARC ceiling
+    - Rebuild the initramfs for the ZFS ARC ceiling
+    - Verify the ZFS ARC ceiling the module accepted

@@ -178,6 +178,13 @@ tack_search_proxy_private_key: "{{ vault_tack_qa_search_proxy_private_key }}"
 # finished. No measurement recorded its peak.
 tack_search_qa_host_min_available_gib: 6.26
 
+# D9 QA trial: cap the ZFS ARC at 1 GiB on suburban. The ARC used 1.923 GiB
+# on 2026-10-02 with a 0.978 GiB floor, and MemAvailable does not count it.
+proxmox_zfs_arc_max_bytes: 1073741824
+# The unmanaged installer file /etc/modprobe.d/zfs.conf on suburban sets
+# zfs_arc_max=3309305856 (read 2026-10-02). The rollback restores that value.
+proxmox_zfs_arc_rollback_bytes: 3309305856
+
 # Suburban is the only host with a WireGuard interface, so it is the only one
 # that watches peer handshake age. Local-exec mode: an empty ssh_host makes the
 # module run `wg show` on this host instead of over SSH, and the daemon already
