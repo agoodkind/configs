@@ -9,6 +9,12 @@
 # ----------------------------------------------------------------------------
 
 mwan_environment: "testbed"
+mwan_release_tag: "202610022136-ad-b8b7f52"
+mwan_release_assets:
+  - name: mwan_linux_amd64.tar.gz
+    checksum: "sha256:be350ad972b19c3b2022d4613efaadc702a679045dc8b2085d861fcf9a2b728e"
+  - name: wanconfig-stack_linux_amd64.tar.gz
+    checksum: "sha256:ae11e8de8fcf714f6f5f1086f751a332345f83dc3b409b44570debd6b2ca051f"
 mwan_bootstrap_guest: false
 mwan_controller_artifact_root: "/Volumes/Chaos Storage/Codex/mwan305/configs-integration/controller"
 mwan_operation_armed: false
