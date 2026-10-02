@@ -1,4 +1,4 @@
-# Rendered by Ansible (tasks/proxmox-storage-recording.yml).
+# Deployed by Ansible (tasks/proxmox-storage-recording.yml), copied without templating.
 [Unit]
 Description=Record the ZFS latency histogram every hour
 

@@ -71,7 +71,12 @@
   ansible.builtin.systemd:
     name: storage-recording-iostat.service
     state: restarted
-  when: storage_recording_units.results[0].changed
+  when: >-
+    storage_recording_units.results
+    | selectattr('item', 'equalto', 'services/storage-recording-iostat.service')
+    | selectattr('changed')
+    | list
+    | length > 0
 
 - name: Enable the storage recording timers
   ansible.builtin.systemd:
