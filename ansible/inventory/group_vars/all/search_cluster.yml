@@ -12,6 +12,23 @@ tack_search_production_members:
 tack_search_qa_members:
   - tack_search1_suburban
 
+# The OpenSearch roles of each named role set. A coordinating-only member has
+# no role; it routes requests and merges results.
+tack_search_role_sets:
+  combined: [cluster_manager, data, ingest, ml]
+  ml: [ml]
+  data: [data]
+  coordinating: []
+
+# Each list contains the service mapping keys of the members that run that
+# role set. Every member absent from these lists runs the combined set. The
+# first member of an environment's member list forms the cluster, and
+# deploy-tack refuses a first member without the cluster_manager role.
+tack_search_role_set_members:
+  ml: []
+  data: []
+  coordinating: []
+
 # The proxy listens on this port, and every member serves HTTPS on it.
 tack_search_port: 9200
 

@@ -26,6 +26,12 @@ services:
       # cluster.initial_cluster_manager_nodes from the TACK_SEARCH_* values in
       # the rendered .env. Compose merges this map with the opensearch
       # environment in the base file.
+{% if tack_search_node_roles == '' %}
+      # A coordinating-only member has no role. OpenSearch refuses an empty -E
+      # value, and the image entrypoint passes no empty setting. This empty
+      # value replaces the base file's role list, and the mounted
+      # opensearch.yml below sets node.roles to an empty list.
+{% endif %}
       node.roles: "{{ tack_search_node_roles }}"
       network.host: "{{ service_mapping[service_name].ipv6 }}"
       http.port: "{{ tack_search_port }}"
@@ -70,6 +76,11 @@ services:
       nofile:
         soft: {{ tack_search_nofile_limit }}
         hard: {{ tack_search_nofile_limit }}
+{% if tack_search_node_roles == '' %}
+    configs:
+      - source: opensearch-coordinating-node
+        target: /usr/share/opensearch/config/opensearch.yml
+{% endif %}
 {% endif %}
 {% if tack_store_node_present | bool %}
   # The product store on this data guest (TACK-408). Host networking, because
@@ -193,4 +204,16 @@ services:
 
 volumes:
   opensearch-data:
+{% if tack_search_node_roles == '' %}
+
+# The OpenSearch 3.8.0 image default opensearch.yml sets cluster.name and
+# network.host; the environment above sets both again, and an -E setting
+# takes precedence over this file. The file adds the empty role list.
+configs:
+  opensearch-coordinating-node:
+    content: |
+      cluster.name: docker-cluster
+      network.host: 0.0.0.0
+      node.roles: []
+{% endif %}
 {% endif %}

@@ -13,7 +13,10 @@ tack_ledger_node_name: ""
 # artifacts.opensearch.org that ML Commons downloads the pinned model from.
 tack_search_image: "opensearchproject/opensearch:3.8.0"
 tack_search_java_opts: "-Xms2g -Xmx2g -Djava.net.preferIPv6Addresses=true"
-tack_search_node_roles: "cluster_manager,data,ingest,ml"
+tack_search_role_set: >-
+  {{ ((tack_search_role_set_members | dict2items | selectattr('value', 'contains', service_name)
+       | map(attribute='key') | list) + ['combined']) | first }}
+tack_search_node_roles: "{{ tack_search_role_sets[tack_search_role_set] | join(',') }}"
 tack_search_nofile_limit: 65536
 
 # The node name is the first label of the guest's hostname. Production
