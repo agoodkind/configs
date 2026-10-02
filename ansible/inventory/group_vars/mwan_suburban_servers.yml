@@ -520,7 +520,6 @@ mwan_providers:
     owner: mwan
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
-    link_files: rendered
     link:
       match: { hardware_address: "{{ mwan_webpass_mac | lower }}" }
     ipv4:
