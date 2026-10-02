@@ -48,9 +48,9 @@
     - name: Refuse the ledger audit bootstrap outside a from-empty rebuild
       ansible.builtin.assert:
         that:
-          - not (tack_ledger_audit_bootstrap | default(false) | bool) or (tack_ledger_bootstrap | bool)
+          - not (tack_ledger_audit_bootstrap | bool) or (tack_ledger_bootstrap | bool)
           - >-
-            not (tack_ledger_audit_bootstrap | default(false) | bool
+            not (tack_ledger_audit_bootstrap | bool
                  and (ansible_play_hosts_all | intersect(groups['tack_prod_all'] | default([]))) | length > 0)
         fail_msg: >-
           tack_ledger_audit_bootstrap=true needs tack_ledger_bootstrap=true and a
