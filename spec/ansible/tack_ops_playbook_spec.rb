@@ -3,16 +3,15 @@
 require 'yaml'
 require_relative '../support/ansible_render'
 require_relative '../support/task_expressions'
+require_relative '../support/tack_ops_identity'
 
 # tack-ops runs one reviewed Tack ops command on one QA guest with the rendered
-# operator identity. These examples evaluate the real playbook text: the
-# identity guard both playbooks import, the request check, the task order, and
-# the rendered command lines.
+# operator identity. These examples run the real playbook through its identity
+# guard and evaluate the real playbook text: the request check, the task
+# order, and the rendered command lines.
 module TackOpsPlaybook
   PLAYBOOKS = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks')
   PLAYBOOK_FILE = File.join(PLAYBOOKS, 'tack-ops.yml')
-  DEPLOY_FILE = File.join(PLAYBOOKS, 'deploy-tack.yml')
-  GUARD_IMPORT = 'tasks/tack-ops-identity-guard.yml'
   REQUEST_TASK = 'Refuse a Tack ops request outside the reviewed commands, guests, or arguments'
   VERIFY_TASK = 'Verify that the guest runs the Tack images for tack_commit'
   DRY_RUN_TASK = 'Print the dry run of the Tack ops command'
@@ -69,12 +68,13 @@ module TackOpsPlaybook
 end
 
 RSpec.describe TackOpsPlaybook do
-  it 'imports the moved identity guard as the third task of the deploy-tack first play and the first of tack-ops' do
-    deploy_tasks = described_class.plays(TackOpsPlaybook::DEPLOY_FILE).first.fetch('tasks')
-    ops_tasks = described_class.plays.first.fetch('tasks')
+  it 'stops a tack-ops run from an agent shell without a service before the request check', :aggregate_failures do
+    identity = TackOpsIdentityFlags.identity(service: '', session: '')
+    result = TackOpsIdentityFlags.run_deploy(identity, agent: true, playbook: TackOpsPlaybook::PLAYBOOK_FILE)
 
-    expect(deploy_tasks[2]['ansible.builtin.import_tasks']).to eq(TackOpsPlaybook::GUARD_IMPORT)
-    expect(ops_tasks.first['ansible.builtin.import_tasks']).to eq(TackOpsPlaybook::GUARD_IMPORT)
+    expect(result.exit_status.success?).to be(false)
+    expect(result.output).to include(TackOpsIdentityFlags::GUARD_MESSAGE)
+    expect(result.output).not_to include("TASK [#{TackOpsPlaybook::REQUEST_TASK}]")
   end
 
   it 'accepts an allowlisted command with flag arguments on one QA guest' do

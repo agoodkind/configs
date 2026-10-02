@@ -70,16 +70,16 @@ module TackOpsIdentityFlags
     { 'CLAUDECODE' => (agent ? '1' : nil), 'CODEX_THREAD_ID' => nil }
   end
 
-  # Runs the real deploy-tack playbook in check mode against that inventory,
-  # with the agent shell markers set or removed, and returns its output and
-  # exit status.
-  def run_deploy(identity, agent:)
+  # Runs a real playbook, deploy-tack by default, in check mode against that
+  # inventory, with the agent shell markers set or removed, and returns its
+  # output and exit status.
+  def run_deploy(identity, agent:, playbook: PLAYBOOK_FILE)
     Dir.mktmpdir('identity-guard') do |directory|
       inventory = File.join(directory, 'inventory.ini')
       File.write(inventory, DEPLOY_INVENTORY)
       password = File.join(directory, 'vault-password')
       File.write(password, AnsibleRender::VAULT_PASSWORD_PLACEHOLDER, perm: AnsibleRender::SECRET_FILE_MODE)
-      argv = [AnsibleRender::PLAYBOOK_COMMAND, '--check', '--inventory', inventory, PLAYBOOK_FILE,
+      argv = [AnsibleRender::PLAYBOOK_COMMAND, '--check', '--inventory', inventory, playbook,
               '--extra-vars', JSON.generate(identity)]
       environment = shell_environment(agent: agent).merge(AnsibleRender::VAULT_PASSWORD_ENV => password)
       CommandRunner.run(environment, argv, chdir: AnsibleRender::ANSIBLE_DIRECTORY, timeout_seconds: DEPLOY_TIMEOUT_SECONDS)
