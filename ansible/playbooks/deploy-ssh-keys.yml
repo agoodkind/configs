@@ -262,6 +262,7 @@
           set -e
           mkdir -p /etc/ssh/sshd_config.d /etc/ssh/authorized_keys.d /etc/tmpfiles.d
           {% if guest_prep_invalidate_revision | bool %}
+          # Block service deploys until this preparation run completes.
           rm -f "{{ guest_prep_revision_file }}"
           {% endif %}
           test -s /tmp/new_keys.pub
@@ -317,6 +318,7 @@
           set -e
           mkdir -p /etc/ssh/sshd_config.d /etc/ssh/authorized_keys.d /etc/tmpfiles.d
           {% if guest_prep_invalidate_revision | bool %}
+          # Block service deploys until this preparation run completes.
           rm -f '{{ guest_prep_revision_file }}'
           {% endif %}
           echo '$KEY_B64' | base64 -d \
