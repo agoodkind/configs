@@ -1,5 +1,7 @@
 - name: Read the exact deployment operation before another mutation
   delegate_to: "{{ mwan_proxmox_delegate }}"
+  vars:
+    ansible_ssh_retries: 3
   timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
     argv:
@@ -122,6 +124,8 @@
 
 - name: Read the granted operation immediately before the mutation
   delegate_to: "{{ mwan_proxmox_delegate }}"
+  vars:
+    ansible_ssh_retries: 3
   timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
     argv:
@@ -141,6 +145,7 @@
 - name: Verify the actual registered watch before the mutation
   delegate_to: "{{ mwan_proxmox_delegate }}"
   vars:
+    ansible_ssh_retries: 3
     operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
   timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
@@ -172,6 +177,8 @@
 
 - name: Read the required mutation deadline from the hypervisor clock
   delegate_to: "{{ mwan_proxmox_delegate }}"
+  vars:
+    ansible_ssh_retries: 3
   timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
     argv:
