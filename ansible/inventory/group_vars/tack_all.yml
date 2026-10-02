@@ -158,6 +158,23 @@ tack_log_max_size_mb: 100
 tack_fdb_version: "7.4.6"
 tack_port: 8000
 
+# An application-only guest runs the app service and no other Tack service.
+# It reads the product store, the ledger, the search endpoint, and the audit
+# broker on other guests. A guest group that turns this on also sets the
+# owner guest that stores the application login password and the broker
+# address the app dials.
+tack_app_guest: false
+
+# The audit broker on the owner guest listens inside that guest's Docker
+# bridge only. With this on, the owner guest's broker also listens on the
+# guest's pinned address, and a firewall table on the owner guest accepts
+# that port only from the environment's application-only guests.
+tack_queue_external_listener_enabled: false
+
+# The broker address the app publishes audit events to. kafka:9092 is the
+# broker service name inside the owner guest's Docker bridge.
+tack_audit_kafka_brokers: "kafka:9092"
+
 # ---------------------------------------------------------------------------
 # Product store (FoundationDB), phase 4 (TACK-408)
 # ---------------------------------------------------------------------------

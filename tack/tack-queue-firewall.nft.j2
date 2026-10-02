@@ -1,0 +1,35 @@
+#!/usr/sbin/nft -f
+# Rendered by Ansible from tack/tack-queue-firewall.nft.j2 (TACK-544).
+#
+# The audit broker on this guest publishes port {{ tack_queue_external_port }} for the
+# application-only guests. Docker runs the bridge in routed IPv6 mode. A
+# client can open the port on this guest's address through docker-proxy,
+# which the input hook sees. A client can also open it on the broker
+# container's own address, which the forward hook sees. Both chains accept
+# the port only from the listed guests and drop it from every other source.
+# A drop in any base chain ends the packet, and Docker's accept rules in
+# other tables cannot reverse it.
+#
+# The first two lines create the table when it is missing and then delete it.
+# Loading this file then replaces the table instead of appending to it.
+table inet tack_queue
+delete table inet tack_queue
+
+table inet tack_queue {
+    set clients {
+        type ipv6_addr
+        elements = { {{ tack_queue_external_clients | map('extract', service_mapping, 'ipv6') | join(', ') }} }
+    }
+
+    chain input {
+        type filter hook input priority filter - 10; policy accept;
+        tcp dport {{ tack_queue_external_port }} ip6 saddr @clients accept
+        tcp dport {{ tack_queue_external_port }} drop
+    }
+
+    chain forward {
+        type filter hook forward priority filter - 10; policy accept;
+        tcp dport {{ tack_queue_external_port }} ip6 saddr @clients accept
+        tcp dport {{ tack_queue_external_port }} drop
+    }
+}

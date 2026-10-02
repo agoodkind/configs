@@ -282,6 +282,7 @@
           openssl rand -hex 32 > {{ tack_app_password_path }}
         creates: "{{ tack_app_password_path }}"
         executable: /bin/bash
+      when: not tack_app_guest | bool
 
     - name: Ensure the application database password has restricted permissions
       ansible.builtin.file:
@@ -289,10 +290,17 @@
         owner: root
         group: root
         mode: "0600"
+      when: not tack_app_guest | bool
 
+    # An application-only guest logs in with the owner guest's password,
+    # because `ops audit seed-roles` on the owner sets that password on the
+    # tack_app login (TACK-544). The guest reads the owner's file and renders
+    # that value into its own .env. The deploy reads no password file on the
+    # application-only guest.
     - name: Read the application database password
       ansible.builtin.slurp:
         src: "{{ tack_app_password_path }}"
+      delegate_to: "{{ tack_app_password_source if tack_app_guest | bool else inventory_hostname }}"
       register: tack_app_password_file
       no_log: true
 
@@ -426,6 +434,47 @@
         - tack_store_seed_cluster_file | bool
         - tack_store_cluster_file_source != ''
         - tack_store_cluster_file_stat.stat.exists
+
+    # The seed task above never replaces an existing file. An
+    # application-only guest runs no store process, and the store never
+    # rewrites that guest's file while no app runs there. A file left from an
+    # earlier store shape then lists coordinators that no longer exist. QA's
+    # tack_app2_suburban kept the retired owner-guest coordinator until
+    # 2026-10-02 (TACK-544). This task replaces the file with the live copy
+    # whenever the two differ.
+    - name: Fail when an application-only guest has no live cluster file to copy
+      ansible.builtin.fail:
+        msg: >-
+          {{ inventory_hostname }} runs only the app, and this run includes no
+          guest that runs the product store. The deploy cannot confirm that
+          this guest's cluster file lists the live coordinators. Deploy with a
+          limit that includes the environment's data guests, such as
+          --limit tack_qa_all.
+      when:
+        - tack_app_guest | bool
+        - tack_store_seed_cluster_file | bool
+        - tack_store_cluster_file_source == ''
+
+    - name: Replace the product store cluster file on an application-only guest
+      ansible.builtin.copy:
+        dest: /etc/foundationdb/fdb.cluster
+        content: "{{ tack_store_live_cluster_file }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+      when:
+        - tack_app_guest | bool
+        - tack_store_seed_cluster_file | bool
+        - tack_store_cluster_file_source != ''
+        - tack_store_cluster_file_stat.stat.exists
+
+    # The owner block below starts the audit broker with its external listener
+    # when this setting is on. The firewall table loads first (TACK-544).
+    - name: Install the audit broker firewall
+      ansible.builtin.include_tasks: tasks/tack-queue-firewall.yml
+      when:
+        - tack_provision_owner | bool
+        - tack_queue_external_listener_enabled | bool
 
     - block:
 
@@ -1037,6 +1086,75 @@
           when: not tack_store_legacy_node_present
       when: tack_provision_owner
 
+    # An application-only guest runs the app service and no other service
+    # from the shared compose file (TACK-544). Ansible finishes the owner
+    # block above on every host before this block starts. The owner's
+    # provision migrates the database and sets the tack_app password before
+    # this app starts. The app dials the ledger through the rendered override,
+    # the store through the cluster file, the search endpoint through the
+    # rendered .env, and the owner guest's audit broker through
+    # tack_audit_kafka_brokers. `--no-deps` starts the app alone. A compose up
+    # recreates the app when its rendered configuration changed and leaves it
+    # running otherwise.
+    - block:
+
+        - name: Create Tack install directory (application-only guest)
+          ansible.builtin.file:
+            path: "{{ tack_install_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: "0750"
+
+        - name: Deploy Tack environment file (application-only guest)
+          ansible.builtin.template:
+            src: "{{ repo_root }}/tack/tack.env.j2"
+            dest: "{{ tack_install_dir }}/.env"
+            owner: root
+            group: root
+            mode: "0600"
+
+        - name: Deploy Tack compose override (application-only guest)
+          ansible.builtin.template:
+            src: "{{ repo_root }}/tack/docker-compose.override.yml.j2"
+            dest: "{{ tack_install_dir }}/docker-compose.override.yml"
+            owner: root
+            group: root
+            mode: "0644"
+
+        - name: Fetch docker-compose.yml from the tack repo SOT (application-only guest)
+          ansible.builtin.get_url:
+            url: "https://api.github.com/repos/agoodkind/tack/contents/docker-compose.yml?ref={{ tack_commit }}"
+            dest: "{{ tack_install_dir }}/docker-compose.yml"
+            headers:
+              Authorization: "Bearer {{ tack_repo_read_token }}"
+              Accept: "application/vnd.github.raw"
+            owner: root
+            group: root
+            mode: "0644"
+            force: true
+          no_log: true
+
+        - name: Authenticate Docker to ghcr.io (application-only guest)
+          ansible.builtin.command:
+            cmd: docker login ghcr.io -u agoodkind --password-stdin
+            stdin: "{{ ghcr_pull_token }}"
+          changed_when: true
+          no_log: true
+
+        - name: Pull the Tack app image from ghcr.io (application-only guest)
+          ansible.builtin.command:
+            cmd: docker compose pull app
+            chdir: "{{ tack_install_dir }}"
+          changed_when: true
+
+        - name: Start the Tack app (application-only guest)
+          ansible.builtin.command:
+            cmd: docker compose up -d --no-deps app
+            chdir: "{{ tack_install_dir }}"
+          changed_when: true
+      when: tack_app_guest | bool
+
     # The search guests run one OpenSearch member each (TACK-539).
     - name: Run the OpenSearch member
       ansible.builtin.include_tasks: tasks/tack-search-node.yml
@@ -1059,13 +1177,14 @@
     # This handler restarts the app container because the app reads the search
     # authority file from its /etc/tack mount only at start. A compose up
     # leaves the container running when its compose configuration is
-    # unchanged. The play starts the app only on the owner guest.
+    # unchanged. The play starts the app on the owner guest and on each
+    # application-only guest.
     - name: Restart the Tack app for a new search authority
       ansible.builtin.command:
         cmd: docker compose restart app
         chdir: "{{ tack_install_dir }}"
       changed_when: true
-      when: tack_provision_owner | bool
+      when: tack_provision_owner | bool or tack_app_guest | bool
 
     # Data guests run the ledger node and the product store process; a full
     # compose up here would start the whole stack on a guest that must serve

@@ -1,0 +1,16 @@
+# Rendered by Ansible from tack/tack-queue-firewall.service.j2 (TACK-544).
+# Loads the tack_queue firewall table before Docker starts the audit broker.
+[Unit]
+Description=Tack audit broker external listener firewall
+Before=docker.service
+Wants=network-pre.target
+After=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f {{ tack_queue_firewall_path }}
+ExecStop=/usr/sbin/nft delete table inet tack_queue
+
+[Install]
+WantedBy=multi-user.target
