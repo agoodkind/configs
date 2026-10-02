@@ -1,5 +1,5 @@
 resource "cloudflare_load_balancer_monitor" "http_monit_port_1406" {
-  provider         = cloudflare.mwan_read
+  provider         = cloudflare.mwan_manage
   description      = "http-monit-port-1406"
   type             = "http"
   port             = 1406
@@ -20,7 +20,7 @@ resource "cloudflare_load_balancer_monitor" "http_monit_port_1406" {
 }
 
 resource "cloudflare_load_balancer_monitor" "http_monit_port_1406_lossy" {
-  provider         = cloudflare.mwan_read
+  provider         = cloudflare.mwan_manage
   description      = "http-monit-port-1406-lossy"
   type             = "http"
   port             = 1406
@@ -41,7 +41,7 @@ resource "cloudflare_load_balancer_monitor" "http_monit_port_1406_lossy" {
 }
 
 resource "cloudflare_load_balancer_pool" "sf_1335_ipv6" {
-  provider           = cloudflare.mwan_read
+  provider           = cloudflare.mwan_manage
   description        = ""
   enabled            = true
   minimum_origins    = 1
@@ -77,7 +77,7 @@ resource "cloudflare_load_balancer_pool" "sf_1335_ipv6" {
 }
 
 resource "cloudflare_load_balancer_pool" "sf_att_1335" {
-  provider           = cloudflare.mwan_read
+  provider           = cloudflare.mwan_manage
   description        = ""
   enabled            = true
   minimum_origins    = 1
@@ -104,7 +104,7 @@ resource "cloudflare_load_balancer_pool" "sf_att_1335" {
 }
 
 resource "cloudflare_load_balancer_pool" "sf_mbrains6_1335" {
-  provider           = cloudflare.mwan_read
+  provider           = cloudflare.mwan_manage
   description        = ""
   enabled            = true
   minimum_origins    = 1
@@ -133,7 +133,7 @@ resource "cloudflare_load_balancer_pool" "sf_mbrains6_1335" {
 }
 
 resource "cloudflare_load_balancer_pool" "sf_webpass_1335" {
-  provider           = cloudflare.mwan_read
+  provider           = cloudflare.mwan_manage
   description        = ""
   enabled            = true
   minimum_origins    = 1
@@ -160,7 +160,7 @@ resource "cloudflare_load_balancer_pool" "sf_webpass_1335" {
 }
 
 resource "cloudflare_load_balancer" "lb_home6_goodkind_io" {
-  provider         = cloudflare.mwan_read
+  provider         = cloudflare.mwan_manage
   description      = ""
   ttl              = 10
   proxied          = false
@@ -200,7 +200,7 @@ resource "cloudflare_load_balancer" "lb_home6_goodkind_io" {
 }
 
 resource "cloudflare_load_balancer" "lb_home_goodkind_io" {
-  provider         = cloudflare.mwan_read
+  provider         = cloudflare.mwan_manage
   description      = ""
   ttl              = 10
   proxied          = false

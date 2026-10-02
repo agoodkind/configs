@@ -20,8 +20,8 @@ terraform {
 provider "cloudflare" {}
 
 provider "cloudflare" {
-  alias     = "mwan_read"
-  api_token = sensitive(trimspace(file(pathexpand(var.cloudflare_mwan_read_token_file))))
+  alias     = "mwan_manage"
+  api_token = sensitive(trimspace(file(pathexpand(var.cloudflare_mwan_manage_token_file))))
 }
 
 provider "proxmox" {

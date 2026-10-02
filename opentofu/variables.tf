@@ -40,10 +40,10 @@ variable "cloudflare_owner_email" {
   default     = "alex@goodkind.io"
 }
 
-variable "cloudflare_mwan_read_token_file" {
-  description = "Protected file containing the separate Cloudflare MWAN load balancer read token"
+variable "cloudflare_mwan_manage_token_file" {
+  description = "Protected file containing the separate Cloudflare MWAN load balancer management token"
   type        = string
-  default     = "~/.config/mwan/cloudflare-lb-read.token"
+  default     = "~/.config/mwan/cloudflare-lb-manage.token"
 }
 
 variable "berylax_beacon_sockaddr" {

@@ -34,14 +34,16 @@ If the password is lost, the vault cannot be decrypted. Restore the password
 from 1Password, or re-create every secret from its original source into a
 fresh vault. Keep the password backed up in 1Password.
 
-The OpenTofu `cloudflare.mwan_read` provider reads a separate local token from
-`~/.config/mwan/cloudflare-lb-read.token`. Protect the directory with mode `700`
-and the file with mode `600`. Keep its token ID, read permissions and expiration
-in private metadata beside the token. Set `TF_VAR_cloudflare_mwan_read_token_file`
-to another protected file when required. This token grants load balancer read
-access for the configured account and zone. The default Cloudflare provider
+The OpenTofu `cloudflare.mwan_manage` provider reads a separate local token from
+`~/.config/mwan/cloudflare-lb-manage.token`. Protect the directory with mode `700`
+and the file with mode `600`. Keep its token ID, permissions and expiration
+in private metadata beside the token. Set `TF_VAR_cloudflare_mwan_manage_token_file`
+to another protected file when required. Grant account-scoped monitor and pool
+read/write permissions and zone-scoped load balancer read/write permissions.
+The default Cloudflare provider
 continues to use `CLOUDFLARE_API_TOKEN` for DNS and other resources.
 
 Run OpenTofu through `./configsctl tofu`. The wrapper inherits the file path
 override. Rotate the persistent token before its recorded expiration and verify
-authenticated pool health reads after rotation. Preserve the DNS vault token.
+an unchanged targeted plan after rotation. Preserve the DNS vault token and
+the separate `~/.config/mwan/cloudflare-lb-read.token` health observation credential.
