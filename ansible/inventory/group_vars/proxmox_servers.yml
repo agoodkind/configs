@@ -13,6 +13,10 @@ mwan_ifmgr_enabled: true
 mwan_ifmgr_oob_enabled: false
 mwan_ifmgr_oob_ipv4_source_policy_enabled: false
 mwan_ifmgr_oob_ipv4_source: ""
+mwan_host_observer_policy_apply: false
+mwan_host_observer_policy_current_sha256: ""
+mwan_host_observer_policy_target_sha256: ""
+mwan_host_observer_policy_timeout_seconds: 120
 # The daemon needs exactly one iface section naming the interface its kernel
 # event monitor watches. These decide whether it also runs a DHCPv4 client and
 # a router solicitor there.
