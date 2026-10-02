@@ -19,6 +19,11 @@ terraform {
 # The provider reads CLOUDFLARE_API_TOKEN from the environment inherited by configsctl.
 provider "cloudflare" {}
 
+provider "cloudflare" {
+  alias     = "mwan_manage"
+  api_token = sensitive(trimspace(file(pathexpand(var.cloudflare_mwan_manage_token_file))))
+}
+
 provider "proxmox" {
   endpoint  = var.proxmox_endpoint
   api_token = var.proxmox_api_token
