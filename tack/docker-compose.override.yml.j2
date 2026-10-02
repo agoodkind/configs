@@ -94,7 +94,7 @@ services:
   fdb-backup-agent:
     profiles: !override ["retired"]
 {% endif %}
-{% if tack_provision_owner and tack_ledger_consumers_repointed %}
+{% if (tack_provision_owner or tack_app_guest | bool) and tack_ledger_consumers_repointed %}
   # The app and the audit consumer reach the ledger at its permanent node
   # names, which resolve here to the owning guests' pinned addresses. The
   # multi-host database URL fails over across the three data nodes, so
@@ -115,13 +115,31 @@ services:
 {% endfor %}
     environment:
       DATABASE_URL: postgres://tack_app:${TACK_APP_PASSWORD:?}@yb1:5433,yb2:5433,yb3:5433/${YUGABYTE_DB:?}?{{ tack_ledger_ssl_query }}&connect_timeout={{ tack_database_connect_timeout_seconds }}
+{% endif %}
+{% if tack_provision_owner and tack_ledger_consumers_repointed %}
   audit-consumer:
     extra_hosts:
 {% for peer_name, peer_address in tack_ledger_peers.items() %}
       - "{{ peer_name }}:{{ peer_address }}"
 {% endfor %}
 {% endif %}
-{% if tack_cluster_role != 'search' %}
+{% if tack_provision_owner and tack_queue_external_listener_enabled | bool %}
+  # The broker keeps its bridge listener for the services on this guest and
+  # adds a listener that the application-only guests dial on this guest's
+  # pinned address (TACK-544). The three values repeat the Tack base file's
+  # PLAINTEXT and CONTROLLER entries because compose replaces an environment
+  # value instead of appending to it. Compose publishes the port on the guest
+  # address, and the tack_queue firewall table on this guest accepts it only
+  # from the guests in tack_queue_external_clients.
+  kafka:
+    ports:
+      - "{{ tack_queue_external_port }}:{{ tack_queue_external_port }}"
+    environment:
+      KAFKA_LISTENERS: "PLAINTEXT://[::]:9092,CONTROLLER://[::]:9093,EXTERNAL://[::]:{{ tack_queue_external_port }}"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://[{{ service_mapping[service_name].ipv6 }}]:{{ tack_queue_external_port }}"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+{% endif %}
+{% if tack_cluster_role != 'search' and not tack_app_guest | bool %}
   yugabyte:
 {% if tack_provision_owner and not tack_ledger_legacy_node_present %}
     # Retired on this guest: the inactive profile keeps every compose up
@@ -171,7 +189,7 @@ services:
 {% else %}
       - --tserver_flags=flagfile=/home/yugabyte/tserver.flags
 {% endif %}
-{% else %}
+{% elif tack_cluster_role == 'search' %}
 
 volumes:
   opensearch-data:

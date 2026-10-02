@@ -126,3 +126,14 @@ tack_search_shards: 1
 tack_search_routing_shards: 8
 tack_search_replicas: 0
 tack_search_public_enabled: false
+
+# QA runs a second application process on tack_app2_suburban for the search
+# two-process continuation check (TACK-544). That app publishes audit events
+# to the owner guest's broker at this port on the owner's pinned address. The
+# owner guest's firewall table accepts the port only from the guests listed
+# here, by service mapping key.
+tack_queue_external_listener_enabled: true
+tack_queue_external_port: 9094
+tack_queue_external_clients:
+  - tack_app2_suburban
+tack_queue_firewall_path: /etc/tack-queue-firewall.nft

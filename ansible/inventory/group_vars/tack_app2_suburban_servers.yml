@@ -4,3 +4,12 @@ tack_provision_owner: false
 
 # This guest runs no ledger node.
 tack_ledger_node_name: ""
+
+# This guest runs only the app service, a second QA application process for
+# the search two-process continuation check (TACK-544). The app logs in with
+# the owner guest's application password, because `ops audit seed-roles` on
+# the owner sets that password on the login. The app publishes audit events to
+# the owner guest's broker on its pinned address.
+tack_app_guest: true
+tack_app_password_source: "{{ service_mapping.tack_qa_suburban.hostname }}"
+tack_audit_kafka_brokers: "[{{ service_mapping.tack_qa_suburban.ipv6 }}]:{{ tack_queue_external_port }}"
