@@ -93,9 +93,15 @@
       when:
         - mwan_transfer_lease_active | bool
         - mwan_ifmgr_restart_result is finished
-        - "'invocation' in mwan_ifmgr_restart_result"
-        - "'module_args' in mwan_ifmgr_restart_result.invocation"
-        - "'name' in mwan_ifmgr_restart_result.invocation.module_args"
-        - "'state' in mwan_ifmgr_restart_result.invocation.module_args"
-        - mwan_ifmgr_restart_result.invocation.module_args.name == 'mwan-ifmgr@wan'
-        - mwan_ifmgr_restart_result.invocation.module_args.state == 'restarted'
+        - "'ansible_job_id' in mwan_ifmgr_restart_result"
+        - mwan_ifmgr_restart_result.ansible_job_id == mwan_ifmgr_restart_job.ansible_job_id
+        - >-
+          ('name' in mwan_ifmgr_restart_result and 'state' in mwan_ifmgr_restart_result
+           and mwan_ifmgr_restart_result.name == 'mwan-ifmgr@wan'
+           and mwan_ifmgr_restart_result.state == 'started')
+          or ('invocation' in mwan_ifmgr_restart_result
+              and 'module_args' in mwan_ifmgr_restart_result.invocation
+              and 'name' in mwan_ifmgr_restart_result.invocation.module_args
+              and 'state' in mwan_ifmgr_restart_result.invocation.module_args
+              and mwan_ifmgr_restart_result.invocation.module_args.name == 'mwan-ifmgr@wan'
+              and mwan_ifmgr_restart_result.invocation.module_args.state == 'restarted')

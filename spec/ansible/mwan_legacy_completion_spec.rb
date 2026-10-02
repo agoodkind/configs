@@ -20,7 +20,9 @@ RSpec.describe 'MWAN mutation completion' do
 
   def pending?(operation, variable, result)
     TaskExpressions.evaluate(
-      variables: { 'mwan_legacy_mutation_pending' => true, 'mwan_install_reuse_lease' => true, variable => result },
+      variables: { 'mwan_legacy_mutation_pending' => true, 'mwan_install_reuse_lease' => true,
+                   'mwan_legacy_stop_job' => { 'ansible_job_id' => 'systemd-job' },
+                   'mwan_legacy_start_job' => { 'ansible_job_id' => 'systemd-job' }, variable => result },
       facts: [TaskExpressions.fact_task(completion_task(operation))],
       renders: [TaskExpressions.render_task({}, 'pending' => '{{ mwan_legacy_mutation_pending }}')]
     ).fetch('renders').first.fetch('pending')
@@ -50,10 +52,18 @@ RSpec.describe 'MWAN mutation completion' do
       name = operation == 'stop' ? 'Account for terminal legacy stop failures' : 'Account for terminal WAN startup failures'
       variable = "mwan_legacy_#{operation}_result"
       arguments = { 'name' => 'mwan-ifmgr@wan', 'state' => state }
-      result = { 'finished' => true, 'failed' => true, 'invocation' => { 'module_args' => arguments } }
+      completed = arguments.merge('finished' => true, 'ansible_job_id' => 'systemd-job')
+      expect(pending?(name, variable, completed)).to be(false)
+      expect(pending?(name, variable, completed.merge('ansible_job_id' => 'another-job'))).to be(true)
+      expect(pending?(name, variable, completed.merge('name' => 'unrelated.service'))).to be(true)
+      expect(pending?(name, variable, completed.merge('state' => 'restarted'))).to be(true)
+      result = { 'finished' => true, 'failed' => true, 'ansible_job_id' => 'systemd-job',
+                 'invocation' => { 'module_args' => arguments } }
       expect(pending?(name, variable, result)).to be(false)
       result['invocation'] = { 'module_args' => { 'jid' => 'missing-job', 'mode' => 'status' } }
       expect(pending?(name, variable, result)).to be(true)
+      timeout = { 'finished' => true, 'ansible_job_id' => 'systemd-job', 'failed' => true, 'msg' => 'Timeout exceeded' }
+      expect(pending?(name, variable, timeout)).to be(true)
       expect(pending?(name, variable, { 'finished' => false })).to be(true)
       expect(pending?(name, variable, {})).to be(true)
     end
@@ -63,7 +73,8 @@ RSpec.describe 'MWAN mutation completion' do
     path = File.join(AnsibleRender::REPOSITORY_ROOT, "ansible/playbooks/tasks/#{file}.yml")
     completion = YAML.safe_load_file(path).find { |entry| entry.key?('always') }.fetch('always').first
     TaskExpressions.evaluate(
-      variables: { 'mwan_transfer_lease_active' => true, 'mwan_transfer_mutation_pending' => true, variable => result },
+      variables: { 'mwan_transfer_lease_active' => true, 'mwan_transfer_mutation_pending' => true,
+                   'mwan_ifmgr_restart_job' => { 'ansible_job_id' => 'systemd-job' }, variable => result },
       facts: [TaskExpressions.fact_task(completion)],
       renders: [TaskExpressions.render_task({}, 'pending' => '{{ mwan_transfer_mutation_pending }}')]
     ).fetch('renders').first.fetch('pending')
@@ -76,7 +87,10 @@ RSpec.describe 'MWAN mutation completion' do
       expect(transfer_pending?(file, variable, { 'finished' => false })).to be(true)
       expect(transfer_pending?(file, variable, { 'finished' => true, 'failed' => true, 'msg' => 'could not find job' })).to be(true)
     end
-    result = { 'finished' => true, 'failed' => true,
+    completed = { 'finished' => true, 'ansible_job_id' => 'systemd-job', 'name' => 'mwan-ifmgr@wan', 'state' => 'started' }
+    expect(transfer_pending?('restart-mwan-ifmgr', 'mwan_ifmgr_restart_result', completed)).to be(false)
+    expect(transfer_pending?('restart-mwan-ifmgr', 'mwan_ifmgr_restart_result', completed.merge('ansible_job_id' => 'another-job'))).to be(true)
+    result = { 'finished' => true, 'failed' => true, 'ansible_job_id' => 'systemd-job',
                'invocation' => { 'module_args' => { 'name' => 'mwan-ifmgr@wan', 'state' => 'restarted' } } }
     expect(transfer_pending?('restart-mwan-ifmgr', 'mwan_ifmgr_restart_result', result)).to be(false)
     result['invocation'] = { 'module_args' => { 'jid' => 'missing-job', 'mode' => 'status' } }
