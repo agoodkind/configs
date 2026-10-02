@@ -18,8 +18,8 @@
 #   ./configsctl deploy deploy-seaweedfs \
 #     --limit seaweedfs_suburban_servers
 
-- name: Prepare seaweedfs guest (SSH keys, package-updater, base config)
-  ansible.builtin.import_playbook: prep-guests.yml
+- name: Verify SeaweedFS guest preparation
+  ansible.builtin.import_playbook: require-prepared-guests.yml
   vars:
     target_hosts: seaweedfs_servers:seaweedfs_suburban_servers
 

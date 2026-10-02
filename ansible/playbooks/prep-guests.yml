@@ -1,13 +1,9 @@
 ---
-# Prepare CT/VM guest for use (SSH-based configuration)
+# Guest preparation configures SSH access, base packages, and maintenance services.
+# Set target_hosts to the inventory host or group to configure.
 #
-# Required vars (provided via import_playbook):
-#   target_hosts: inventory hostname or group to configure
-#
-# Example:
-#   - ansible.builtin.import_playbook: prep-guests.yml
-#     vars:
-#       target_hosts: my_servers
+# Run preparation before the first service deploy or after a required revision change.
+# ./configsctl deploy prep-guests --limit my_servers --extra-var target_hosts=my_servers
 
 - name: Deploy SSH keys to CT/VM guests
   ansible.builtin.import_playbook: deploy-ssh-keys.yml
@@ -44,6 +40,12 @@
     - name: Gather facts
       ansible.builtin.setup:
 
+    - name: Invalidate the previous guest preparation revision
+      ansible.builtin.file:
+        path: "{{ guest_prep_revision_file }}"
+        state: absent
+      when: not ansible_check_mode
+
     - name: Detect if running in LXC container or VM
       ansible.builtin.set_fact:
         is_lxc: "{{ ansible_facts['virtualization_type'] == 'lxc' }}"
@@ -68,6 +70,7 @@
     - name: Update package lists
       ansible.builtin.apt:
         update_cache: true
+        cache_valid_time: "{{ apt_cache_valid_time }}"
       environment:
         DEBIAN_FRONTEND: noninteractive
 
@@ -436,6 +439,9 @@
 
     - name: Wait for the controller connection after SSH restarts
       ansible.builtin.include_tasks: tasks/wait-for-connection.yml
+
+    - name: Mark the guest preparation complete
+      ansible.builtin.import_tasks: tasks/mark-prepared-guest.yml
 
   handlers:
     - name: Restart getty service

@@ -6,6 +6,24 @@ running and deployable state, and keeps it there as the fleet changes.
 Each app repo owns the stack that runs on that guest, Ansible fetches that
 stack at the deployed ref, and playbooks run through configsctl.
 
+## Guest preparation and service deployment
+
+Guest preparation configures SSH access, base packages, locales, SMTP, and
+maintenance timers. MWAN, Tack, proxy, AdGuard, DNS64, and SeaweedFS service
+deploys require a completed preparation revision instead of repeating that
+configuration. A missing or outdated revision stops deployment before service
+configuration changes. The revision records successful preparation; it does
+not detect later changes inside the guest.
+
+OpenTofu configures guest resources and supports initial hostname, networking,
+DNS, and root SSH keys for LXCs. Ansible configures packages, global SSH
+authorization, and services inside the guests. The MWAN VMs have no cloud-init
+initialization. Installing cloud-init and configuring first-boot data would
+require a separate migration of those guests.
+
+For a new guest, an existing guest without a preparation revision, or a required
+baseline update, follow [Prepare guests for service deployment](ops/ansible/preparation.md).
+
 ## Inventory layout
 
 Ansible walks the inventory directory and merges every source, so the
@@ -68,9 +86,8 @@ A drop-in without its key file locks the guest out at the next sshd restart,
 which can come days later from the weekly package updater. Guest prep
 therefore fails the run when the key file is missing or empty, before it
 writes its own copy of the drop-in. The SSH-key deploy runs inside the play
-for the targeted guests rather than in a separate controller play, because
-`--limit` on a guest group skips a controller play and the key file would
-never be written.
+for the targeted guests during preparation. A guest group limit skips a separate
+controller play, preventing that play from writing the key file.
 
 ## Proxmox plugin name collisions
 

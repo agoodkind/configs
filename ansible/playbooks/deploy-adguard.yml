@@ -1,6 +1,6 @@
 ---
-- name: Prepare AdGuard container (SSH keys, packages, base config)
-  ansible.builtin.import_playbook: prep-guests.yml
+- name: Verify AdGuard guest preparation
+  ansible.builtin.import_playbook: require-prepared-guests.yml
   vars:
     target_hosts: adguard_servers
 
@@ -42,6 +42,7 @@
           - python3-certbot-dns-cloudflare
         state: present
         update_cache: true
+        cache_valid_time: "{{ apt_cache_valid_time }}"
       when: adguard_tls_enabled | bool
 
     - name: Create Cloudflare credentials file for certbot

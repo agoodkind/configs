@@ -1,0 +1,9 @@
+---
+- name: Verify guest preparation before service deployment
+  hosts: "{{ target_hosts }}"
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [always, guest-preparation]
+  tasks:
+    - name: Require a prepared guest
+      ansible.builtin.import_tasks: tasks/require-prepared-guest.yml

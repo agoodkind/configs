@@ -1,0 +1,15 @@
+---
+- name: Record successful guest preparation
+  when: not ansible_check_mode
+  block:
+    - name: Create the guest preparation state directory
+      ansible.builtin.file:
+        path: "{{ guest_prep_revision_file | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write the completed guest preparation revision
+      ansible.builtin.copy:
+        dest: "{{ guest_prep_revision_file }}"
+        content: "{{ guest_prep_revision }}\n"
+        mode: "0644"

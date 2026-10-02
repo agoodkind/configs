@@ -55,11 +55,15 @@ ansible_ssh_common_args: "{{ ssh_base_args }}"
 # ----------------------------------------------------------------------------
 # Guest prep defaults (prep-guests), shared by every service
 # ----------------------------------------------------------------------------
+# Increment the revision when a preparation change must apply before a service deploy.
+guest_prep_revision: "1"
+guest_prep_revision_file: /var/lib/configs/guest-prep-revision
+apt_cache_valid_time: 3600
 # SSH port every guest listens on; proxy overrides this to 2222 in its group_vars.
 service_ssh_port: 22
 # Console auto-login for LXC guests.
 console_autologin_enabled: true
-# Default target group for a bare prep-guests run; every deploy overrides this at import.
+# A bare preparation run targets this group. Targeted runs override target_hosts.
 target_hosts: proxmox_all_lxc
 # Interactive login directory inside each guest; a service overrides it per group_vars.
 login_dir: /root

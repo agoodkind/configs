@@ -10,8 +10,8 @@
 #   ssh -p 2222 root@proxy.home.goodkind.io
 #   (or ssh -p 2222 root@10.250.0.10)
 
-- name: Prepare proxy container (SSH keys, packages, base config)
-  ansible.builtin.import_playbook: prep-guests.yml
+- name: Verify proxy guest preparation
+  ansible.builtin.import_playbook: require-prepared-guests.yml
   vars:
     target_hosts: proxy_servers
 

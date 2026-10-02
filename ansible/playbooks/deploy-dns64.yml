@@ -14,8 +14,8 @@
 #   # Both at once:
 #   ./configsctl deploy deploy-dns64 --limit dns64_all
 
-- name: Prepare dns64 guest (SSH keys, package-updater, base config)
-  ansible.builtin.import_playbook: prep-guests.yml
+- name: Verify DNS64 guest preparation
+  ansible.builtin.import_playbook: require-prepared-guests.yml
   vars:
     target_hosts: dns64_servers:dns64_suburban_servers
 
