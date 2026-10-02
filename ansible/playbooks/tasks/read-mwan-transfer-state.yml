@@ -1,4 +1,5 @@
 - name: Read the running daemon's selected connection ownership
+  timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   vars:
     selected: >-
       {{ (mwan_transfer_operational.stdout | from_json)['ietf-interfaces:interfaces']['interface']

@@ -3,12 +3,19 @@
     connect_timeout: 5
     sleep: 5
     timeout: 300
+  when: not mwan_transfer_lease_active | bool
 
 - name: Authorize the next gateway mutation
   ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
   vars:
-    mwan_operation_phase: wan-restart
-    mwan_operation_budget_seconds: "{{ mwan_ifmgr_restart_timeout_seconds | int * 2 + 300 + 120 + 30 }}"
+    mwan_operation_phase: "{{ 'connection-handover-' ~ mwan_transfer_connection_id if mwan_transfer_lease_active | bool else 'wan-restart' }}"
+    mwan_operation_reuse_lease: "{{ mwan_transfer_lease_active }}"
+    mwan_operation_budget_seconds: >-
+      {{ mwan_operation_metadata_timeout_seconds | int + mwan_ifmgr_restart_timeout_seconds | int
+         + mwan_operation_reconnect_timeout_seconds | int + 5
+         + mwan_operation_checkpoint_timeout_seconds | int * 3 + 5
+         if mwan_transfer_lease_active | bool
+         else mwan_ifmgr_restart_timeout_seconds | int * 2 + 300 + 120 + 30 }}
 
 - name: Check the ifmgr restart
   timeout: "{{ mwan_operation_task_timeout_seconds }}"
@@ -21,34 +28,74 @@
 - name: Authorize the next gateway mutation
   ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
   vars:
-    mwan_operation_phase: wan-restart
-    mwan_operation_budget_seconds: "{{ mwan_ifmgr_restart_timeout_seconds | int * 2 + 300 + 120 + 30 }}"
+    mwan_operation_phase: "{{ 'connection-handover-' ~ mwan_transfer_connection_id if mwan_transfer_lease_active | bool else 'wan-restart' }}"
+    mwan_operation_reuse_lease: "{{ mwan_transfer_lease_active }}"
+    mwan_operation_budget_seconds: >-
+      {{ mwan_operation_metadata_timeout_seconds | int + mwan_ifmgr_restart_timeout_seconds | int
+         + mwan_operation_reconnect_timeout_seconds | int + 5
+         + mwan_operation_checkpoint_timeout_seconds | int * 3 + 5
+         if mwan_transfer_lease_active | bool
+         else mwan_ifmgr_restart_timeout_seconds | int * 2 + 300 + 120 + 30 }}
+  when: not mwan_transfer_lease_active | bool
 
-- name: Start the ifmgr restart without waiting on SSH
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  ansible.builtin.systemd:
-    name: mwan-ifmgr@wan
-    state: restarted
-    daemon_reload: true
-  async: "{{ mwan_ifmgr_restart_timeout_seconds }}"
-  poll: 0
-  register: mwan_ifmgr_restart_job
+- name: Complete the bounded ifmgr restart
   when: not ansible_check_mode
+  block:
+    - name: Record the pending transfer restart
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: true
+        mwan_ifmgr_restart_result: {}
+      when: mwan_transfer_lease_active | bool
 
-- name: Wait for the controller connection after ifmgr restarts
-  ansible.builtin.wait_for_connection:
-    connect_timeout: 5
-    # The first usable SSH connection must follow the async job deadline.
-    delay: "{{ mwan_ifmgr_restart_timeout_seconds }}"
-    sleep: 5
-    timeout: 300
-  when: not ansible_check_mode
+    - name: Start the ifmgr restart without waiting on SSH
+      timeout: "{{ mwan_operation_metadata_timeout_seconds if mwan_transfer_lease_active | bool else mwan_operation_task_timeout_seconds }}"
+      ansible.builtin.systemd:
+        name: mwan-ifmgr@wan
+        state: restarted
+        daemon_reload: true
+      async: "{{ mwan_ifmgr_restart_timeout_seconds }}"
+      poll: 0
+      register: mwan_ifmgr_restart_job
 
-- name: Verify the ifmgr restart completed
-  ansible.builtin.async_status:
-    jid: "{{ mwan_ifmgr_restart_job.ansible_job_id }}"
-  register: mwan_ifmgr_restart_result
-  until: mwan_ifmgr_restart_result is finished
-  retries: 24
-  delay: 5
-  when: not ansible_check_mode
+    - name: Wait for the controller connection after ifmgr restarts
+      timeout: >-
+        {{ mwan_ifmgr_restart_timeout_seconds | int
+           + (mwan_operation_reconnect_timeout_seconds | int if mwan_transfer_lease_active | bool else 300) + 5 }}
+      ansible.builtin.wait_for_connection:
+        connect_timeout: 5
+        # The first usable SSH connection must follow the async job deadline.
+        delay: "{{ mwan_ifmgr_restart_timeout_seconds }}"
+        sleep: 5
+        timeout: "{{ mwan_operation_reconnect_timeout_seconds if mwan_transfer_lease_active | bool else 300 }}"
+
+    - name: Authorize reading the issued transfer restart completion
+      ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
+      vars:
+        mwan_operation_phase: "connection-handover-{{ mwan_transfer_connection_id }}"
+        mwan_operation_acquire: false
+        mwan_operation_reuse_lease: true
+        mwan_operation_completion_only: true
+      when: mwan_transfer_lease_active | bool
+
+    - name: Verify the ifmgr restart completed
+      timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
+      ansible.builtin.async_status:
+        jid: "{{ mwan_ifmgr_restart_job.ansible_job_id }}"
+      register: mwan_ifmgr_restart_result
+      until: mwan_ifmgr_restart_result is finished
+      retries: "{{ 1 if mwan_transfer_lease_active | bool else 24 }}"
+      delay: 5
+
+  always:
+    - name: Record proved transfer restart completion
+      ansible.builtin.set_fact:
+        mwan_transfer_mutation_pending: false
+      when:
+        - mwan_transfer_lease_active | bool
+        - mwan_ifmgr_restart_result is finished
+        - "'invocation' in mwan_ifmgr_restart_result"
+        - "'module_args' in mwan_ifmgr_restart_result.invocation"
+        - "'name' in mwan_ifmgr_restart_result.invocation.module_args"
+        - "'state' in mwan_ifmgr_restart_result.invocation.module_args"
+        - mwan_ifmgr_restart_result.invocation.module_args.name == 'mwan-ifmgr@wan'
+        - mwan_ifmgr_restart_result.invocation.module_args.state == 'restarted'

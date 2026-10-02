@@ -16,13 +16,27 @@ mwan_operation_acquire: true
 mwan_operation_completion_only: false
 mwan_operation_reuse_lease: false
 mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
-mwan_operation_handover_lease_seconds: 1800
+mwan_operation_handover_lease_seconds: "{{ mwan_operation_handover_budget_seconds | int + 30 }}"
+mwan_transfer_prepared: false
+mwan_transfer_active: false
+mwan_transfer_provider: false
+mwan_transfer_connection_id: ""
+mwan_transfer_snapshot_ready: false
+mwan_transfer_controller_created: false
+mwan_transfer_capture_paths: []
+mwan_transfer_recovery_excluded: false
+mwan_transfer_lease_active: false
+mwan_transfer_mutation_pending: false
+mwan_transfer_expected_interruptions: []
+mwan_role_first_install: false
 mwan_operation_task_timeout_seconds: 120
 mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds }}"
 mwan_operation_reconnect_timeout_seconds: 120
 mwan_operation_poll_budget_seconds: 120
 mwan_operation_duration_seconds: >-
-  {{ 7200 + mwan_operation_legacy_activation_budget_seconds | int }}
+  {{ 7200 + mwan_operation_legacy_activation_budget_seconds | int
+     + (mwan_operation_handover_lease_seconds | int + mwan_operation_restore_budget_seconds | int
+        if mwan_transfer_active | bool else 0) }}
 mwan_operation_poll_seconds: 5
 mwan_operation_observation_timeout_seconds: 15
 mwan_operation_checkpoint_timeout_seconds: 5
@@ -30,6 +44,7 @@ mwan_operation_metadata_timeout_seconds: 15
 mwan_operation_native_timeout_seconds: 30
 mwan_operation_copy_timeout_seconds: 30
 mwan_operation_restore_budget_seconds: 600
+mwan_operation_handover_budget_seconds: 0
 mwan_legacy_status_timeout_seconds: 5
 # Async stop execution is bounded by the task timeout. Each poll consumes its
 # command timeout plus five seconds; allow one final completion read.
@@ -68,6 +83,7 @@ mwan_operation_legacy_activation_budget_seconds: >-
      + mwan_legacy_health_budget_seconds | int }}
 mwan_operation_max_lease_seconds: >-
   {{ [mwan_operation_legacy_activation_budget_seconds | int + 30,
+      mwan_operation_handover_lease_seconds | int if mwan_transfer_active | bool else 0,
       mwan_operation_task_timeout_seconds | int * 8
       + mwan_operation_reconnect_timeout_seconds | int
       + mwan_operation_poll_budget_seconds | int + 60,
@@ -85,6 +101,11 @@ mwan_operation_observer_vmids:
 mwan_operation_inbound_ssh_version: "SSH-2.0-OpenSSH_10.5 FreeBSD-openssh-portable-10.5.p1_1,1"
 mwan_operation_local_ipv4_source: "158.247.70.47"
 mwan_operation_local_ipv6_source: "2607:f598:d3e0:131:6662:66ff:fe23:f982"
+mwan_operation_inbound_check_connections:
+  inbound-webpass-ipv4: webpass
+  inbound-webpass-ipv6: webpass
+  inbound-att-ipv4: att
+  inbound-att-ipv6: att
 mwan_operation_inbound_checks:
   - id: inbound-webpass-ipv4
     operation: ssh_banner

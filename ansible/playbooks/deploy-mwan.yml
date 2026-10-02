@@ -257,6 +257,13 @@
           check_mode: false
       when: mwan_ifmgr_wan_enabled | bool
 
+    - name: Prepare the exact connection transfer before operation rendering
+      ansible.builtin.include_tasks: tasks/prepare-mwan-connection-transfer.yml
+      when:
+        - mwan_ifmgr_wan_enabled | bool
+        - not mwan_bootstrap_guest | bool
+        - not ansible_check_mode
+
     - name: Install the matching autonomous hypervisor watchdog
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.copy:

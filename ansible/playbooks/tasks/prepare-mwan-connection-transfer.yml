@@ -1,7 +1,12 @@
+- name: Initialize the unchanged role input document
+  ansible.builtin.set_fact:
+    mwan_role_install_network: "{{ mwan_network_json_local }}"
+
 - name: Compare installed and requested connection owners
   when: not (mwan_role_first_install | bool)
   block:
     - name: Read the installed network document
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
       ansible.builtin.slurp:
         src: /etc/mwan/network.json
       register: mwan_transfer_installed
@@ -11,6 +16,21 @@
       ansible.builtin.set_fact:
         mwan_transfer_prior_document: "{{ mwan_transfer_installed.content | b64decode | from_json }}"
         mwan_transfer_target_document: "{{ lookup('file', mwan_network_json_local) | from_json }}"
+
+    - name: Require explicit inbound check associations to configured connections
+      vars:
+        required_ids: >-
+          {{ mwan_operation_inbound_checks | selectattr('dimension', 'equalto', 'inbound_application')
+             | map(attribute='id') | list }}
+        configured_ids: >-
+          {{ mwan_transfer_target_document['ietf-interfaces:interfaces']['interface']
+             | map(attribute='goodkind-mwan-steering:connection-id') | list }}
+      ansible.builtin.assert:
+        that:
+          - item.key in required_ids
+          - item.value is string and item.value != '' and item.value in configured_ids
+        fail_msg: Each inbound association requires an existing required check and configured stable connection.
+      loop: "{{ mwan_operation_inbound_check_connections | dict2items }}"
 
     - name: Identify changed connection owners
       ansible.builtin.set_fact:
@@ -47,6 +67,9 @@
         mwan_transfer_previous: "{{ mwan_transfer_changes[0].prior }}"
         mwan_transfer_replacement: "{{ mwan_transfer_changes[0].target }}"
         mwan_transfer_connection_id: "{{ mwan_transfer_changes[0].prior['goodkind-mwan-steering:connection-id'] }}"
+        mwan_transfer_provider: >-
+          {{ 'goodkind-mwan-steering:wan' in mwan_transfer_changes[0].prior
+             and 'goodkind-mwan-steering:wan' in mwan_transfer_changes[0].target }}
 
     - name: Require the settled transfer and packet contract
       vars:
@@ -103,7 +126,7 @@
         fail_msg: A packet check requires an inventory host, argv, description, family, coverage, and connection identity.
       loop: "{{ mwan_transfer_packet_checks }}"
       loop_control:
-        label: "{{ item.description | default('invalid packet operation') }}"
+        label: "{{ item.description }}"
 
     - name: Validate requested runtime IPv6 translation edges before staging
       ansible.builtin.include_tasks: validate-mwan-transfer-packet-edges.yml
@@ -141,6 +164,7 @@
       ansible.builtin.tempfile:
         state: directory
         prefix: mwan-transfer-
+        path: "{{ mwan_controller_artifact_root }}"
       delegate_to: localhost
       become: false
       vars:
@@ -183,6 +207,7 @@
         mwan_role_install_network: "{{ mwan_transfer_controller_directory.path }}/source.json"
 
     - name: Read the selected connection's prior networkd input
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
       ansible.builtin.command:
         argv: [networkctl, status, "{{ mwan_transfer_previous.name }}", --json=short]
       register: mwan_transfer_prior_networkd
@@ -194,3 +219,59 @@
           {{ ['/etc/systemd/network/00-mwan-release-' ~ mwan_transfer_connection_id ~ '.network']
              + ([(mwan_transfer_prior_networkd.stdout | from_json).NetworkFile]
                 if mwan_transfer_previous['goodkind-mwan-steering:owner'] == 'networkd' else []) }}
+
+    - name: Count the actual operational packet edge reads
+      ansible.builtin.set_fact:
+        mwan_transfer_packet_edge_count: >-
+          {% set edges = [] %}
+          {% for check in mwan_transfer_packet_checks %}
+          {% if check.phase in ['excluded', 'acquired', 'selected'] and 'ipv6_translation_edge' in check %}
+          {% set _ = edges.append(check) %}
+          {% endif %}
+          {% endfor %}
+          {{ edges | length }}
+
+    # The reconnect delay includes the complete remote execution deadline.
+    # Two final status attempts follow the async wrapper's five-second cadence.
+    - name: Calculate bounded transfer jobs and readiness reads
+      ansible.builtin.set_fact:
+        mwan_transfer_read_poll_budget_seconds: "{{ 31 * mwan_operation_checkpoint_timeout_seconds | int + 30 }}"
+        mwan_transfer_remote_budget_seconds: >-
+          {{ mwan_operation_metadata_timeout_seconds | int + mwan_role_job_timeout_seconds | int
+             + mwan_operation_reconnect_timeout_seconds | int + 5
+             + (4 + 1 + 2) * mwan_operation_checkpoint_timeout_seconds | int + 5 }}
+
+    - name: Calculate the complete selected connection transfer budget
+      ansible.builtin.set_fact:
+        mwan_operation_handover_budget_seconds: >-
+          {{ mwan_transfer_remote_budget_seconds | int * 6
+             + (8 + (1 if mwan_transfer_previous['goodkind-mwan-steering:owner'] == 'networkd' else 0))
+               * mwan_transfer_read_poll_budget_seconds | int
+             + mwan_operation_copy_timeout_seconds | int * 5
+             + mwan_operation_checkpoint_timeout_seconds | int * 2
+             + mwan_operation_metadata_timeout_seconds | int
+             + (mwan_operation_checkpoint_timeout_seconds | int
+                if mwan_transfer_previous['goodkind-mwan-steering:owner'] == 'networkd'
+                else mwan_operation_metadata_timeout_seconds | int)
+             + ((4 + (1 if mwan_transfer_replacement['goodkind-mwan-steering:owner'] == 'networkd' else 0)) * 4 + 8)
+               * mwan_operation_checkpoint_timeout_seconds | int
+             + (mwan_transfer_packet_checks | selectattr('phase', 'in', ['excluded', 'acquired', 'selected']) | list | length)
+               * mwan_operation_native_timeout_seconds | int
+             + mwan_transfer_packet_edge_count | int * mwan_operation_checkpoint_timeout_seconds | int }}
+
+    - name: Select only explicitly associated required inbound checks
+      vars:
+        associated_ids: >-
+          {{ mwan_operation_inbound_check_connections | dict2items
+             | selectattr('value', 'equalto', mwan_transfer_connection_id)
+             | map(attribute='key') | list }}
+      ansible.builtin.set_fact:
+        mwan_transfer_expected_interruptions: >-
+          {{ [{'phase': 'connection-handover-' ~ mwan_transfer_connection_id,
+               'check_ids': associated_ids,
+               'max_seconds': mwan_operation_handover_lease_seconds | int}]
+             if mwan_transfer_provider | bool and associated_ids != [] else [] }}
+
+- name: Record the validated connection transfer plan
+  ansible.builtin.set_fact:
+    mwan_transfer_prepared: true

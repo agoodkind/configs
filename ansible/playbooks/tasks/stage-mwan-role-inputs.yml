@@ -33,7 +33,9 @@
     src: "{{ mwan_role_install_network }}"
     dest: /etc/mwan/network.json
     mode: "0600"
-  when: mwan_ifmgr_wan_enabled | bool
+  when:
+    - mwan_ifmgr_wan_enabled | bool
+    - not mwan_transfer_active | bool
   notify: Restart mwan-ifmgr@wan
 
 - name: Authorize the next gateway mutation

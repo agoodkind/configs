@@ -6,6 +6,7 @@
     mwan_transfer_capture_paths: []
     mwan_transfer_recovery_excluded: false
     mwan_role_install_network: "{{ mwan_network_json_local }}"
+  when: not mwan_transfer_prepared | bool
 
 - name: Establish the initial role configuration when needed
   ansible.builtin.include_tasks: prepare-mwan-role-inputs.yml
@@ -23,15 +24,7 @@
       when:
         - mwan_ifmgr_wan_enabled | bool
         - not ansible_check_mode
-
-    - name: Require the separate runtime policy before a whole-connection handover
-      ansible.builtin.assert:
-        that:
-          - not (mwan_operation_armed | bool and mwan_transfer_active | bool)
-        fail_msg: >-
-          Preparation recovery currently requires every inbound check to pass.
-          Whole-connection handover requires a separately reviewed bounded
-          policy for its expected acquisition gap.
+        - not mwan_transfer_prepared | bool
 
     - name: Preserve prior role inputs before staging
       ansible.builtin.include_tasks: capture-mwan-role-inputs.yml
@@ -42,19 +35,12 @@
     - name: Install all MWAN runtime inputs
       ansible.builtin.include_tasks: "{{ mwan_role_staging_task_file }}"
 
-    - name: Authorize the next gateway mutation
-      ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-      vars:
-        mwan_operation_phase: "connection-handover-{{ mwan_transfer_connection_id }}"
-        mwan_operation_lease_seconds: "{{ mwan_operation_handover_lease_seconds }}"
-      when:
-        - mwan_transfer_active | bool
-        - not ansible_check_mode
+    - name: Apply ordinary runtime handlers before the connection transfer
+      ansible.builtin.meta: flush_handlers
+      when: mwan_transfer_active | bool
 
     - name: Transfer the selected complete connection
       ansible.builtin.include_tasks: transfer-mwan-connection.yml
-      vars:
-        mwan_operation_reuse_lease: true
       when:
         - mwan_transfer_active | bool
         - not ansible_check_mode
