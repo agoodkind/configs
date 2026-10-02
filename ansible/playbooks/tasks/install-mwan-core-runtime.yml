@@ -126,32 +126,41 @@
     mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
     mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds }}"
 
+- name: Initialize the installer completion result
+  ansible.builtin.set_fact:
+    mwan_install: {}
+
 - name: Record a potentially outstanding legacy mutation
   ansible.builtin.set_fact:
     mwan_legacy_mutation_pending: true
   when: mwan_install_reuse_lease | bool
 
-- name: Install the units and schema the mwan binary embeds
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  async: "{{ mwan_operation_task_timeout_seconds }}"
-  poll: 5
-  ansible.builtin.command:
-    argv:
-      - /usr/local/bin/mwan
-      - install
-      - --role
-      - wan
-      - --apply
-  register: mwan_install
-  changed_when: >-
-    mwan_install.stdout_lines
-    | select('match', '^(wrote|installed module|updated module|imported the) ')
-    | list | length > 0
-  notify: >-
-    {{ ['Restart rousette', 'Restart nghttpx-wanconfig']
-       + (['Restart mwan-ifmgr@wan'] if mwan_install_notify_wan else []) }}
-
-- name: Record verified legacy mutation completion
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: false
-  when: mwan_install_reuse_lease | bool
+- name: Account for terminal candidate installer failures
+  block:
+    - name: Install the units and schema the mwan binary embeds
+      timeout: "{{ mwan_operation_task_timeout_seconds }}"
+      async: "{{ mwan_operation_task_timeout_seconds }}"
+      poll: 5
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/mwan
+          - install
+          - --role
+          - wan
+          - --apply
+      register: mwan_install
+      changed_when: >-
+        mwan_install.stdout_lines
+        | select('match', '^(wrote|installed module|updated module|imported the) ')
+        | list | length > 0
+      notify: >-
+        {{ ['Restart rousette', 'Restart nghttpx-wanconfig']
+           + (['Restart mwan-ifmgr@wan'] if mwan_install_notify_wan else []) }}
+  always:
+    - name: Record proved installer completion
+      ansible.builtin.set_fact:
+        mwan_legacy_mutation_pending: false
+      when:
+        - mwan_install_reuse_lease | bool
+        - mwan_install is finished
+        - "'rc' in mwan_install"

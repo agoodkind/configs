@@ -10,15 +10,28 @@ RSpec.describe 'MWAN legacy mutation completion' do
   end
 
   def completion_task(operation)
+    if operation == 'Account for terminal candidate installer failures'
+      path = File.join(AnsibleRender::REPOSITORY_ROOT, 'ansible/playbooks/tasks/install-mwan-core-runtime.yml')
+      return YAML.safe_load_file(path).find { |entry| entry.fetch('name') == operation }.fetch('always').first
+    end
+
     tasks.fetch('block').find { |entry| entry.fetch('name') == operation }.fetch('always').first
   end
 
   def pending?(operation, variable, result)
     TaskExpressions.evaluate(
-      variables: { 'mwan_legacy_mutation_pending' => true, variable => result },
+      variables: { 'mwan_legacy_mutation_pending' => true, 'mwan_install_reuse_lease' => true, variable => result },
       facts: [TaskExpressions.fact_task(completion_task(operation))],
       renders: [TaskExpressions.render_task({}, 'pending' => '{{ mwan_legacy_mutation_pending }}')]
     ).fetch('renders').first.fetch('pending')
+  end
+
+  it 'records a completed installer failure while retaining unproved installation' do
+    name = 'Account for terminal candidate installer failures'
+    expect(pending?(name, 'mwan_install', { 'finished' => true, 'failed' => true, 'rc' => 1 })).to be(false)
+    expect(pending?(name, 'mwan_install', { 'finished' => false, 'failed' => true })).to be(true)
+    expect(pending?(name, 'mwan_install', { 'finished' => true, 'msg' => 'Timeout exceeded', 'failed' => true })).to be(true)
+    expect(pending?(name, 'mwan_install', {})).to be(true)
   end
 
   it 'records completed command failures without accepting lost or unfinished results' do
