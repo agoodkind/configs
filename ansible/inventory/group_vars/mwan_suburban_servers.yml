@@ -348,6 +348,21 @@ mwan_providers:
           entries:
             - key: MACAddress
               value: "{{ mwan_webpass_mac | lower }}"
+      network:
+        - name: IPv6AcceptRA
+          entries:
+            - { key: UseAutonomousPrefix, value: "no" }
+            - { key: UseGateway, value: "yes" }
+            - { key: UseDNS, value: "yes" }
+        - name: DHCPv6
+          entries:
+            - { key: DUIDType, value: vendor }
+            - { key: DUIDRawData, value: "00:00:ab:11:11:18:28:f5:2b:50:d8:af" }
+            - { key: IAID, value: "1370549548" }
+            - { key: UseAddress, value: "no" }
+            - { key: UseDelegatedPrefix, value: "yes" }
+            - { key: WithoutRA, value: solicit }
+            - { key: UseDNS, value: "yes" }
     ipv4:
       translation:
         mode: ietf-nat:napt44
@@ -372,18 +387,8 @@ mwan_providers:
       forwarding: true
       dhcp: true
       accept_ra: true
-      autoconf: false
-      accept_ra_default_route: true
-      use_ra_dns: true
       delegation:
         hint: "::/56"
-      dhcpv6_client:
-        duid: "00:02:00:00:ab:11:11:18:28:f5:2b:50:d8:af"
-        prefix_iaid: 1370549548
-        request_address: false
-        request_prefix: true
-        without_ra: solicit
-        use_dns: true
     table: 200
     mark: 2
     mark_prio: 200
