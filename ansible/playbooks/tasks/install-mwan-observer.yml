@@ -7,6 +7,9 @@
 - name: Replace the observer executable through a verified new inode
   delegate_to: "{{ mwan_proxmox_delegate }}"
   check_mode: false
+  vars:
+    # lxc-attach enables terminal signal handling when a descriptor is a PTY.
+    ansible_ssh_use_tty: false
   block:
     - name: Stage the released executable beside the active observer
       ansible.builtin.command:
