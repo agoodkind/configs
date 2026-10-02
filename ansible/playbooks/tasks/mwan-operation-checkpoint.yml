@@ -165,6 +165,16 @@
 - name: Require enough live lease time for the complete mutation
   vars:
     operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
+    lease_timestamp: >-
+      {{ operation.lease.expires_at
+         | regex_replace('(?<=[.][0-9]{6})[0-9]+', '') }}
+    deadline_timestamp: >-
+      {{ mwan_operation_reuse_deadline.stdout | trim
+         | regex_replace('(?<=[.][0-9]{6})[0-9]+', '') }}
+    lease_time_format: >-
+      {{ '%Y-%m-%dT%H:%M:%S' ~ ('.%f' if '.' in lease_timestamp else '') ~ '%z' }}
+    deadline_time_format: >-
+      {{ '%Y-%m-%dT%H:%M:%S' ~ ('.%f' if '.' in deadline_timestamp else '') ~ '%z' }}
   ansible.builtin.assert:
     that:
       - operation.operation_id == mwan_deploy_trace_id
@@ -173,8 +183,8 @@
       - operation.lease.id == mwan_operation_lease_id
       - operation.lease.phase == mwan_operation_phase
       - >-
-        operation.lease.expires_at | regex_replace('[.][0-9]+Z$', 'Z')
-        > mwan_operation_reuse_deadline.stdout | trim
+        (lease_timestamp | to_datetime(lease_time_format))
+        > (deadline_timestamp | to_datetime(deadline_time_format))
     fail_msg: The granted mutation lease cannot cover the next bounded operation.
   when:
     - mwan_operation_armed | bool
