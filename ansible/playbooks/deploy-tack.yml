@@ -247,11 +247,14 @@
     # members with the data role, because OpenSearch places each replica on a
     # data member other than the one that stores its primary. It refuses a
     # first member without the cluster_manager role, because the first member
-    # forms the cluster. It also refuses single-node discovery with any member
-    # count other than one. An environment with search off skips this check.
+    # forms the cluster. It refuses a member listed under more than one role
+    # set, because the member renders only one of them. It also refuses
+    # single-node discovery with any member count other than one. An
+    # environment with search off skips this check.
     - name: Refuse a search topology the members cannot place
       ansible.builtin.assert:
         that:
+          - tack_search_listed_members == (tack_search_listed_members | unique | list)
           - tack_search_data_members[(tack_search_replicas | int):] != []
           - tack_search_members[:1] != [] and tack_search_members[0] not in tack_search_non_manager_members
           - >-
@@ -261,10 +264,13 @@
           The search topology sets {{ tack_search_replicas }} replicas across
           the members {{ tack_search_members | join(', ') }}, of which
           {{ tack_search_data_members | join(', ') }} have the data role, with
-          single-node discovery {{ tack_search_single_node }}. Every replica
-          needs a distinct data member, the first member needs
-          cluster_manager, and single-node discovery runs exactly one member.
+          single-node discovery {{ tack_search_single_node }}, and the role
+          set lists {{ tack_search_role_set_members }}. A member appears in at
+          most one role set list, every replica needs a distinct data member,
+          the first member needs cluster_manager, and single-node discovery
+          runs exactly one member.
       vars:
+        tack_search_listed_members: "{{ tack_search_role_set_members | dict2items | map(attribute='value') | flatten }}"
         # The members listed under a role set without the given role. Every
         # unlisted member runs the combined set, which has every role.
         tack_search_non_data_members: >-

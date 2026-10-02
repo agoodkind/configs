@@ -46,10 +46,12 @@ module TackSearchNode
   end
 
   # The inventory member lists with each assigned member added to the list of
-  # its role set.
+  # each of its role sets.
   def role_set_members(assignments)
     lists = YAML.safe_load_file(CLUSTER_FILE).fetch('tack_search_role_set_members')
-    assignments.each { |member, role_set| lists.fetch(role_set).push(member) }
+    assignments.each do |member, role_sets|
+      Array(role_sets).each { |role_set| lists.fetch(role_set).push(member) }
+    end
     lists
   end
 
@@ -184,7 +186,9 @@ RSpec.describe TackSearchNode do
     'one replica on a combined member and a data-only member' =>
       [{ replicas: 1, members: 2, member_role_sets: { 'tack_search2' => 'data' } }, true],
     'a first member without the cluster_manager role' =>
-      [{ replicas: 0, members: 2, member_role_sets: { 'tack_search1' => 'data' } }, false]
+      [{ replicas: 0, members: 2, member_role_sets: { 'tack_search1' => 'data' } }, false],
+    'a member listed under two role sets' =>
+      [{ replicas: 0, members: 2, member_role_sets: { 'tack_search2' => %w[data coordinating] } }, false]
   }.each do |name, (inputs, accepted)|
     it "#{accepted ? 'accepts' : 'refuses'} #{name}" do
       variables = described_class.topology(**inputs)
