@@ -15,8 +15,11 @@ mwan_operation_lease_id: ""
 mwan_operation_acquire: true
 mwan_operation_completion_only: false
 mwan_operation_reuse_lease: false
-mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
-mwan_operation_handover_lease_seconds: "{{ mwan_operation_handover_budget_seconds | int + 30 }}"
+mwan_operation_lease_seconds: >-
+  {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
+mwan_operation_handover_lease_seconds: >-
+  {{ mwan_operation_handover_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
+mwan_operation_initial_lease_allowance_seconds: "{{ 4 * mwan_operation_checkpoint_timeout_seconds | int + 10 }}"
 mwan_transfer_prepared: false
 mwan_transfer_active: false
 mwan_transfer_provider: false
@@ -39,7 +42,7 @@ mwan_operation_duration_seconds: >-
         if mwan_transfer_active | bool else 0) }}
 mwan_operation_poll_seconds: 5
 mwan_operation_observation_timeout_seconds: 15
-mwan_operation_checkpoint_timeout_seconds: 5
+mwan_operation_checkpoint_timeout_seconds: "{{ mwan_operation_metadata_timeout_seconds }}"
 mwan_operation_metadata_timeout_seconds: 15
 mwan_operation_native_timeout_seconds: 30
 mwan_operation_copy_timeout_seconds: 30
@@ -82,14 +85,19 @@ mwan_operation_legacy_activation_budget_seconds: >-
      + mwan_operation_observation_timeout_seconds | int
      + mwan_legacy_health_budget_seconds | int }}
 mwan_operation_max_lease_seconds: >-
-  {{ [mwan_operation_legacy_activation_budget_seconds | int + 30,
+  {{ [mwan_operation_legacy_activation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int,
       mwan_operation_handover_lease_seconds | int if mwan_transfer_active | bool else 0,
       mwan_operation_task_timeout_seconds | int * 8
       + mwan_operation_reconnect_timeout_seconds | int
-      + mwan_operation_poll_budget_seconds | int + 60,
-      mwan_operation_task_timeout_seconds | int * (mwan_networkd_files | length) + 60,
-      mwan_operation_task_timeout_seconds | int * (mwan_enabled_services | length) + 60,
-      mwan_operation_task_timeout_seconds | int * 2 + 480] | max }}
+      + mwan_operation_poll_budget_seconds | int + 30 + mwan_operation_initial_lease_allowance_seconds | int,
+      mwan_operation_task_timeout_seconds | int * (mwan_networkd_files | length)
+      + 30 + mwan_operation_initial_lease_allowance_seconds | int,
+      mwan_operation_task_timeout_seconds | int * (mwan_enabled_services | length)
+      + 30 + mwan_operation_initial_lease_allowance_seconds | int,
+      mwan_operation_task_timeout_seconds | int * 2 + 450 + mwan_operation_initial_lease_allowance_seconds | int,
+      mwan_operation_task_timeout_seconds | int * 2 + 300 + 5
+      + 25 * mwan_operation_checkpoint_timeout_seconds | int + 24 * 5
+      + mwan_operation_initial_lease_allowance_seconds | int] | max }}
 mwan_operation_recovery_timeout_seconds: >-
   {{ mwan_operation_max_lease_seconds | int + mwan_operation_restore_budget_seconds | int }}
 mwan_operation_failure_threshold: 3

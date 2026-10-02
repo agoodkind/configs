@@ -16,7 +16,8 @@
     mwan_operation_phase: "{{ mwan_install_operation_phase }}"
     mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
     mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (6) + 30 }}"
-    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+    mwan_operation_lease_seconds: >-
+      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
 
 - name: Install rousette's required models into sysrepo
   timeout: "{{ mwan_operation_task_timeout_seconds }}"

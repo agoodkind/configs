@@ -43,7 +43,8 @@
   vars:
     mwan_operation_phase: gateway-preparation
     mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (8) + 30 }}"
-    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+    mwan_operation_lease_seconds: >-
+      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
 
 - name: Create configuration directories
   timeout: "{{ mwan_operation_task_timeout_seconds }}"
@@ -75,7 +76,8 @@
     mwan_operation_phase: gateway-preparation
     mwan_operation_reuse_lease: false
     mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (3) + 30 }}"
-    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+    mwan_operation_lease_seconds: >-
+      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
 
 - name: Start the mwan agent and the RESTCONF units
   timeout: "{{ mwan_operation_task_timeout_seconds }}"
@@ -181,7 +183,8 @@
   vars:
     mwan_operation_phase: gateway-preparation
     mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (2) + 30 }}"
-    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+    mwan_operation_lease_seconds: >-
+      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
 
 - name: Deploy management interface networkd configuration
   timeout: "{{ mwan_operation_task_timeout_seconds }}"
@@ -201,7 +204,8 @@
   vars:
     mwan_operation_phase: gateway-preparation
     mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (mwan_networkd_files | length) + 30 }}"
-    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+    mwan_operation_lease_seconds: >-
+      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
 
 - name: Deploy systemd-networkd configuration files
   # Reloaded by handler: networkctl reload applies changed .network files
@@ -321,7 +325,8 @@
   vars:
     mwan_operation_phase: gateway-preparation
     mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (1) + 30 }}"
-    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+    mwan_operation_lease_seconds: >-
+      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
 
 - name: Deploy static helper scripts
   timeout: "{{ mwan_operation_task_timeout_seconds }}"
@@ -420,7 +425,8 @@
   vars:
     mwan_operation_phase: gateway-preparation
     mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (mwan_enabled_services | length) + 30 }}"
-    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+    mwan_operation_lease_seconds: >-
+      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
 
 - name: Enable services
   timeout: "{{ mwan_operation_task_timeout_seconds }}"
