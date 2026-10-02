@@ -39,7 +39,7 @@
     state: started
     daemon_reload: "{{ tack_queue_firewall_unit is changed }}"
 
-# A started oneshot unit runs only once per boot. A restart loads a changed
+# A oneshot unit loads the table once per start. A restart loads a changed
 # table or unit.
 - name: Load a changed audit broker firewall table
   ansible.builtin.systemd:
