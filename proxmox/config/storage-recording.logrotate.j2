@@ -1,0 +1,11 @@
+# Rendered by Ansible (tasks/proxmox-storage-recording.yml). copytruncate
+# keeps the iostat recorder appending to the same open file.
+{{ proxmox_storage_recording_dir }}/*.log {{ proxmox_storage_recording_dir }}/*.jsonl {
+    daily
+    rotate {{ proxmox_storage_recording_retention_days }}
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

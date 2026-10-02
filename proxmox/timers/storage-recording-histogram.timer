@@ -1,0 +1,10 @@
+# Deployed by Ansible (tasks/proxmox-storage-recording.yml), copied without templating.
+[Unit]
+Description=Record the ZFS latency histogram every hour
+
+[Timer]
+OnCalendar=hourly
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

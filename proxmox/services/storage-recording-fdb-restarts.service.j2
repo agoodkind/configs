@@ -1,0 +1,10 @@
+# Rendered by Ansible (tasks/proxmox-storage-recording.yml). Appends one JSON
+# line per data guest with the Docker restart count, start time, and state of
+# its FoundationDB container, read through pct exec.
+[Unit]
+Description=Record FoundationDB container restart counts on the data guests
+After=pve-guests.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/storage-recording-fdb-restarts.sh {{ proxmox_storage_recording_dir }}/fdb-restarts.jsonl {{ proxmox_storage_recording_fdb_container }} {{ proxmox_storage_recording_fdb_vmids | join(' ') }}

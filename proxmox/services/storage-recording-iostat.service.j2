@@ -1,0 +1,18 @@
+# Rendered by Ansible (tasks/proxmox-storage-recording.yml). Appends one
+# zpool iostat report every 60 seconds: per-device read and write counts,
+# bandwidth, and total, disk, sync-queue, and async-queue wait times, each
+# report stamped with a Unix time.
+[Unit]
+Description=Record per-device ZFS wait times every minute
+After=zfs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/zpool iostat -vlHp -T u {{ proxmox_storage_recording_pools | join(' ') }} 60
+StandardOutput=append:{{ proxmox_storage_recording_dir }}/zpool-iostat-vl.log
+StandardError=journal
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

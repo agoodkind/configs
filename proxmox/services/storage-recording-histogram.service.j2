@@ -1,0 +1,11 @@
+# Rendered by Ansible (tasks/proxmox-storage-recording.yml). Appends the
+# cumulative per-device latency histogram, stamped with a Unix time.
+[Unit]
+Description=Record the ZFS latency histogram
+After=zfs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/zpool iostat -wvHp -T u {{ proxmox_storage_recording_pools | join(' ') }}
+StandardOutput=append:{{ proxmox_storage_recording_dir }}/zpool-iostat-w.log
+StandardError=journal
