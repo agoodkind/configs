@@ -81,9 +81,11 @@ module TackOpsIdentityFlags
     end
   end
 
+  # The ledger bootstrap guard runs before the identity check and reads
+  # tack_ledger_bootstrap, which this inventory does not set.
   def identity(service:, session:, agent_run:)
     { 'tack_ops_agent_service' => service, 'tack_ops_agent_session' => session, 'tack_ops_agent_run' => agent_run,
-      'tack_ops_accountable_email' => '', 'deploy_operator_email' => HUMAN_EMAIL }
+      'tack_ops_accountable_email' => '', 'deploy_operator_email' => HUMAN_EMAIL, 'tack_ledger_bootstrap' => false }
   end
 
   def guard_passes?(service: '', session: '', agent_run: false, accountable: '', email: HUMAN_EMAIL)
