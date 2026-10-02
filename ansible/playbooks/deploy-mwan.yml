@@ -37,11 +37,8 @@
           - wanconfig-stack_linux_amd64.tar.gz
         release_var_prefix: mwan
 
-- name: Prepare MWAN VM (base packages, SSH keys, etc.)
-  ansible.builtin.import_playbook: prep-guests.yml
-  vars:
-    target_hosts: mwan_servers:mwan_suburban_servers
-  when: mwan_bootstrap_guest | bool
+# Prepare new guests separately through ./configsctl deploy prep-guests.
+# Set target_hosts to the intended MWAN inventory group for that bootstrap.
 
 - name: Configure MWAN VM
   hosts: mwan_servers:mwan_suburban_servers
