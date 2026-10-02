@@ -12,11 +12,14 @@
 #     --extra-var '{"tack_ops_args": ["--mode=full"]}' \
 #     --extra-var tack_ops_execute=true \
 #     --extra-var tack_ops_agent_service=<agent> \
-#     --extra-var tack_ops_agent_session=<session>
+#     --extra-var tack_ops_agent_session=<session> \
+#     --extra-var tack_ops_accountable_email=<accountable operator email>
 #
-# Each run first runs ops deploy verify --tag <tack_commit>, which compares
-# the running app and audit-consumer images with the registry images for that
-# tag; a mismatch stops the run. The run then prints the dry run of the
+# Each run first runs ops deploy verify --tag <tack_commit>. The command
+# compares the image digest each running app and audit-consumer container
+# runs with the registry digest the guest Docker daemon stores for the image
+# at that tag, and fails when they differ or the daemon stores none; a failure
+# stops the run. The run then prints the dry run of the
 # command, and with tack_ops_execute true runs it with --execute. A run with
 # --check runs the verification and the dry run only.
 #
@@ -60,8 +63,7 @@
           {{ tack_ops_args }}, commit "{{ tack_commit }}", guests
           {{ ansible_play_hosts_all }}.
         quiet: true
-      run_once: true
-      delegate_to: localhost
+      any_errors_fatal: true
 
 - name: Run the Tack ops command
   hosts: tack_all

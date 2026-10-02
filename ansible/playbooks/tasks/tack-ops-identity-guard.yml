@@ -8,23 +8,55 @@
 # digits, and hyphens, and an email with one @. An empty email leaves
 # --operator-email without a value, and the command line then reads
 # --deploy-commit as the email.
+#
+# An extra var overrides every variable this check reads, including
+# tack_ops_agent_run and tack_ops_identity_flags. The check therefore reads
+# the agent shell markers (CLAUDECODE, CODEX_THREAD_ID) from the control
+# machine environment itself, and reads back the rendered flags: each flag
+# appears once, --operator-id and --operator-email are the derived operator,
+# --deploy-commit is tack_commit, and a run with an agent shell or a service
+# includes --operator-service and --operator-session with the declared
+# values. An agent run takes its accountable email only from
+# tack_ops_accountable_email, never from the control machine's git config.
+# The assert runs on the controller for every play host without connecting
+# to a guest, and a failure on any host ends the run.
 - name: Refuse an operator identity the ops commands cannot record truthfully
   ansible.builtin.assert:
     that:
       - (tack_ops_agent_service == '') == (tack_ops_agent_session == '')
-      - not (tack_ops_agent_run | bool) or tack_ops_agent_service != ''
+      - >-
+        not (lookup('env', 'CLAUDECODE') != '' or lookup('env', 'CODEX_THREAD_ID') != '')
+        or tack_ops_agent_service != ''
       - tack_ops_agent_service == '' or tack_ops_agent_service is match('[a-z][a-z0-9-]*\Z')
       - tack_ops_agent_session == '' or tack_ops_agent_session is match('[A-Za-z0-9-]{1,64}\Z')
       - tack_ops_agent_service != '' or tack_ops_accountable_email == ''
+      - tack_ops_agent_service == '' or tack_ops_accountable_email is match('[^@\s]+@[^@\s]+\Z')
+      - tack_ops_agent_service == '' or deploy_operator_email == tack_ops_accountable_email | lower
       - deploy_operator_email is match('[^@\s]+@[^@\s]+\Z')
+      - deploy_operator_id == deploy_operator_email | to_uuid(namespace='0a6f7572-cafe-dead-beef-000000000004')
+      - >-
+        (tack_ops_identity_flags | regex_findall('(?:^|\s)(--[a-z-]+)') | unique | list)
+        == (tack_ops_identity_flags | regex_findall('(?:^|\s)(--[a-z-]+)'))
+      - tack_ops_identity_flags is search('(^|\s)--operator-id ' ~ (deploy_operator_id | regex_escape) ~ '(\s|$)')
+      - tack_ops_identity_flags is search('(^|\s)--operator-email ' ~ (deploy_operator_email | regex_escape) ~ '(\s|$)')
+      - tack_ops_identity_flags is search('(^|\s)--deploy-commit ' ~ (tack_commit | regex_escape) ~ '(\s|$)')
+      - >-
+        not (lookup('env', 'CLAUDECODE') != '' or lookup('env', 'CODEX_THREAD_ID') != ''
+             or tack_ops_agent_service != '')
+        or (tack_ops_identity_flags is search(
+              '(^|\s)--operator-service ' ~ (tack_ops_agent_service | regex_escape) ~ '(\s|$)')
+            and tack_ops_identity_flags is search(
+              '(^|\s)--operator-session ' ~ (tack_ops_agent_session | regex_escape) ~ '(\s|$)'))
     fail_msg: >-
-      An agent deploy sets tack_ops_agent_service (lowercase letters,
-      digits, hyphens) and tack_ops_agent_session (letters, digits,
-      hyphens, at most 64), and a deploy from an agent shell sets them.
-      tack_ops_accountable_email applies only to an agent deploy. The
-      operator email must be one address. Service
+      An agent run sets tack_ops_agent_service (lowercase letters, digits,
+      hyphens), tack_ops_agent_session (letters, digits, hyphens, at most 64),
+      and tack_ops_accountable_email, and a run from an agent shell sets all
+      three. tack_ops_accountable_email applies only to an agent run. The
+      operator email must be one address, and the operator id must derive
+      from it. The rendered identity flags list each flag once, include the
+      operator id, the operator email, and --deploy-commit with tack_commit,
+      and on an agent run include the agent service and session. Service
       "{{ tack_ops_agent_service }}", session "{{ tack_ops_agent_session }}",
       accountable email "{{ tack_ops_accountable_email }}", operator email
-      "{{ deploy_operator_email }}", agent shell {{ tack_ops_agent_run }}.
-  run_once: true
-  delegate_to: localhost
+      "{{ deploy_operator_email }}", identity flags "{{ tack_ops_identity_flags }}".
+  any_errors_fatal: true

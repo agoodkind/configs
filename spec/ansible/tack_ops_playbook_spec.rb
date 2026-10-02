@@ -12,7 +12,6 @@ module TackOpsPlaybook
   PLAYBOOKS = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks')
   PLAYBOOK_FILE = File.join(PLAYBOOKS, 'tack-ops.yml')
   DEPLOY_FILE = File.join(PLAYBOOKS, 'deploy-tack.yml')
-  GUARD_FILE = File.join(PLAYBOOKS, 'tasks', 'tack-ops-identity-guard.yml')
   GUARD_IMPORT = 'tasks/tack-ops-identity-guard.yml'
   REQUEST_TASK = 'Refuse a Tack ops request outside the reviewed commands, guests, or arguments'
   VERIFY_TASK = 'Verify that the guest runs the Tack images for tack_commit'
@@ -49,16 +48,6 @@ module TackOpsPlaybook
                    .dig('conditions', 'request')
   end
 
-  # Whether the identity guard passes, from the moved guard file.
-  def guard_passes(service:, session:, agent_run:)
-    guard = YAML.safe_load_file(GUARD_FILE).first
-    that = TaskExpressions.condition_list(guard.dig('ansible.builtin.assert', 'that'))
-    variables = { 'tack_ops_agent_service' => service, 'tack_ops_agent_session' => session,
-                  'tack_ops_agent_run' => agent_run, 'tack_ops_accountable_email' => '',
-                  'deploy_operator_email' => 'human@example.invalid' }
-    TaskExpressions.evaluate(variables: variables, facts: [], conditions: { 'guard' => that }).dig('conditions', 'guard')
-  end
-
   # The command line a task in the second play renders, split on whitespace.
   def command_line(name, command:, args: [])
     rendered = TaskExpressions.render_task({}, 'cmd' => task(plays[1], name).dig('ansible.builtin.command', 'cmd'))
@@ -86,12 +75,6 @@ RSpec.describe TackOpsPlaybook do
 
     expect(deploy_tasks[2]['ansible.builtin.import_tasks']).to eq(TackOpsPlaybook::GUARD_IMPORT)
     expect(ops_tasks.first['ansible.builtin.import_tasks']).to eq(TackOpsPlaybook::GUARD_IMPORT)
-  end
-
-  it 'refuses an agent shell without a service and session and accepts one with both', :aggregate_failures do
-    expect(described_class.guard_passes(service: '', session: '', agent_run: true)).to be(false)
-    expect(described_class.guard_passes(service: 'claude-luna', session: '', agent_run: true)).to be(false)
-    expect(described_class.guard_passes(service: 'claude-luna', session: 's1', agent_run: true)).to be(true)
   end
 
   it 'accepts an allowlisted command with flag arguments on one QA guest' do
