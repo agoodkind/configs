@@ -190,13 +190,21 @@
       changed_when: false
       timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
 
-    - name: Verify the captured producer and original inputs before stopping
+    - name: Hash the captured running producer before stopping
+      ansible.builtin.command:
+        argv:
+          - sha256sum
+          - "/proc/{{ mwan_legacy_producer_pid.stdout | trim }}/exe"
+      register: mwan_legacy_executable_before_stop
+      changed_when: false
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
+
+    - name: Verify the original network and runtime inputs before stopping
       ansible.builtin.stat:
         path: "{{ item }}"
         checksum_algorithm: sha256
         follow: true
       loop:
-        - "/proc/{{ mwan_legacy_producer_pid.stdout | trim }}/exe"
         - /etc/mwan/network.json
         - /etc/mwan/config.toml
       register: mwan_legacy_inputs_before_stop
@@ -207,13 +215,13 @@
         that:
           - mwan_legacy_producer_before_stop.stdout | trim == mwan_legacy_producer_pid.stdout | trim
           - >-
-            mwan_legacy_inputs_before_stop.results[0].stat.checksum
+            mwan_legacy_executable_before_stop.stdout.split()[0]
             == mwan_operation_baseline_files.results[0].stat.checksum
           - >-
-            mwan_legacy_inputs_before_stop.results[1].stat.checksum
+            mwan_legacy_inputs_before_stop.results[0].stat.checksum
             == mwan_operation_baseline_files.results[1].stat.checksum
           - >-
-            mwan_legacy_inputs_before_stop.results[2].stat.checksum
+            mwan_legacy_inputs_before_stop.results[1].stat.checksum
             == mwan_operation_baseline_files.results[2].stat.checksum
 
     - name: Verify the live lease before the next legacy mutation
