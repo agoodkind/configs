@@ -77,7 +77,7 @@ RSpec.describe 'MWAN handover deployment manifests' do
     variables = settings
     selected = interruptions(variables)
     expect(selected).to eq([{ 'phase' => 'connection-handover-webpass',
-                              'check_ids' => %w[inbound-webpass-ipv4 inbound-webpass-ipv6], 'max_seconds' => 4215 }])
+                              'check_ids' => %w[inbound-webpass-ipv4 inbound-webpass-ipv6], 'max_seconds' => 7735 }])
     document = manifest(variables, selected)
     expect(document.fetch('expected_interruptions')).to eq(selected)
     expect(document.fetch('required_checks').map { |check| check.fetch('id') }).to contain_exactly(
@@ -95,7 +95,7 @@ RSpec.describe 'MWAN handover deployment manifests' do
     preparation = settings(transfer: false)
     document = manifest(preparation, preparation.fetch('mwan_transfer_expected_interruptions'))
     expect(document.fetch('expected_interruptions')).to eq([])
-    expect(document.fetch('recovery_timeout_seconds')).to eq(2000)
+    expect(document.fetch('recovery_timeout_seconds')).to eq(2700)
     variables = settings
     variables['mwan_transfer_provider'] = false
     expect(interruptions(variables)).to eq([])

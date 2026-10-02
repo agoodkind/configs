@@ -15,7 +15,9 @@
          + mwan_operation_reconnect_timeout_seconds | int + 5
          + mwan_operation_checkpoint_timeout_seconds | int * 3 + 5
          if mwan_transfer_lease_active | bool
-         else mwan_ifmgr_restart_timeout_seconds | int * 2 + 300 + 120 + 30 }}
+         else mwan_operation_task_timeout_seconds | int
+              + mwan_ifmgr_restart_timeout_seconds | int + 300 + 5
+              + 25 * mwan_operation_checkpoint_timeout_seconds | int + 24 * 5 }}
 
 - name: Check the ifmgr restart
   timeout: "{{ mwan_operation_task_timeout_seconds }}"
@@ -35,7 +37,9 @@
          + mwan_operation_reconnect_timeout_seconds | int + 5
          + mwan_operation_checkpoint_timeout_seconds | int * 3 + 5
          if mwan_transfer_lease_active | bool
-         else mwan_ifmgr_restart_timeout_seconds | int * 2 + 300 + 120 + 30 }}
+         else mwan_operation_task_timeout_seconds | int
+              + mwan_ifmgr_restart_timeout_seconds | int + 300 + 5
+              + 25 * mwan_operation_checkpoint_timeout_seconds | int + 24 * 5 }}
   when: not mwan_transfer_lease_active | bool
 
 - name: Complete the bounded ifmgr restart

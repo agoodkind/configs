@@ -3,7 +3,8 @@
   vars:
     mwan_operation_phase: gateway-preparation
     mwan_operation_budget_seconds: "{{ (mwan_operation_copy_timeout_seconds | int + mwan_operation_native_timeout_seconds | int) * 3 }}"
-    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+    mwan_operation_lease_seconds: >-
+      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
 
 - name: Preserve every validated connection transition document
   timeout: "{{ mwan_operation_copy_timeout_seconds }}"
