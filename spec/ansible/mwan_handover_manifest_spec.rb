@@ -95,7 +95,7 @@ RSpec.describe 'MWAN handover deployment manifests' do
     preparation = settings(transfer: false)
     document = manifest(preparation, preparation.fetch('mwan_transfer_expected_interruptions'))
     expect(document.fetch('expected_interruptions')).to eq([])
-    expect(document.fetch('recovery_timeout_seconds')).to eq(1940)
+    expect(document.fetch('recovery_timeout_seconds')).to eq(2000)
     variables = settings
     variables['mwan_transfer_provider'] = false
     expect(interruptions(variables)).to eq([])

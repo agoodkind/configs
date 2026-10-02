@@ -74,7 +74,7 @@ mwan_operation_legacy_activation_budget_seconds: >-
   {{ mwan_operation_native_timeout_seconds | int * 2
      + mwan_operation_copy_timeout_seconds | int
      + mwan_operation_task_timeout_seconds | int
-     + mwan_operation_metadata_timeout_seconds | int * 11
+     + mwan_operation_metadata_timeout_seconds | int * 15
      + (14 * 4 + 2 + 8) * mwan_operation_checkpoint_timeout_seconds | int
      + (mwan_operation_reconnect_timeout_seconds | int + 5) * 2
      + mwan_legacy_poll_budget_seconds | int

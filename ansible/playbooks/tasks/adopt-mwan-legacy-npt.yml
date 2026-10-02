@@ -176,6 +176,46 @@
         mwan_install_reuse_lease: true
         mwan_install_notify_wan: false
 
+    - name: Install the candidate daemon and units before stopping the original writer
+      ansible.builtin.include_tasks: install-mwan-core-runtime.yml
+      vars:
+        mwan_install_operation_phase: legacy-npt-adoption
+        mwan_install_reuse_lease: true
+        mwan_install_notify_wan: false
+
+    - name: Read the original writer after candidate installation
+      ansible.builtin.command:
+        argv: [systemctl, show, mwan-ifmgr@wan, --property=MainPID, --value]
+      register: mwan_legacy_producer_before_stop
+      changed_when: false
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
+
+    - name: Verify the captured producer and original inputs before stopping
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        checksum_algorithm: sha256
+        follow: true
+      loop:
+        - "/proc/{{ mwan_legacy_producer_pid.stdout | trim }}/exe"
+        - /etc/mwan/network.json
+        - /etc/mwan/config.toml
+      register: mwan_legacy_inputs_before_stop
+      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
+
+    - name: Require the captured writer and original network/runtime inputs
+      ansible.builtin.assert:
+        that:
+          - mwan_legacy_producer_before_stop.stdout | trim == mwan_legacy_producer_pid.stdout | trim
+          - >-
+            mwan_legacy_inputs_before_stop.results[0].stat.checksum
+            == mwan_operation_baseline_files.results[0].stat.checksum
+          - >-
+            mwan_legacy_inputs_before_stop.results[1].stat.checksum
+            == mwan_operation_baseline_files.results[1].stat.checksum
+          - >-
+            mwan_legacy_inputs_before_stop.results[2].stat.checksum
+            == mwan_operation_baseline_files.results[2].stat.checksum
+
     - name: Verify the live lease before the next legacy mutation
       ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
       vars:
@@ -186,6 +226,12 @@
              + mwan_operation_reconnect_timeout_seconds | int + 5
              + mwan_legacy_poll_budget_seconds | int
              + mwan_operation_checkpoint_timeout_seconds | int * 8 }}
+
+    - name: Require actual application readiness before stopping the original writer
+      vars:
+        operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
+      ansible.builtin.assert:
+        that: [operation.mutation_ready | bool]
 
     - name: Record a potentially outstanding remote mutation
       ansible.builtin.set_fact:
@@ -232,12 +278,18 @@
             mwan_legacy_mutation_pending: false
           when:
             - "mwan_legacy_stop_result is finished"
-            - "'invocation' in mwan_legacy_stop_result"
-            - "'module_args' in mwan_legacy_stop_result.invocation"
-            - "'name' in mwan_legacy_stop_result.invocation.module_args"
-            - "'state' in mwan_legacy_stop_result.invocation.module_args"
-            - "mwan_legacy_stop_result.invocation.module_args.name == 'mwan-ifmgr@wan'"
-            - "mwan_legacy_stop_result.invocation.module_args.state == 'stopped'"
+            - "'ansible_job_id' in mwan_legacy_stop_result"
+            - "mwan_legacy_stop_result.ansible_job_id == mwan_legacy_stop_job.ansible_job_id"
+            - >-
+              ('name' in mwan_legacy_stop_result and 'state' in mwan_legacy_stop_result
+               and mwan_legacy_stop_result.name == 'mwan-ifmgr@wan'
+               and mwan_legacy_stop_result.state == 'stopped')
+              or ('invocation' in mwan_legacy_stop_result
+                  and 'module_args' in mwan_legacy_stop_result.invocation
+                  and 'name' in mwan_legacy_stop_result.invocation.module_args
+                  and 'state' in mwan_legacy_stop_result.invocation.module_args
+                  and mwan_legacy_stop_result.invocation.module_args.name == 'mwan-ifmgr@wan'
+                  and mwan_legacy_stop_result.invocation.module_args.state == 'stopped')
 
     - name: Verify the live lease before reading the stopped process
       ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
@@ -310,13 +362,6 @@
       ansible.builtin.set_fact:
         mwan_legacy_mutation_pending: false
 
-    - name: Install the verified normal daemon and embedded units
-      ansible.builtin.include_tasks: install-mwan-core-runtime.yml
-      vars:
-        mwan_install_operation_phase: legacy-npt-adoption
-        mwan_install_reuse_lease: true
-        mwan_install_notify_wan: false
-
     - name: Verify the exact lease before normal WAN activation
       ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
       vars:
@@ -378,12 +423,18 @@
             mwan_legacy_mutation_pending: false
           when:
             - "mwan_legacy_start_result is finished"
-            - "'invocation' in mwan_legacy_start_result"
-            - "'module_args' in mwan_legacy_start_result.invocation"
-            - "'name' in mwan_legacy_start_result.invocation.module_args"
-            - "'state' in mwan_legacy_start_result.invocation.module_args"
-            - "mwan_legacy_start_result.invocation.module_args.name == 'mwan-ifmgr@wan'"
-            - "mwan_legacy_start_result.invocation.module_args.state == 'started'"
+            - "'ansible_job_id' in mwan_legacy_start_result"
+            - "mwan_legacy_start_result.ansible_job_id == mwan_legacy_start_job.ansible_job_id"
+            - >-
+              ('name' in mwan_legacy_start_result and 'state' in mwan_legacy_start_result
+               and mwan_legacy_start_result.name == 'mwan-ifmgr@wan'
+               and mwan_legacy_start_result.state == 'started')
+              or ('invocation' in mwan_legacy_start_result
+                  and 'module_args' in mwan_legacy_start_result.invocation
+                  and 'name' in mwan_legacy_start_result.invocation.module_args
+                  and 'state' in mwan_legacy_start_result.invocation.module_args
+                  and mwan_legacy_start_result.invocation.module_args.name == 'mwan-ifmgr@wan'
+                  and mwan_legacy_start_result.invocation.module_args.state == 'started')
 
     - name: Verify the exact lease before fresh application observations
       ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
