@@ -20,6 +20,7 @@
           - service_mapping.mwan_suburban.vmid | int == 213
           - mwan_vmid | int == 213
           - mwan_proxmox_delegate == 'suburban'
+          - mwan_watchdog_service_name == 'mwan-watchdog-testbed'
           - mwan_original_snapshot is match('^[A-Za-z][A-Za-z0-9_-]+$')
           - mwan_original_snapshot != 'current'
         fail_msg: >-
@@ -52,6 +53,177 @@
     - name: Restore and verify the original testbed
       when: not ansible_check_mode
       block:
+        - name: Initialize watchdog coordination state
+          ansible.builtin.set_fact:
+            mwan_original_watchdog_paused: false
+            mwan_original_watchdog_stopped: false
+
+        - name: Read the original testbed watchdog identity
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          timeout: 10
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - show
+              - "{{ mwan_watchdog_service_name }}"
+              - --property=MainPID
+              - --property=InvocationID
+              - --property=ActiveState
+          register: mwan_original_watchdog_before
+          changed_when: false
+
+        - name: Normalize the original testbed watchdog identity
+          ansible.builtin.set_fact:
+            mwan_original_watchdog_identity: >-
+              {{ dict(mwan_original_watchdog_before.stdout_lines | map('split', '=')) }}
+
+        - name: Require a settled original watchdog service state
+          ansible.builtin.assert:
+            that:
+              - mwan_original_watchdog_identity.ActiveState in ['active', 'inactive']
+
+        - name: Pause only the active testbed watchdog main process
+          when: mwan_original_watchdog_identity.ActiveState == 'active'
+          block:
+            - name: Require an actual active watchdog process
+              ansible.builtin.assert:
+                that:
+                  - mwan_original_watchdog_identity.MainPID | int > 1
+                  - mwan_original_watchdog_identity.InvocationID is match('^[0-9a-f]{32}$')
+
+            - name: Pause the exact watchdog main process without freezing native child jobs
+              delegate_to: "{{ mwan_proxmox_delegate }}"
+              timeout: 10
+              ansible.builtin.command:
+                argv:
+                  - systemctl
+                  - kill
+                  - --kill-whom=main
+                  - --signal=SIGSTOP
+                  - "{{ mwan_watchdog_service_name }}"
+              changed_when: true
+
+            - name: Record the paused watchdog
+              ansible.builtin.set_fact:
+                mwan_original_watchdog_paused: true
+
+            - name: Read the paused watchdog invocation
+              delegate_to: "{{ mwan_proxmox_delegate }}"
+              timeout: 10
+              ansible.builtin.command:
+                argv:
+                  - systemctl
+                  - show
+                  - "{{ mwan_watchdog_service_name }}"
+                  - --property=MainPID
+                  - --property=InvocationID
+                  - --property=ActiveState
+              register: mwan_original_watchdog_after_pause
+              changed_when: false
+
+            - name: Read the exact paused process state
+              delegate_to: "{{ mwan_proxmox_delegate }}"
+              timeout: 10
+              ansible.builtin.command:
+                argv:
+                  - ps
+                  - -o
+                  - stat=
+                  - -p
+                  - "{{ mwan_original_watchdog_identity.MainPID }}"
+              register: mwan_original_watchdog_process
+              changed_when: false
+
+            - name: Require the unchanged watchdog invocation to be paused
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    dict(mwan_original_watchdog_after_pause.stdout_lines | map('split', '='))
+                    == mwan_original_watchdog_identity
+                  - mwan_original_watchdog_process.stdout | trim is match('^T')
+
+        - name: Wait for existing native VM213 tasks to finish
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          timeout: 10
+          ansible.builtin.command:
+            argv:
+              - pvesh
+              - get
+              - "/nodes/{{ mwan_proxmox_node }}/tasks"
+              - --source
+              - active
+              - --vmid
+              - '213'
+              - --output-format
+              - json
+          register: mwan_original_active_tasks
+          changed_when: false
+          until: >-
+            mwan_original_active_tasks.stdout | from_json
+            | selectattr('status', 'equalto', 'RUNNING') | list == []
+          retries: 60
+          delay: 5
+
+        - name: Wait for the native VM213 configuration lock to disappear
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          timeout: 10
+          ansible.builtin.command:
+            argv:
+              - pvesh
+              - get
+              - "/nodes/{{ mwan_proxmox_node }}/qemu/213/config"
+              - --output-format
+              - json
+          register: mwan_original_unlocked_config
+          changed_when: false
+          until: "'lock' not in (mwan_original_unlocked_config.stdout | from_json)"
+          retries: 60
+          delay: 5
+
+        - name: Stop the paused watchdog only after native mutations finish
+          when: mwan_original_watchdog_identity.ActiveState == 'active'
+          block:
+            - name: Stop the idle testbed watchdog service
+              delegate_to: "{{ mwan_proxmox_delegate }}"
+              ansible.builtin.systemd:
+                name: "{{ mwan_watchdog_service_name }}"
+                state: stopped
+              async: "{{ mwan_original_job_seconds }}"
+              poll: 0
+              register: mwan_original_watchdog_stop_job
+
+            - name: Verify watchdog stop completion
+              delegate_to: "{{ mwan_proxmox_delegate }}"
+              timeout: 5
+              ansible.builtin.async_status:
+                jid: "{{ mwan_original_watchdog_stop_job.ansible_job_id }}"
+              register: mwan_original_watchdog_stop_result
+              until: mwan_original_watchdog_stop_result is finished
+              retries: 60
+              delay: 5
+
+            - name: Require the watchdog to be stopped
+              delegate_to: "{{ mwan_proxmox_delegate }}"
+              timeout: 10
+              ansible.builtin.command:
+                argv:
+                  - systemctl
+                  - show
+                  - "{{ mwan_watchdog_service_name }}"
+                  - --property=MainPID
+                  - --property=ActiveState
+              register: mwan_original_watchdog_stop_state
+              changed_when: false
+              failed_when: >-
+                mwan_original_watchdog_stop_state.rc != 0
+                or 'MainPID=0' not in mwan_original_watchdog_stop_state.stdout_lines
+                or 'ActiveState=inactive' not in mwan_original_watchdog_stop_state.stdout_lines
+
+            - name: Record stopped watchdog coordination
+              ansible.builtin.set_fact:
+                mwan_original_watchdog_stopped: true
+                mwan_original_watchdog_paused: false
+
         - name: Stop the testbed VM without waiting on guest SSH
           delegate_to: "{{ mwan_proxmox_delegate }}"
           ansible.builtin.command:
@@ -79,7 +251,87 @@
           register: mwan_original_stopped
           changed_when: false
           failed_when: >-
-            mwan_original_stopped.stdout | trim != 'status: stopped'
+            mwan_original_stopped.rc != 0
+            or mwan_original_stopped.stdout | trim != 'status: stopped'
+
+        - name: Read the settled native testbed snapshot graph
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          timeout: 10
+          ansible.builtin.command:
+            argv:
+              - pvesh
+              - get
+              - "/nodes/{{ mwan_proxmox_node }}/qemu/213/snapshot"
+              - --output-format
+              - json
+          register: mwan_original_settled_snapshots
+          changed_when: false
+
+        - name: Require the selected snapshot after native mutations settle
+          ansible.builtin.assert:
+            that:
+              - >-
+                mwan_original_snapshot in
+                (mwan_original_settled_snapshots.stdout | from_json
+                 | map(attribute='name') | list)
+
+        - name: Derive only descendants of the exact selected snapshot
+          ansible.builtin.set_fact:
+            mwan_original_descendants: >-
+              {% set snapshots = mwan_original_settled_snapshots.stdout | from_json
+                                 | rejectattr('name', 'equalto', 'current') | list %}
+              {% set descendants = [mwan_original_snapshot] %}
+              {% for pass in snapshots %}
+              {% for snapshot in snapshots %}
+              {% if 'parent' in snapshot and snapshot.parent in descendants
+                    and snapshot.name not in descendants %}
+              {% set _ = descendants.append(snapshot.name) %}
+              {% endif %}
+              {% endfor %}
+              {% endfor %}
+              {{ snapshots | selectattr('name', 'in', descendants)
+                 | rejectattr('name', 'equalto', mwan_original_snapshot)
+                 | sort(attribute='snaptime', reverse=true) | map(attribute='name') | list }}
+
+        - name: Report descendant snapshots required for selected ZFS restoration
+          ansible.builtin.debug:
+            msg:
+              selected_snapshot: "{{ mwan_original_snapshot }}"
+              descendants_to_delete: "{{ mwan_original_descendants }}"
+
+        - name: Delete only selected snapshot descendants on disposable VM213
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.command:
+            argv: [qm, delsnapshot, '213', "{{ item }}"]
+          loop: "{{ mwan_original_descendants }}"
+          async: "{{ mwan_original_job_seconds }}"
+          poll: 5
+          changed_when: true
+
+        - name: Read the snapshot graph after descendant deletion
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          timeout: 10
+          ansible.builtin.command:
+            argv:
+              - pvesh
+              - get
+              - "/nodes/{{ mwan_proxmox_node }}/qemu/213/snapshot"
+              - --output-format
+              - json
+          register: mwan_original_leaf_snapshots
+          changed_when: false
+
+        - name: Require the selected snapshot and completed descendant deletions
+          ansible.builtin.assert:
+            that:
+              - >-
+                mwan_original_snapshot in
+                (mwan_original_leaf_snapshots.stdout | from_json
+                 | map(attribute='name') | list)
+              - >-
+                mwan_original_descendants | intersect(
+                  mwan_original_leaf_snapshots.stdout | from_json
+                  | map(attribute='name') | list) == []
 
         - name: Restore only the selected testbed snapshot
           delegate_to: "{{ mwan_proxmox_delegate }}"
@@ -253,3 +505,77 @@
               ipv6_state: >-
                 {{ mwan_original_ipv6_state.results | map(attribute='stdout')
                    | map('from_json') | list }}
+
+        - name: Restore the originally active testbed watchdog after baseline verification
+          when: mwan_original_watchdog_identity.ActiveState == 'active'
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.systemd:
+            name: "{{ mwan_watchdog_service_name }}"
+            state: started
+          async: "{{ mwan_original_job_seconds }}"
+          poll: 5
+
+        - name: Verify the originally active watchdog restarted
+          when: mwan_original_watchdog_identity.ActiveState == 'active'
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          timeout: 10
+          ansible.builtin.command:
+            argv:
+              - systemctl
+              - show
+              - "{{ mwan_watchdog_service_name }}"
+              - --property=MainPID
+              - --property=ActiveState
+          register: mwan_original_watchdog_restarted
+          changed_when: false
+          failed_when: >-
+            mwan_original_watchdog_restarted.rc != 0
+            or 'ActiveState=active' not in mwan_original_watchdog_restarted.stdout_lines
+            or (dict(mwan_original_watchdog_restarted.stdout_lines | map('split', '=')))
+               ['MainPID'] | int <= 1
+
+      rescue:
+        - name: Resume only the original paused watchdog before service stop
+          when:
+            - mwan_original_watchdog_paused | bool
+            - not (mwan_original_watchdog_stopped | bool)
+          block:
+            - name: Read the watchdog identity before resuming
+              delegate_to: "{{ mwan_proxmox_delegate }}"
+              timeout: 10
+              ansible.builtin.command:
+                argv:
+                  - systemctl
+                  - show
+                  - "{{ mwan_watchdog_service_name }}"
+                  - --property=MainPID
+                  - --property=InvocationID
+                  - --property=ActiveState
+              register: mwan_original_watchdog_before_resume
+              changed_when: false
+
+            - name: Require the unchanged original watchdog before resuming
+              ansible.builtin.assert:
+                that:
+                  - >-
+                    dict(mwan_original_watchdog_before_resume.stdout_lines | map('split', '='))
+                    == mwan_original_watchdog_identity
+
+            - name: Resume only the exact original watchdog main process
+              delegate_to: "{{ mwan_proxmox_delegate }}"
+              timeout: 10
+              ansible.builtin.command:
+                argv:
+                  - systemctl
+                  - kill
+                  - --kill-whom=main
+                  - --signal=SIGCONT
+                  - "{{ mwan_watchdog_service_name }}"
+              changed_when: true
+
+        - name: Reject the failed original testbed restoration
+          ansible.builtin.fail:
+            msg: >-
+              Original testbed restoration failed at {{ ansible_failed_task.name }}.
+              Watchdog service stop completed: {{ mwan_original_watchdog_stopped }}.
+              No native lock was forced and no production guest was selected.
