@@ -67,7 +67,7 @@ resource "proxmox_virtual_environment_container" "tack_search1_suburban" {
   unprivileged = true
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
     ignore_changes = [
       # Proxmox does not return injected SSH keys. A re-import reads the
       # configured keys as an addition, and an addition forces replacement.
