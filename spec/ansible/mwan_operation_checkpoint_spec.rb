@@ -69,4 +69,29 @@ RSpec.describe 'MWAN mutation checkpoints' do
     variables['mwan_operation_reuse_watch']['stdout_lines'] = ['MainPID=124', 'InvocationID=invocation', 'ActiveState=active']
     expect(renders_assertion?(name, variables)).to be(false)
   end
+
+  it 'releases completed failed work in Recovering without authorizing new writes' do
+    operation = { 'operation_id' => 'deploy', 'generation' => 'generation', 'status' => 'recovering',
+                  'lease' => { 'id' => 'lease', 'phase' => 'legacy-npt-adoption' } }
+    variables = { 'mwan_operation_checkpoint_status' => { 'stdout' => JSON.generate(operation) },
+                  'mwan_deploy_trace_id' => 'deploy', 'mwan_operation_generation' => 'generation',
+                  'mwan_operation_lease_id' => 'lease', 'mwan_operation_armed' => true,
+                  'mwan_operation_acquire' => false, 'mwan_operation_reuse_lease' => false,
+                  'mwan_operation_completion_only' => false }
+    names = ['Release the completed mutation lease', 'Reject additional writes after deployment recovery starts']
+    conditions = names.to_h do |name|
+      task = tasks.find { |entry| entry.fetch('name') == name }
+      [name, TaskExpressions.condition_list(task.fetch('when'))]
+    end
+    result = TaskExpressions.evaluate(variables: variables, facts: [], conditions: conditions)
+    expect(renders_assertion?('Require the exact operation before releasing completed work', variables)).to be(true)
+    expect(result.fetch('conditions').fetch(names.first)).to be(true)
+    expect(result.fetch('conditions').fetch(names.last)).to be(false)
+    variables['mwan_operation_acquire'] = true
+    result = TaskExpressions.evaluate(variables: variables, facts: [], conditions: conditions)
+    expect(result.fetch('conditions').fetch(names.last)).to be(true)
+    expect(renders_assertion?(names.last, variables)).to be(false)
+    variables['mwan_operation_generation'] = 'another-generation'
+    expect(renders_assertion?('Require the exact operation before releasing completed work', variables)).to be(false)
+  end
 end
