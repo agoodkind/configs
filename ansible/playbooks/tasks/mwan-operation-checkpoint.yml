@@ -1,5 +1,6 @@
 - name: Read the exact deployment operation before another mutation
   delegate_to: "{{ mwan_proxmox_delegate }}"
+  timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
     argv:
       - /usr/local/bin/mwan
@@ -29,6 +30,7 @@
 
 - name: Release the completed mutation lease
   delegate_to: "{{ mwan_proxmox_delegate }}"
+  timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
     argv:
       - /usr/local/bin/mwan
@@ -59,7 +61,22 @@
     that:
       - operation.status == 'armed'
     fail_msg: The completed lease was released but recovery prohibits additional gateway writes.
-  when: mwan_operation_armed | bool
+  when:
+    - mwan_operation_armed | bool
+    - not mwan_operation_completion_only | bool
+
+- name: Require the exact lease before reading issued remote completion
+  vars:
+    operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - operation.lease.id == mwan_operation_lease_id
+      - operation.lease.phase == mwan_operation_phase
+      - not mwan_operation_acquire | bool
+      - mwan_operation_reuse_lease | bool
+  when:
+    - mwan_operation_armed | bool
+    - mwan_operation_completion_only | bool
 
 - name: Require recovery time for the complete outstanding lease
   ansible.builtin.assert:
@@ -75,6 +92,7 @@
 
 - name: Acquire a bounded lease for the next gateway mutation
   delegate_to: "{{ mwan_proxmox_delegate }}"
+  timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
     argv:
       - /usr/local/bin/mwan
@@ -103,6 +121,7 @@
 
 - name: Read the granted operation immediately before the mutation
   delegate_to: "{{ mwan_proxmox_delegate }}"
+  timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
     argv:
       - /usr/local/bin/mwan
@@ -122,14 +141,15 @@
   delegate_to: "{{ mwan_proxmox_delegate }}"
   vars:
     operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
+  timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
     argv:
       - systemctl
       - show
       - "{{ operation.watch.unit }}"
-      - "--property={{ item }}"
-      - --value
-  loop: [ActiveState, InvocationID, MainPID]
+      - --property=ActiveState
+      - --property=InvocationID
+      - --property=MainPID
   register: mwan_operation_reuse_watch
   changed_when: false
   when:
@@ -141,15 +161,17 @@
     operation: "{{ mwan_operation_checkpoint_status.stdout | from_json }}"
   ansible.builtin.assert:
     that:
-      - mwan_operation_reuse_watch.results[0].stdout | trim == 'active'
-      - mwan_operation_reuse_watch.results[1].stdout | trim == operation.watch.invocation_id
-      - mwan_operation_reuse_watch.results[2].stdout | trim | int == operation.watch.pid
+      - >-
+        mwan_operation_reuse_watch.stdout_lines | sort
+        == ['ActiveState=active', 'InvocationID=' ~ operation.watch.invocation_id,
+            'MainPID=' ~ (operation.watch.pid | string)] | sort
   when:
     - mwan_operation_armed | bool
     - mwan_operation_acquire | bool
 
 - name: Read the required mutation deadline from the hypervisor clock
   delegate_to: "{{ mwan_proxmox_delegate }}"
+  timeout: "{{ mwan_operation_checkpoint_timeout_seconds }}"
   ansible.builtin.command:
     argv:
       - date

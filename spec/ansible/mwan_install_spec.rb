@@ -135,6 +135,7 @@ module MwanInstall
 
   def imported(task, directory)
     name = IMPORT_KEYS.map { |key| task[key] }.compact.first
+    name = name.fetch('file') if name.is_a?(Hash)
     return [] if name.nil? || name.include?(TEMPLATE_MARKER)
 
     path = [File.join(directory, name), File.join(PLAYBOOK_DIRECTORY, name)].find { |candidate| File.file?(candidate) }

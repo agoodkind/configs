@@ -1,0 +1,56 @@
+# The listing runs under check mode too, because it only reads and the
+# install task below decides from its output.
+- name: List installed sysrepo modules
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/sysrepoctl
+      - --list
+  register: wanconfig_sysrepo_modules
+  changed_when: false
+  check_mode: false
+
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
+    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
+    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (6) + 30 }}"
+    mwan_operation_lease_seconds: "{{ mwan_operation_budget_seconds | int + 30 }}"
+
+- name: Install rousette's required models into sysrepo
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  async: "{{ mwan_operation_task_timeout_seconds }}"
+  poll: 5
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/sysrepoctl
+      - --install
+      - "{{ wanconfig_rousette_yang_dir }}/{{ item }}.yang"
+      - --search-dirs
+      - "{{ wanconfig_rousette_yang_dir }}"
+  loop:
+    - ietf-restconf@2017-01-26
+    - ietf-restconf-monitoring@2017-01-26
+    - ietf-yang-patch@2017-02-22
+    - ietf-subscribed-notifications@2019-09-09
+    - ietf-restconf-subscribed-notifications@2019-11-17
+    - iana-if-type@2014-05-08
+  when: item.split('@')[0] not in wanconfig_sysrepo_modules.stdout
+  changed_when: true
+
+- name: Authorize the next gateway mutation
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
+  vars:
+    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
+    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
+
+- name: Render the nghttpx front-end configuration
+  timeout: "{{ mwan_operation_task_timeout_seconds }}"
+  ansible.builtin.template:
+    src: "{{ repo_root }}/mwan/wanconfig/nghttpx-wanconfig.conf.j2"
+    dest: /etc/nghttpx/wanconfig.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nghttpx-wanconfig
