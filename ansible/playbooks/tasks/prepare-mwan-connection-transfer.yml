@@ -231,6 +231,34 @@
           {% endfor %}
           {{ edges | length }}
 
+    # The reconnect delay includes the complete remote execution deadline.
+    # Two final status attempts follow the async wrapper's five-second cadence.
+    - name: Calculate bounded transfer jobs and readiness reads
+      ansible.builtin.set_fact:
+        mwan_transfer_read_poll_budget_seconds: "{{ 31 * mwan_operation_checkpoint_timeout_seconds | int + 30 }}"
+        mwan_transfer_remote_budget_seconds: >-
+          {{ mwan_operation_metadata_timeout_seconds | int + mwan_role_job_timeout_seconds | int
+             + mwan_operation_reconnect_timeout_seconds | int + 5
+             + (4 + 1 + 2) * mwan_operation_checkpoint_timeout_seconds | int + 5 }}
+
+    - name: Calculate the complete selected connection transfer budget
+      ansible.builtin.set_fact:
+        mwan_operation_handover_budget_seconds: >-
+          {{ mwan_transfer_remote_budget_seconds | int * 6
+             + (8 + (1 if mwan_transfer_previous['goodkind-mwan-steering:owner'] == 'networkd' else 0))
+               * mwan_transfer_read_poll_budget_seconds | int
+             + mwan_operation_copy_timeout_seconds | int * 5
+             + mwan_operation_checkpoint_timeout_seconds | int * 2
+             + mwan_operation_metadata_timeout_seconds | int
+             + (mwan_operation_checkpoint_timeout_seconds | int
+                if mwan_transfer_previous['goodkind-mwan-steering:owner'] == 'networkd'
+                else mwan_operation_metadata_timeout_seconds | int)
+             + ((4 + (1 if mwan_transfer_replacement['goodkind-mwan-steering:owner'] == 'networkd' else 0)) * 4 + 8)
+               * mwan_operation_checkpoint_timeout_seconds | int
+             + (mwan_transfer_packet_checks | selectattr('phase', 'in', ['excluded', 'acquired', 'selected']) | list | length)
+               * mwan_operation_native_timeout_seconds | int
+             + mwan_transfer_packet_edge_count | int * mwan_operation_checkpoint_timeout_seconds | int }}
+
     - name: Select only explicitly associated required inbound checks
       vars:
         associated_ids: >-

@@ -11,16 +11,26 @@ RSpec.describe 'MWAN handover deployment manifests' do
     tasks.flat_map { |entry| [entry, *entry.fetch('block', [])] }.find { |entry| entry.fetch('name') == name }
   end
 
-  def settings
+  def settings(transfer: true)
     groups = File.join(root, 'ansible/inventory/group_vars')
     variables = YAML.safe_load_file(File.join(groups, 'all/vars.yml'), aliases: true)
     variables.merge!(YAML.safe_load_file(File.join(groups, 'all/service_mapping.yml'), aliases: true))
     variables.merge!(YAML.safe_load_file(File.join(groups, 'mwan_suburban_servers.yml')))
-    variables.merge('mwan_role_job_timeout_seconds' => 120, 'mwan_transfer_active' => true,
-                    'mwan_transfer_provider' => true, 'mwan_transfer_connection_id' => 'webpass',
-                    'mwan_transfer_previous' => { 'goodkind-mwan-steering:owner' => 'networkd' },
-                    'mwan_transfer_replacement' => { 'goodkind-mwan-steering:owner' => 'mwan' },
-                    'mwan_transfer_packet_edge_count' => 0)
+    return variables unless transfer
+
+    variables.merge!('mwan_role_job_timeout_seconds' => 120, 'mwan_transfer_active' => true,
+                     'mwan_transfer_provider' => true, 'mwan_transfer_connection_id' => 'webpass',
+                     'mwan_transfer_previous' => { 'goodkind-mwan-steering:owner' => 'networkd' },
+                     'mwan_transfer_replacement' => { 'goodkind-mwan-steering:owner' => 'mwan' },
+                     'mwan_transfer_packet_edge_count' => 0)
+    names = ['Calculate bounded transfer jobs and readiness reads', 'Calculate the complete selected connection transfer budget']
+    facts = names.map do |name|
+      entry = TaskExpressions.fact_task(task(name))
+      entry['vars'] = variables.merge(entry.fetch('vars'))
+      entry
+    end
+    result = TaskExpressions.evaluate(variables: {}, facts: facts)
+    variables.merge(result.fetch('facts'))
   end
 
   def interruptions(variables)
@@ -82,6 +92,10 @@ RSpec.describe 'MWAN handover deployment manifests' do
   end
 
   it 'serializes no exemptions for nonproviders or connections without associated inbound checks' do
+    preparation = settings(transfer: false)
+    document = manifest(preparation, preparation.fetch('mwan_transfer_expected_interruptions'))
+    expect(document.fetch('expected_interruptions')).to eq([])
+    expect(document.fetch('recovery_timeout_seconds')).to eq(1940)
     variables = settings
     variables['mwan_transfer_provider'] = false
     expect(interruptions(variables)).to eq([])
