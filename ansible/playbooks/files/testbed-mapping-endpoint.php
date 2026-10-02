@@ -7,13 +7,13 @@ require_once('/usr/local/etc/inc/util.inc');
 use OPNsense\Core\Config;
 
 /** @return array<string, array<string, string>|string> */
-function mappingRule(string $uuid, string $source, string $description): array
+function mappingRule(string $uuid, string $source, string $family, string $description): array
 {
     return [
         '@attributes' => ['uuid' => $uuid],
         'type' => 'pass',
         'interface' => 'wan',
-        'ipprotocol' => 'inet',
+        'ipprotocol' => $family,
         'statetype' => 'keep state',
         'descr' => $description,
         'direction' => 'in',
@@ -32,10 +32,14 @@ try {
         throw new RuntimeException('The mapping endpoint requires the testbed WAN address');
     }
     $desired = [
-        mappingRule('6bec49b6-29c8-4b59-aa90-24fd7509cf82', '10.240.205.1',
+        mappingRule('6bec49b6-29c8-4b59-aa90-24fd7509cf82', '10.240.205.1', 'inet',
             'MWAN testbed mapping endpoint AT&T'),
-        mappingRule('495c5aa5-773b-4a6d-95da-c3b6f8e7331e', '10.241.204.1',
+        mappingRule('495c5aa5-773b-4a6d-95da-c3b6f8e7331e', '10.241.204.1', 'inet',
             'MWAN testbed mapping endpoint Webpass'),
+        mappingRule('0e05f006-8537-41b3-859f-7e48d58072d8', '3d06:bad:b01:200::91', 'inet6',
+            'MWAN testbed IPv6 mapping endpoint AT&T'),
+        mappingRule('b6d05d7a-e8bb-4537-9c19-a1bfc4b46c3b', '3d06:bad:b01:200::90', 'inet6',
+            'MWAN testbed IPv6 mapping endpoint Webpass'),
     ];
     $changed = false;
     foreach ($desired as $rule) {
