@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
 require 'digest'
+require 'json'
+require 'tmpdir'
 require 'yaml'
 require_relative '../support/ansible_render'
+require_relative '../support/command_runner'
 require_relative '../support/task_expressions'
 
 # These examples render the deploy-tack operator identity flags with
@@ -57,6 +60,32 @@ module TackOpsIdentityFlags
     plays.find { |play| play['name'] == FIRST_PLAY }.fetch('tasks').find { |task| task['name'] == GUARD }
   end
 
+  # The one host is a search guest in an environment with search off. The
+  # first play groups it into tack_deploy_skipped, and every later play
+  # selects no host. A run on this inventory changes no guest.
+  DEPLOY_INVENTORY = "[tack_all]\nguard-test ansible_connection=local tack_cluster_role=search tack_search_enabled=false\n"
+  DEPLOY_TIMEOUT_SECONDS = 120
+
+  # Runs the real deploy-tack playbook in check mode against that inventory
+  # and returns its output and exit status.
+  def run_deploy(identity)
+    Dir.mktmpdir('identity-guard') do |directory|
+      inventory = File.join(directory, 'inventory.ini')
+      File.write(inventory, DEPLOY_INVENTORY)
+      password = File.join(directory, 'vault-password')
+      File.write(password, AnsibleRender::VAULT_PASSWORD_PLACEHOLDER, perm: AnsibleRender::SECRET_FILE_MODE)
+      argv = [AnsibleRender::PLAYBOOK_COMMAND, '--check', '--inventory', inventory, PLAYBOOK_FILE,
+              '--extra-vars', JSON.generate(identity)]
+      CommandRunner.run({ AnsibleRender::VAULT_PASSWORD_ENV => password }, argv,
+                        chdir: AnsibleRender::ANSIBLE_DIRECTORY, timeout_seconds: DEPLOY_TIMEOUT_SECONDS)
+    end
+  end
+
+  def identity(service:, session:, agent_run:)
+    { 'tack_ops_agent_service' => service, 'tack_ops_agent_session' => session, 'tack_ops_agent_run' => agent_run,
+      'tack_ops_accountable_email' => '', 'deploy_operator_email' => HUMAN_EMAIL }
+  end
+
   def guard_passes?(service: '', session: '', agent_run: false, accountable: '', email: HUMAN_EMAIL)
     conditions = TaskExpressions.condition_list(guard.dig('ansible.builtin.assert', 'that'))
     variables = { 'tack_ops_agent_service' => service, 'tack_ops_agent_session' => session,
@@ -89,14 +118,27 @@ RSpec.describe TackOpsIdentityFlags do
     )
   end
 
-  it 'derives the operator ID the Tack command line derives for the same email' do
-    expect(described_class.operator_id('goodkindalex@gmail.com')).to eq('b8cfe465-3681-5eb2-89da-0b228a7c8d0f')
+  it 'renders the operator ID the Tack command line derives for the same email' do
+    flags = described_class.flags(service: '', session: '',
+                                  overrides: { 'deploy_operator_email' => 'goodkindalex@gmail.com' })
+
+    expect(flags.each_cons(2)).to include(['--operator-id', 'b8cfe465-3681-5eb2-89da-0b228a7c8d0f'])
   end
 
-  it 'checks the identity in the first play, before any play changes a guest', :aggregate_failures do
-    expect(described_class.plays.first['name']).to eq(TackOpsIdentityFlags::FIRST_PLAY)
-    expect(described_class.plays.first['tasks'].first['name']).to eq(TackOpsIdentityFlags::GUARD)
-    expect(described_class.guard).to include('run_once' => true, 'delegate_to' => 'localhost')
+  it 'stops a deploy from an agent shell without a service before any other task runs', :aggregate_failures do
+    result = described_class.run_deploy(described_class.identity(service: '', session: '', agent_run: true))
+
+    expect(result.exit_status.success?).to be(false)
+    expect(result.output).to include("TASK [#{TackOpsIdentityFlags::GUARD}]")
+    expect(result.output).not_to include('TASK [Group each host')
+  end
+
+  it 'lets a deploy from an agent shell with a service and session continue past the check', :aggregate_failures do
+    result = described_class.run_deploy(described_class.identity(service: 'claude-rowan',
+                                                                 session: TackOpsIdentityFlags::SESSION, agent_run: true))
+
+    expect(result.exit_status.success?).to be(true), result.output
+    expect(result.output).to include('TASK [Group each host')
   end
 
   it 'refuses an agent shell without an agent service and accepts an agent shell with one', :aggregate_failures do
