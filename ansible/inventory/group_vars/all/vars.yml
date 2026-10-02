@@ -58,8 +58,6 @@ ansible_ssh_common_args: "{{ ssh_base_args }}"
 # Increment the revision when a preparation change must apply before a service deploy.
 guest_prep_revision: "1"
 guest_prep_revision_file: /var/lib/configs/guest-prep-revision
-# Standalone key synchronization does not change the preparation revision.
-guest_prep_invalidate_revision: false
 guest_debug_command_file: /usr/local/bin/debug
 apt_cache_valid_time: 3600
 # SSH port every guest listens on; proxy overrides this to 2222 in its group_vars.

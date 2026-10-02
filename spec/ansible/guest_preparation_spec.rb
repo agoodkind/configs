@@ -67,6 +67,18 @@ module GuestPreparation
       run_deploy(['./configsctl', 'deploy', 'prep-guests', '--tags', 'guest-debug', '--extra-var', JSON.generate(variables)])
     end
 
+    def check_preparation_invalidation
+      variables = {
+        'target_hosts' => 'localhost',
+        'proxmox_node_delegates' => { 'localhost' => 'localhost' },
+        'ansible_proxmox_host' => 'localhost',
+        'ansible_proxmox_vmid' => 42,
+        'proxmox_vmtype' => 'lxc',
+        'guest_prep_revision_file' => revision_file
+      }
+      run_deploy(['./configsctl', 'deploy', 'prep-guests', '--tags', 'guest-preparation', '--check', '--extra-var', JSON.generate(variables)])
+    end
+
     def deploy_group
       revision_directory = File.join(@directory, 'revisions')
       service_directory = File.join(@directory, 'services')
@@ -153,6 +165,14 @@ RSpec.describe 'the guest preparation deployment boundary' do
     expect_success(@harness.deploy(publish: true, verify: false, check: true))
     expect(File.read(@harness.revision_file)).to eq("0\n")
     expect(File.exist?(@harness.service_file)).to be(false)
+  end
+
+  it 'does not invalidate completed preparation in check mode' do
+    @harness.seed_revision("#{GuestPreparation::EXPECTED_REVISION}\n")
+
+    expect_success(@harness.check_preparation_invalidation)
+
+    expect(File.read(@harness.revision_file)).to eq("#{GuestPreparation::EXPECTED_REVISION}\n")
   end
 
   it 'uses the inventory service when preparation targets an individual host' do
