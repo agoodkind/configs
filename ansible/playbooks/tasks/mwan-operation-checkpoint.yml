@@ -63,6 +63,7 @@
     fail_msg: The completed lease was released but recovery prohibits additional gateway writes.
   when:
     - mwan_operation_armed | bool
+    - mwan_operation_acquire | bool
     - not mwan_operation_completion_only | bool
 
 - name: Require the exact lease before reading issued remote completion
