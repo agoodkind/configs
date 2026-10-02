@@ -21,7 +21,215 @@ mwan_gate_collect_addresses:
   - "{{ service_mapping.vault_hypervisor.ipv6_oob }}"
 mwan_deploy_gate_families: "ipv4,ipv6"
 mwan_deploy_gate_consecutive_rounds: "3"
-mwan_transfer_packet_checks: []
+mwan_links_state_file: "/var/lib/mwan/owned-links.json"
+mwan_autoconfiguration_state_file: "/var/lib/mwan/owned-kernel.json"
+mwan_transfer_packet_checks:
+  - phase: excluded
+    family: ipv4
+    coverage: unaffected
+    host: localhost
+    connection_id: att
+    description: "Verify excluded AT&T IPv4 mapped SSH replies."
+    argv: &att_ipv4_mapped_ssh
+      - ssh
+      - "-4"
+      - "-J"
+      - suburban
+      - "-o"
+      - BatchMode=yes
+      - "-o"
+      - ConnectTimeout=10
+      - "-o"
+      - ConnectionAttempts=1
+      - "-o"
+      - StrictHostKeyChecking=yes
+      - "-o"
+      - HostKeyAlias=3d06:bad:b01::1
+      - "-o"
+      - ControlMaster=no
+      - "-o"
+      - ControlPath=none
+      - agoodkind@att-1335.goodkind.io
+      - hostname
+  - phase: excluded
+    family: ipv6
+    coverage: unaffected
+    host: localhost
+    connection_id: att
+    description: "Verify excluded AT&T IPv6 mapped SSH replies."
+    ipv6_translation_edge:
+      argument_index: 18
+      prefix: "agoodkind@"
+      suffix: ""
+    argv: &att_ipv6_mapped_ssh
+      - ssh
+      - "-6"
+      - "-J"
+      - suburban
+      - "-o"
+      - BatchMode=yes
+      - "-o"
+      - ConnectTimeout=10
+      - "-o"
+      - ConnectionAttempts=1
+      - "-o"
+      - StrictHostKeyChecking=yes
+      - "-o"
+      - HostKeyAlias=3d06:bad:b01::1
+      - "-o"
+      - ControlMaster=no
+      - "-o"
+      - ControlPath=none
+      - agoodkind@runtime-derived
+      - hostname
+  - phase: acquired
+    family: ipv4
+    coverage: unaffected
+    host: localhost
+    connection_id: att
+    description: "Verify acquired AT&T IPv4 mapped SSH replies."
+    argv: *att_ipv4_mapped_ssh
+  - phase: acquired
+    family: ipv6
+    coverage: unaffected
+    host: localhost
+    connection_id: att
+    description: "Verify acquired AT&T IPv6 mapped SSH replies."
+    ipv6_translation_edge:
+      argument_index: 18
+      prefix: "agoodkind@"
+      suffix: ""
+    argv: *att_ipv6_mapped_ssh
+  - phase: acquired
+    family: ipv4
+    coverage: selected
+    host: localhost
+    connection_id: webpass
+    description: "Verify acquired Webpass IPv4 mapped SSH replies."
+    argv: &webpass_ipv4_mapped_ssh
+      - ssh
+      - "-4"
+      - "-J"
+      - suburban
+      - "-o"
+      - BatchMode=yes
+      - "-o"
+      - ConnectTimeout=10
+      - "-o"
+      - ConnectionAttempts=1
+      - "-o"
+      - StrictHostKeyChecking=yes
+      - "-o"
+      - HostKeyAlias=3d06:bad:b01::1
+      - "-o"
+      - ControlMaster=no
+      - "-o"
+      - ControlPath=none
+      - agoodkind@webpass-1335.goodkind.io
+      - hostname
+  - phase: acquired
+    family: ipv6
+    coverage: selected
+    host: localhost
+    connection_id: webpass
+    description: "Verify acquired Webpass IPv6 mapped SSH replies."
+    ipv6_translation_edge:
+      argument_index: 18
+      prefix: "agoodkind@"
+      suffix: ""
+    argv: &webpass_ipv6_mapped_ssh
+      - ssh
+      - "-6"
+      - "-J"
+      - suburban
+      - "-o"
+      - BatchMode=yes
+      - "-o"
+      - ConnectTimeout=10
+      - "-o"
+      - ConnectionAttempts=1
+      - "-o"
+      - StrictHostKeyChecking=yes
+      - "-o"
+      - HostKeyAlias=3d06:bad:b01::1
+      - "-o"
+      - ControlMaster=no
+      - "-o"
+      - ControlPath=none
+      - agoodkind@runtime-derived
+      - hostname
+  - phase: recovered
+    family: ipv4
+    coverage: unaffected
+    host: localhost
+    connection_id: att
+    description: "Verify recovered AT&T IPv4 mapped SSH replies."
+    argv: *att_ipv4_mapped_ssh
+  - phase: recovered
+    family: ipv6
+    coverage: unaffected
+    host: localhost
+    connection_id: att
+    description: "Verify recovered AT&T IPv6 mapped SSH replies."
+    ipv6_translation_edge:
+      argument_index: 18
+      prefix: "agoodkind@"
+      suffix: ""
+    argv: *att_ipv6_mapped_ssh
+  - phase: recovered
+    family: ipv4
+    coverage: selected
+    host: localhost
+    connection_id: webpass
+    description: "Verify recovered Webpass IPv4 mapped SSH replies."
+    argv: *webpass_ipv4_mapped_ssh
+  - phase: recovered
+    family: ipv6
+    coverage: selected
+    host: localhost
+    connection_id: webpass
+    description: "Verify recovered Webpass IPv6 mapped SSH replies."
+    ipv6_translation_edge:
+      argument_index: 18
+      prefix: "agoodkind@"
+      suffix: ""
+    argv: *webpass_ipv6_mapped_ssh
+  - phase: selected
+    family: ipv4
+    coverage: unaffected
+    host: localhost
+    connection_id: att
+    description: "Verify selected AT&T IPv4 mapped SSH replies."
+    argv: *att_ipv4_mapped_ssh
+  - phase: selected
+    family: ipv6
+    coverage: unaffected
+    host: localhost
+    connection_id: att
+    description: "Verify selected AT&T IPv6 mapped SSH replies."
+    ipv6_translation_edge:
+      argument_index: 18
+      prefix: "agoodkind@"
+      suffix: ""
+    argv: *att_ipv6_mapped_ssh
+  - phase: selected
+    family: ipv4
+    coverage: selected
+    host: localhost
+    connection_id: webpass
+    description: "Verify selected Webpass IPv4 mapped SSH replies."
+    argv: *webpass_ipv4_mapped_ssh
+  - phase: selected
+    family: ipv6
+    coverage: selected
+    host: localhost
+    connection_id: webpass
+    description: "Verify selected Webpass IPv6 mapped SSH replies."
+    ipv6_translation_edge:
+      argument_index: 18
+      prefix: "agoodkind@"
+      suffix: ""
+    argv: *webpass_ipv6_mapped_ssh
 mwan_deploy_probe:
   opnsense_vmid: "{{ service_mapping.opnsense.vmid }}"
   ipv4_source: "{{ mwan_opnsense_internal_v4 }}"
@@ -419,15 +627,13 @@ mwan_providers:
 
   - name: webpass
     connection_id: webpass
-    owner: networkd
+    owner: mwan
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
-    link_files: rendered
-    # The I226-V passthrough is matched by driver and given the Webpass
-    # registered address, because the NIC's own address is not the one
-    # Webpass provisioned.
+    # The permanent MAC identifies the passthrough NIC; Webpass requires the
+    # registered MAC for acquisition.
     link:
-      match: { driver: igc }
+      match: { hardware_address: "64:62:66:23:f9:84" }
       hardware_address: "{{ mwan_webpass_mac }}"
     # Static IPv4 inside the Webpass block; the default route carries a
     # metric so it does not contend with the management link.
@@ -435,11 +641,11 @@ mwan_providers:
       translation:
         mode: ietf-nat:napt44
         static_mappings:
-          - { internal: "10.250.250.2", external: "136.25.91.242" }
-          - { internal: "10.250.250.3", external: "136.25.91.243" }
-          - { internal: "10.250.250.4", external: "136.25.91.244" }
-          - { internal: "10.250.250.5", external: "136.25.91.245" }
-          - { internal: "10.250.250.6", external: "136.25.91.246" }
+          - { internal: "10.250.250.2", external: "136.25.91.242", delivery: local }
+          - { internal: "10.250.250.3", external: "136.25.91.243", delivery: local }
+          - { internal: "10.250.250.4", external: "136.25.91.244", delivery: local }
+          - { internal: "10.250.250.5", external: "136.25.91.245", delivery: local }
+          - { internal: "10.250.250.6", external: "136.25.91.246", delivery: local }
       forwarding: true
       dhcp: false
       address: "{{ mwan_webpass_ipv4 }}"
@@ -457,10 +663,20 @@ mwan_providers:
       forwarding: true
       dhcp: true
       accept_ra: true
+      autoconf: true
+      accept_ra_default_route: true
+      use_ra_dns: true
+      route_metric: 1024
       delegation:
         hint: "::/56"
-        duid_type: link-layer-time
-        duid: "{{ mwan_webpass_duid_raw_data }}"
+      dhcpv6_client:
+        duid: "{{ mwan_webpass_duid }}"
+        address_iaid: 4009731696
+        prefix_iaid: 4009731696
+        request_address: true
+        request_prefix: true
+        without_ra: "no"
+        use_dns: true
     table: 200
     mark: 2
     mark_prio: 200

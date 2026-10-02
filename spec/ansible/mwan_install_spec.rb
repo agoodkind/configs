@@ -345,7 +345,7 @@ RSpec.describe MwanInstall do
         'render_mwan_network.yml' => 'mwan_suburban_servers.yml',
         'render_mwan_prod_network.yml' => 'mwan_servers.yml'
       }
-      group = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_files.fetch(playbook)))
+      group = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_files.fetch(playbook)), aliases: true)
       configured_connections = (group.fetch('mwan_providers') + group.fetch('mwan_non_provider_connections')).to_h do |connection|
         [connection.fetch('connection_id'), connection]
       end
@@ -440,7 +440,7 @@ RSpec.describe MwanInstall do
 
   MwanInstall::GATEWAY_GROUP_FILES.each do |group_file|
     it "passes the selected families and probe path to both deploy-gate commands in #{group_file}" do
-      group_vars = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file))
+      group_vars = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file), aliases: true)
       tasks = described_class.role_tasks(file: "deploy-mwan.yml", play: "Configure MWAN VM")
       baseline = tasks.find { |task| task['name'] == 'Verify internet connectivity before deploy' }
       recovery = tasks.find { |task| task['name'] == 'Start hypervisor-local MWAN deploy gate before reboot' }
@@ -471,7 +471,7 @@ RSpec.describe MwanInstall do
     end
 
     it "leaves the verb's units out of the enable list in #{group_file}" do
-      services = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file)).fetch('mwan_enabled_services')
+      services = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, group_file), aliases: true).fetch('mwan_enabled_services')
       doubled = services.map { |name| described_class.unit_name(name) } & MwanInstall::ROLES.first[:enabled]
 
       expect(doubled).to be_empty
