@@ -680,6 +680,10 @@
 
         - name: Reconnect after the scheduled reboot
           vars:
+            # wait_for_connection runs Ansible's built-in Python ping module
+            # on the guest to verify SSH and remote execution. MWAN supplies
+            # no Python code for this check. Pipelining uses SSH stdin instead
+            # of uploading the module into a cached directory that may be deleted.
             ansible_pipelining: true
           ansible.builtin.wait_for_connection:
             connect_timeout: 5
