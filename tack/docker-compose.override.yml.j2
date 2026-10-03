@@ -45,6 +45,12 @@ services:
       plugins.ml_commons.only_run_on_ml_node: "true"
       plugins.ml_commons.task_dispatch_policy: least_load
       plugins.ml_commons.model_auto_redeploy.enable: "true"
+      # ML Commons refuses every local model deploy and prediction on a member
+      # with less free space on its data path than this threshold. The 5 GiB
+      # default exceeds the 2 GiB that a 40 GiB member keeps free at the 95
+      # percent flood stage, and Tack encodes every write and query through
+      # the model. With 1 GiB the refusal starts above the flood stage.
+      plugins.ml_commons.disk_free_space_threshold: 1gb
       # The HTTP and transport layers both use TLS with this member's
       # certificate, and each side verifies the other against the search
       # authority. A peer joins only when its certificate subject matches a
