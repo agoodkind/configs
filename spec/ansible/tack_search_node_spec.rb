@@ -16,7 +16,8 @@ module TackSearchNode
     'node.roles' => 'cluster_manager,data,ingest,ml',
     'plugins.ml_commons.only_run_on_ml_node' => 'true',
     'plugins.ml_commons.task_dispatch_policy' => 'least_load',
-    'plugins.ml_commons.model_auto_redeploy.enable' => 'true'
+    'plugins.ml_commons.model_auto_redeploy.enable' => 'true',
+    'plugins.ml_commons.disk_free_space_threshold' => '1gb'
   }.freeze
   # Every QA and production member runs a 3 GiB heap.
   JAVA_OPTS = '-Xms3g -Xmx3g -Djava.net.preferIPv6Addresses=true'
