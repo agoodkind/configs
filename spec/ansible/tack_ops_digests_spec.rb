@@ -9,9 +9,9 @@ require_relative '../support/tack_ops_identity'
 # before the command module runs docker.
 #
 # The audit row of ops deploy verify records deploy_commit and the agent
-# identity, and no command flag. The two expected digests are recorded in the
-# play command line and the ops deploy verify result line, and in its error
-# on a mismatch. The QA reset evidence saves that result line for each run.
+# identity, and no command flag. The play command line and the ops deploy
+# verify result line record both expected digests, and the error records them
+# on a mismatch. The QA reset and production run evidence save both lines.
 module TackOpsDigests
   PLAYBOOK_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tack-ops.yml')
   INVENTORY = "[tack_qa_all]\ntack-qa-test ansible_connection=local\n[tack_prod_all]\n" \

@@ -21,10 +21,11 @@
 # reviewed build. The command compares each digest exactly with the index
 # descriptor digest of the image that tack-app-1 and tack-audit-consumer-1
 # run on the guest's containerd image store, and a mismatch stops the run.
-# The audit row of the command records tack_commit as the deploy commit; the
-# digests appear in the command line and its output. The run then prints the
-# dry run of the command, and with tack_ops_execute true runs it with
-# --execute. A run with --check runs the verification and the dry run only.
+# The audit row of the command records tack_commit as the deploy commit. The
+# command line and the result line record both digests, and the QA reset and
+# production run evidence save both lines. The run then prints the dry run of
+# the command, and with tack_ops_execute true runs it with --execute. A run
+# with --check runs the verification and the dry run only.
 #
 # Extra vars override every play and group variable. The allowed commands,
 # the service of each command, and the command lines are literals in the
