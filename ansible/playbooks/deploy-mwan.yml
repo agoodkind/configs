@@ -679,6 +679,8 @@
           changed_when: true
 
         - name: Reconnect after the scheduled reboot
+          vars:
+            ansible_pipelining: true
           ansible.builtin.wait_for_connection:
             connect_timeout: 5
             delay: 15
