@@ -63,6 +63,14 @@ locals {
       ttl     = 1
       proxied = false
     }
+    "goodkind.io/A/poweredge.home.goodkind.io/561deda2" = {
+      zone    = "goodkind.io"
+      name    = "poweredge.home.goodkind.io"
+      type    = "A"
+      content = "10.230.0.254"
+      ttl     = 1
+      proxied = false
+    }
     "goodkind.io/A/router.suburban.goodkind.io/6161dd31" = {
       zone    = "goodkind.io"
       name    = "router.suburban.goodkind.io"
