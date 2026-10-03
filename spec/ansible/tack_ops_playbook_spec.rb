@@ -20,6 +20,8 @@ module TackOpsPlaybook
   PRODUCTION_HOSTS = %w[tack tack-data1 tack-data2 tack-data3].freeze
   GROUPS = { 'tack_qa_all' => QA_HOSTS, 'tack_prod_all' => PRODUCTION_HOSTS }.freeze
   COMMIT = '66ef50f670fd1cd6a5f4dfe8f877af30ed6c2b51'
+  SERVER_DIGEST = "sha256:#{'a' * 64}".freeze
+  CONSUMER_DIGEST = "sha256:#{'b' * 64}".freeze
   AGENT_FLAGS = "--operator-service claude-luna --operator-session s1 --operator-id 0a6f --operator-email a@b.c --deploy-commit #{COMMIT}".freeze
 
   module_function
@@ -37,6 +39,7 @@ module TackOpsPlaybook
 
   def request(**overrides)
     { 'tack_commit' => COMMIT, 'tack_ops_command' => 'ops search verify', 'tack_ops_args' => [],
+      'tack_server_digest' => SERVER_DIGEST, 'tack_audit_consumer_digest' => CONSUMER_DIGEST,
       'ansible_play_hosts_all' => ['tack-qa'], 'groups' => GROUPS }.merge(overrides)
   end
 
@@ -105,7 +108,9 @@ RSpec.describe TackOpsPlaybook do
     dry_run = described_class.command_line(TackOpsPlaybook::DRY_RUN_TASK, command: 'ops qa datagen seed', args: ['--scale=small'])
     execute = described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: 'ops deploy verify')
 
-    expect(verify).to eq(%w[docker compose run --rm tack-ops ops deploy verify --execute --tag] + [TackOpsPlaybook::COMMIT] + flags)
+    expect(verify).to eq(%w[docker compose run --rm tack-ops ops deploy verify --execute --tag] + [TackOpsPlaybook::COMMIT] +
+                         ['--tack-server-digest', TackOpsPlaybook::SERVER_DIGEST,
+                          '--tack-audit-consumer-digest', TackOpsPlaybook::CONSUMER_DIGEST] + flags)
     expect(dry_run).to eq(%w[docker compose run --rm app ops qa datagen seed --scale=small] + flags)
     expect(execute).to eq(%w[docker compose run --rm tack-ops ops deploy verify] + flags + ['--execute'])
   end

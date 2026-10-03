@@ -63,6 +63,10 @@ tack_ops_identity_flags: >-
 tack_ops_command: ""
 tack_ops_args: []
 tack_ops_execute: false
+# The CI multi-platform index digests of the reviewed build, sha256: and 64
+# lowercase hex. A run passes both; the playbook refuses an empty value.
+tack_server_digest: ""
+tack_audit_consumer_digest: ""
 
 # Engine packages the deploy holds against the weekly package updater
 # (TACK-487): an unattended upgrade of any of these restarts the daemon and

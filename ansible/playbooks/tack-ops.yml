@@ -13,15 +13,18 @@
 #     --extra-var tack_ops_execute=true \
 #     --extra-var tack_ops_agent_service=<agent> \
 #     --extra-var tack_ops_agent_session=<session> \
-#     --extra-var tack_ops_accountable_email=<accountable operator email>
+#     --extra-var tack_ops_accountable_email=<accountable operator email> \
+#     --extra-var tack_server_digest=<CI index digest of tack-server> \
+#     --extra-var tack_audit_consumer_digest=<CI index digest of tack-audit-consumer>
 #
-# Each run first runs ops deploy verify --tag <tack_commit>. The command
-# compares the image digest each running app and audit-consumer container
-# runs with the registry digest the guest Docker daemon stores for the image
-# at that tag, and fails when they differ or the daemon stores none; a failure
-# stops the run. The run then prints the dry run of the
-# command, and with tack_ops_execute true runs it with --execute. A run with
-# --check runs the verification and the dry run only.
+# Each run first runs ops deploy verify with the two CI index digests of the
+# reviewed build. The command compares each digest exactly with the index
+# descriptor digest of the image that tack-app-1 and tack-audit-consumer-1
+# run on the guest's containerd image store, and a mismatch stops the run.
+# The audit row of the command records tack_commit as the deploy commit; the
+# digests appear in the command line and its output. The run then prints the
+# dry run of the command, and with tack_ops_execute true runs it with
+# --execute. A run with --check runs the verification and the dry run only.
 #
 # Extra vars override every play and group variable. The allowed commands,
 # the service of each command, and the command lines are literals in the
@@ -43,6 +46,8 @@
       ansible.builtin.assert:
         that:
           - tack_commit is match('[0-9a-f]{40}\Z')
+          - tack_server_digest is match('sha256:[0-9a-f]{64}\Z')
+          - tack_audit_consumer_digest is match('sha256:[0-9a-f]{64}\Z')
           - >-
             tack_ops_command in ['ops deploy verify', 'audit signers',
             'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
@@ -57,10 +62,14 @@
         fail_msg: >-
           tack-ops runs one reviewed Tack ops command on exactly one QA guest
           and never on a production guest. tack_commit is the 40-character Tack
-          commit the guest runs. Each extra argument is one --flag or
+          commit the guest runs. tack_server_digest and
+          tack_audit_consumer_digest are the CI index digests of the reviewed
+          build, each sha256: and 64 lowercase hex. Each extra argument is one --flag or
           --flag=value token and never --execute, --operator-*, or
           --deploy-commit. Command "{{ tack_ops_command }}", arguments
-          {{ tack_ops_args }}, commit "{{ tack_commit }}", guests
+          {{ tack_ops_args }}, commit "{{ tack_commit }}", tack-server digest
+          "{{ tack_server_digest }}", tack-audit-consumer digest
+          "{{ tack_audit_consumer_digest }}", guests
           {{ ansible_play_hosts_all }}.
         quiet: true
       any_errors_fatal: true
@@ -76,7 +85,10 @@
       ansible.builtin.command:
         cmd: >-
           docker compose run --rm tack-ops ops deploy verify --execute
-          --tag {{ tack_commit }} {{ tack_ops_identity_flags }}
+          --tag {{ tack_commit }}
+          --tack-server-digest {{ tack_server_digest }}
+          --tack-audit-consumer-digest {{ tack_audit_consumer_digest }}
+          {{ tack_ops_identity_flags }}
         chdir: "{{ tack_install_dir }}"
       changed_when: false
       check_mode: false
