@@ -298,9 +298,79 @@
         - not mwan_bootstrap_guest | bool
         - not ansible_check_mode
 
+    # The arm tasks write no file on the gateway. The rescue never runs
+    # recover, because recover restores the snapshot and reboots a gateway
+    # that has no change. The arm command creates the hypervisor record only
+    # after its baseline checks pass. A later arm failure sets that record to
+    # recovering, and the hypervisor watchdog then restores the snapshot the
+    # record references. The rescue removes the snapshot only when the
+    # hypervisor has no record for this operation.
     - name: Arm preparation and activation observation before gateway writes
-      ansible.builtin.include_tasks: tasks/arm-mwan-operation.yml
       when: not mwan_bootstrap_guest | bool
+      block:
+        # The status command in the rescue reads this value when an arm task
+        # fails before the hypervisor generates the operation generation.
+        - name: Initialize the operation generation
+          ansible.builtin.set_fact:
+            mwan_operation_generation: ""
+
+        - name: Arm the hypervisor deployment operation
+          ansible.builtin.include_tasks: tasks/arm-mwan-operation.yml
+
+      rescue:
+        - name: Reject the failed arm preparation of a check run
+          ansible.builtin.fail:
+            msg: >-
+              Arm preparation failed at {{ ansible_failed_task.name }}.
+              The check run created no snapshot and no hypervisor record.
+          when: ansible_check_mode
+
+        # The status command exits zero only when the hypervisor record has
+        # this trace ID and this generation.
+        - name: Read the hypervisor record of the failed arm
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.command:
+            argv:
+              - /usr/local/bin/mwan
+              - deploy-gate
+              - status
+              - "{{ mwan_deploy_trace_id }}"
+              - "{{ mwan_operation_generation }}"
+              - --config
+              - /etc/mwan/config.toml
+          register: mwan_operation_failed_arm
+          changed_when: false
+          failed_when: false
+
+        - name: Reject the failed arm and keep the snapshot the record references
+          ansible.builtin.fail:
+            msg: >-
+              Arm preparation failed at {{ ansible_failed_task.name }}.
+              The hypervisor record for operation {{ mwan_deploy_trace_id }}
+              has status {{ (mwan_operation_failed_arm.stdout | from_json).status }}.
+              The record references snapshot {{ mwan_pre_deploy_snapshot_name }},
+              and the deploy keeps that snapshot. The hypervisor watchdog
+              recovers an unresolved record from that snapshot. The next arm
+              succeeds only after the record status is recovered or committed.
+          when: mwan_operation_failed_arm.rc == 0
+
+        - name: Remove the snapshot that no hypervisor record references
+          delegate_to: "{{ mwan_proxmox_delegate }}"
+          ansible.builtin.command:
+            argv:
+              - qm
+              - delsnapshot
+              - "{{ actual_vmid }}"
+              - "{{ mwan_pre_deploy_snapshot_name }}"
+          changed_when: true
+
+        - name: Reject the failed arm after the snapshot removal
+          ansible.builtin.fail:
+            msg: >-
+              Arm preparation failed at {{ ansible_failed_task.name }}.
+              The hypervisor has no record for operation
+              {{ mwan_deploy_trace_id }}. The deploy removed snapshot
+              {{ mwan_pre_deploy_snapshot_name }}.
 
     # The running daemon reads none of these files before the reboot. The
     # reboot starts every unit from the written files. The hypervisor operation
