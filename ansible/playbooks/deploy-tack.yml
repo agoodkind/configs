@@ -176,14 +176,17 @@
         enabled: true
         state: started
 
-    - name: Configure Docker daemon for IPv6
+    - name: Configure Docker daemon for IPv6 and the containerd image store
       ansible.builtin.copy:
         dest: /etc/docker/daemon.json
         mode: "0644"
         content: |
           {
             "ipv6": true,
-            "ip6tables": true
+            "ip6tables": true,
+            "features": {
+              "containerd-snapshotter": true
+            }
           }
       notify: Restart Docker
 
