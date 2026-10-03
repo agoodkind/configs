@@ -118,43 +118,6 @@
   register: mwan_operation_baseline_files
   check_mode: false
 
-- name: Read the original gateway producer build identity
-  ansible.builtin.command:
-    argv: [/usr/local/bin/mwan, version]
-  register: mwan_operation_producer_version
-  changed_when: false
-  check_mode: false
-
-- name: Identify allowlisted original producers by commit and executable digest
-  ansible.builtin.set_fact:
-    mwan_operation_producer_commit: >-
-      {{ (mwan_operation_producer_version.stdout
-          | regex_findall(' commit=([0-9a-f]{7,40}) '))[0] }}
-    mwan_operation_matching_producers: >-
-      {{ mwan_legacy_npt_producers
-         | selectattr('executable_sha256', 'equalto',
-             mwan_operation_baseline_files.results[0].stat.checksum)
-         | list }}
-
-- name: Reject a changed executable claiming an original producer identity
-  ansible.builtin.assert:
-    that:
-      - >-
-        mwan_operation_producer_commit
-        not in mwan_legacy_npt_producers | map(attribute='commit') | list
-        or mwan_operation_matching_producers != []
-    fail_msg: >-
-      The original producer build identity does not match its verified
-      executable digest. Gateway preparation has not started.
-
-- name: Select one-shot adoption only for verified original producers
-  ansible.builtin.set_fact:
-    mwan_legacy_npt_adoption_needed: >-
-      {{ mwan_legacy_npt_adoption_required | bool
-         and mwan_operation_matching_producers != []
-         and mwan_operation_producer_commit
-           in mwan_operation_matching_producers | map(attribute='commit') | list }}
-
 - name: Render the exact target runtime configuration before gateway writes
   delegate_to: localhost
   become: false

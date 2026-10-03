@@ -11,35 +11,20 @@
 #   cloudflared_service_after: systemd After= dependencies (default: network-online.target)
 #   cloudflared_service_wants: systemd Wants= dependencies (default: network-online.target)
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Ensure keyrings dir exists
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
   ansible.builtin.file:
     path: /usr/share/keyrings
     state: directory
     mode: "0755"
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Install Cloudflare apt signing key
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
   ansible.builtin.get_url:
     url: https://pkg.cloudflare.com/cloudflare-public-v2.gpg
     dest: /usr/share/keyrings/cloudflare-public-v2.gpg
     mode: "0644"
   register: cloudflared_apt_key
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Add Cloudflare apt repo
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
   ansible.builtin.copy:
     dest: /etc/apt/sources.list.d/cloudflared.list
     mode: "0644"
@@ -47,50 +32,26 @@
       deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main
   register: cloudflared_apt_repository
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Update apt cache
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
-  async: "{{ deployment_mutation_timeout_seconds }}"
-  poll: 5
   ansible.builtin.apt:
     update_cache: true
     cache_valid_time: >-
       {{ 0 if (cloudflared_apt_key.changed or cloudflared_apt_repository.changed)
          else apt_cache_valid_time }}
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Install cloudflared
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
-  async: "{{ deployment_mutation_timeout_seconds }}"
-  poll: 5
   ansible.builtin.apt:
     name: cloudflared
     state: present
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Ensure cloudflared user exists
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
   ansible.builtin.user:
     name: cloudflared
     system: true
     create_home: false
     shell: /usr/sbin/nologin
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Ensure cloudflared config directory exists
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
   ansible.builtin.file:
     path: /etc/cloudflared
     state: directory
@@ -98,12 +59,7 @@
     group: cloudflared
     mode: "0750"
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Write the cloudflared tunnel token
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
   ansible.builtin.copy:
     content: "{{ cloudflared_token }}"
     dest: /etc/cloudflared/token
@@ -113,39 +69,20 @@
   no_log: true
   notify: Restart cloudflared
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Deploy cloudflared systemd service
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
   ansible.builtin.template:
     src: "{{ repo_root }}/common/services/cloudflared.service.j2"
     dest: /etc/systemd/system/cloudflared.service
     mode: "0644"
   notify: Restart cloudflared
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Enable cloudflared service
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
-  async: "{{ deployment_mutation_timeout_seconds }}"
-  poll: 5
   ansible.builtin.systemd:
     name: cloudflared
     enabled: true
     daemon_reload: true
 
-- name: Verify the caller deployment checkpoint
-  ansible.builtin.include_tasks: "{{ deployment_prewrite_checkpoint_task }}"
-  when: deployment_prewrite_checkpoint_task != ''
-
 - name: Ensure cloudflared is running
-  timeout: "{{ deployment_mutation_timeout_seconds }}"
-  async: "{{ deployment_mutation_timeout_seconds }}"
-  poll: 5
   ansible.builtin.systemd:
     name: cloudflared
     state: started

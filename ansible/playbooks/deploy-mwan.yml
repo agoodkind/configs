@@ -50,8 +50,6 @@
     NEEDRESTART_MODE: l
   vars:
     mwan_config_dir: /etc/mwan
-    mwan_role_job_timeout_seconds: 120
-    mwan_core_runtime_activated: false
     repo_root: "{{ playbook_dir | dirname | dirname }}"
     # The controller renders one network document per host. The released loader
     # validates these exact bytes before the deploy installs the MWAN management stack.
@@ -259,13 +257,6 @@
           check_mode: false
       when: mwan_ifmgr_wan_enabled | bool
 
-    - name: Prepare the exact connection transfer before operation rendering
-      ansible.builtin.include_tasks: tasks/prepare-mwan-connection-transfer.yml
-      when:
-        - mwan_ifmgr_wan_enabled | bool
-        - not mwan_bootstrap_guest | bool
-        - not ansible_check_mode
-
     - name: Install the matching autonomous hypervisor watchdog
       delegate_to: "{{ mwan_proxmox_delegate }}"
       ansible.builtin.copy:
@@ -311,15 +302,12 @@
       ansible.builtin.include_tasks: tasks/arm-mwan-operation.yml
       when: not mwan_bootstrap_guest | bool
 
-    - name: Apply the protected gateway upgrade
+    # The running daemon reads none of these files before the reboot. The
+    # reboot starts every unit from the written files. The hypervisor operation
+    # restores the snapshot when the required application checks fail.
+    - name: Write the release and reboot the gateway
       block:
-        - name: Authorize the deployment timestamp write
-          ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-          vars:
-            mwan_operation_phase: gateway-preparation
-
         - name: Write deploy timestamp to MWAN VM
-          timeout: "{{ mwan_operation_task_timeout_seconds }}"
           ansible.builtin.copy:
             content: "{{ ansible_date_time.epoch }}"
             dest: /var/lib/mwan/last-deploy
@@ -331,22 +319,8 @@
           ansible.builtin.include_tasks: tasks/install-cloudflared.yml
           vars:
             cloudflared_token: "{{ vault_mwan_cloudflared_token }}"
-            deployment_prewrite_checkpoint_task: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-            deployment_mutation_timeout_seconds: "{{ mwan_operation_task_timeout_seconds }}"
-            mwan_operation_phase: cloudflared-configuration
-
-        - name: Wait for the controller connection after cloudflared starts
-          ansible.builtin.include_tasks: tasks/wait-for-connection.yml
-
-        - name: Authorize the next gateway mutation
-          ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-          vars:
-            mwan_operation_phase: gateway-preparation
 
         - name: Install required packages
-          timeout: "{{ mwan_operation_task_timeout_seconds }}"
-          async: "{{ mwan_operation_task_timeout_seconds }}"
-          poll: 5
           ansible.builtin.apt:
             name:
               - wpasupplicant
@@ -368,279 +342,75 @@
               - conntrack
             state: present
 
-        - name: Wait for the controller connection after network packages install
-          ansible.builtin.include_tasks: tasks/wait-for-connection.yml
-
-        - name: Authorize the next gateway mutation
-          ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-          vars:
-            mwan_operation_phase: gateway-preparation
-
         - name: Declare gateway firewall modules for boot
-          timeout: "{{ mwan_operation_task_timeout_seconds }}"
           ansible.builtin.copy:
             src: "{{ repo_root }}/mwan/config/modules-load.conf"
             dest: /etc/modules-load.d/mwan-firewall.conf
             mode: "0644"
 
-        - name: Load gateway firewall modules before the daemon starts
-          ansible.builtin.command:
-            argv:
-              - modprobe
-              - "{{ item }}"
-          loop: "{{ lookup('file', repo_root ~ '/mwan/config/modules-load.conf').splitlines() }}"
-          changed_when: false
-
-        - name: Authorize the next gateway mutation
-          ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-          vars:
-            mwan_operation_phase: gateway-preparation
-
         - name: Create MWAN runtime config directory
-          timeout: "{{ mwan_operation_task_timeout_seconds }}"
           ansible.builtin.file:
             path: /etc/mwan
             state: directory
             mode: "0755"
 
-        - name: Capture and adopt the original producer before input replacement
-          ansible.builtin.include_tasks: tasks/adopt-mwan-legacy-npt.yml
-          when:
-            - not mwan_bootstrap_guest | bool
-            - not ansible_check_mode
-            - mwan_legacy_npt_adoption_needed | bool
-
         # The management stack installs after the released loader accepts the
         # document. A rejected document stops the play before this installation.
         # The first play unpacked this bundle beside the binary.
         - name: Install the wanconfig management stack
-          when: ansible_check_mode or mwan_bootstrap_guest | bool
-            or not mwan_legacy_npt_adoption_needed | bool
           ansible.builtin.import_tasks: tasks/mwan-vm/wanconfig-stack.yml
           become: true
           vars:
-            mwan_install_operation_phase: gateway-preparation
-            mwan_install_reuse_lease: false
             wanconfig_deb_dir: "/var/lib/mwan-wanconfig/debs/{{ mwan_release_tag }}"
             # The rousette package ships the models its RESTCONF contract needs.
             wanconfig_rousette_yang_dir: /opt/mwan-wanconfig/share/yang/modules/rousette
 
-        - name: Install RESTCONF schemas after normal WAN activation
-          ansible.builtin.include_tasks: tasks/mwan-vm/wanconfig-models.yml
-          vars:
-            mwan_install_operation_phase: gateway-preparation
-            mwan_install_reuse_lease: false
-            wanconfig_rousette_yang_dir: /opt/mwan-wanconfig/share/yang/modules/rousette
-          when:
-            - not ansible_check_mode
-            - not mwan_bootstrap_guest | bool
-            - mwan_legacy_npt_adoption_needed | bool
-
-        - name: Install the normal daemon runtime environment
+        - name: Install the daemon runtime environment
           ansible.builtin.include_tasks: tasks/install-mwan-runtime-environment.yml
-          vars:
-            mwan_install_operation_phase: gateway-preparation
-            mwan_install_reuse_lease: false
-            mwan_install_notify_wan: true
-          when: ansible_check_mode or mwan_bootstrap_guest | bool
-            or not mwan_legacy_npt_adoption_needed | bool
 
-        - name: Stage and activate MWAN role configuration
-          ansible.builtin.include_tasks: tasks/stage-and-activate-mwan-roles.yml
-          vars:
-            mwan_role_staging_task_file: "{{ playbook_dir }}/tasks/stage-mwan-role-inputs.yml"
+        - name: Read the prior deployment's managed networkd inputs
+          ansible.builtin.include_tasks: tasks/read-mwan-networkd-inventory.yml
 
-        - name: Transfer firewall ownership from nftables to mwan-ifmgr
-          when:
-            - mwan_ifmgr_wan_enabled | bool
-            - not ansible_check_mode
-          block:
-            - name: Read the retired nftables service state
-              ansible.builtin.command:
-                argv:
-                  - systemctl
-                  - is-enabled
-                  - nftables.service
-              register: mwan_nftables_enabled
-              changed_when: false
-              failed_when: false
+        - name: Install all MWAN runtime inputs
+          ansible.builtin.include_tasks: tasks/stage-mwan-role-inputs.yml
 
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
+        - name: Retire the prior deployment's managed networkd inputs
+          ansible.builtin.include_tasks: tasks/prune-mwan-networkd-inputs.yml
 
-            - name: Create nftables handoff drop-in directory
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              ansible.builtin.file:
-                path: /etc/systemd/system/nftables.service.d
-                state: directory
-                mode: "0755"
-              when: mwan_nftables_enabled.stdout | trim != 'masked'
+        # The daemon renders the management and transit units as
+        # 20-<interface>.network before networkd starts. networkd applies the
+        # first matching file in name order. A remaining 10-mgmt.network or
+        # 00-mwan-release file would replace the rendered unit at the reboot.
+        - name: Remove networkd files that precede daemon-rendered units
+          ansible.builtin.file:
+            path: "/etc/systemd/network/{{ item }}"
+            state: absent
+          loop: >-
+            {{ ['10-mgmt.network', '40-mwanbr.network']
+               + ((mwan_providers + mwan_non_provider_connections)
+                  | selectattr('owner', 'equalto', 'networkd')
+                  | map(attribute='connection_id')
+                  | map('regex_replace', '^', '00-mwan-release-')
+                  | map('regex_replace', '$', '.network') | list) }}
+          when: mwan_ifmgr_wan_enabled | bool
 
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
+        # The daemon loads the firewall. The mask applies at the reboot. The
+        # running ruleset stays loaded until the reboot.
+        - name: Mask the retired nftables service
+          ansible.builtin.systemd:
+            name: nftables
+            masked: true
+          when: mwan_ifmgr_wan_enabled | bool
 
-            - name: Preserve installed rules when stopping the retired nftables service
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              ansible.builtin.copy:
-                dest: /etc/systemd/system/nftables.service.d/99-mwan-handoff.conf
-                mode: "0644"
-                content: |
-                  [Service]
-                  ExecStop=
-              when: mwan_nftables_enabled.stdout | trim != 'masked'
-
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
-
-            - name: Load the nftables handoff drop-in
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              async: "{{ mwan_operation_task_timeout_seconds }}"
-              poll: 5
-              ansible.builtin.systemd:
-                daemon_reload: true
-              when: mwan_nftables_enabled.stdout | trim != 'masked'
-
-            - name: Read the nftables stop action before handoff
-              ansible.builtin.command:
-                argv:
-                  - systemctl
-                  - show
-                  - --property=ExecStop
-                  - --value
-                  - nftables.service
-              register: mwan_nftables_stop_action
-              changed_when: false
-              when: mwan_nftables_enabled.stdout | trim != 'masked'
-
-            - name: Require an empty nftables stop action before handoff
-              ansible.builtin.assert:
-                that:
-                  - mwan_nftables_stop_action.stdout | trim == ''
-                fail_msg: nftables still has an ExecStop action that could clear gateway rules
-              when: mwan_nftables_enabled.stdout | trim != 'masked'
-
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
-
-            - name: Stop and disable the retired nftables service without deleting rules
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              async: "{{ mwan_operation_task_timeout_seconds }}"
-              poll: 5
-              ansible.builtin.systemd:
-                name: nftables
-                state: stopped
-                enabled: false
-              when: mwan_nftables_enabled.stdout | trim != 'masked'
-
-            - name: Read the retired nftables service activity
-              ansible.builtin.command:
-                argv:
-                  - systemctl
-                  - show
-                  - --property=ActiveState
-                  - --value
-                  - nftables.service
-              register: mwan_nftables_activity
-              changed_when: false
-
-            - name: Require the retired nftables service to be inactive
-              ansible.builtin.assert:
-                that:
-                  - mwan_nftables_activity.stdout | trim == 'inactive'
-                fail_msg: nftables remains active after the firewall handoff
-
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
-
-            - name: Confirm gateway readiness after the nftables service stops
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              async: "{{ mwan_operation_task_timeout_seconds }}"
-              poll: 5
-              ansible.builtin.systemd:
-                name: mwan-ifmgr@wan
-                state: started
-
-            - name: Inspect the active gateway firewall after nftables stops
-              ansible.builtin.command:
-                argv:
-                  - /usr/local/bin/mwan
-                  - deploy-gate
-                  - inspect-firewall
-                  - /etc/mwan/network.json
-                  - /usr/local/share/wanconfig/yang
-              register: mwan_firewall_inspect
-              until: mwan_firewall_inspect.rc == 0
-              retries: 30
-              delay: 2
-              changed_when: false
-
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
-
-            - name: Mask the retired nftables service
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              async: "{{ mwan_operation_task_timeout_seconds }}"
-              poll: 5
-              ansible.builtin.systemd:
-                name: nftables
-                masked: true
-
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
-
-            - name: Remove the temporary nftables handoff drop-in
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              ansible.builtin.file:
-                path: /etc/systemd/system/nftables.service.d/99-mwan-handoff.conf
-                state: absent
-
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
-
-            - name: Remove the retired nftables service override
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              ansible.builtin.file:
-                path: /etc/systemd/system/nftables.service.d/override.conf
-                state: absent
-
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
-
-            - name: Remove the retired gateway ruleset file
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              ansible.builtin.file:
-                path: /etc/nftables.conf
-                state: absent
-
-            - name: Authorize the next gateway mutation
-              ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-              vars:
-                mwan_operation_phase: gateway-preparation
-
-            - name: Reload systemd after the nftables handoff
-              timeout: "{{ mwan_operation_task_timeout_seconds }}"
-              async: "{{ mwan_operation_task_timeout_seconds }}"
-              poll: 5
-              ansible.builtin.systemd:
-                daemon_reload: true
+        - name: Remove the retired nftables files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/systemd/system/nftables.service.d/99-mwan-handoff.conf
+            - /etc/systemd/system/nftables.service.d/override.conf
+            - /etc/nftables.conf
+          when: mwan_ifmgr_wan_enabled | bool
 
         # ============================================================================
         # POST-DEPLOY: Reboot for clean state
@@ -654,28 +424,15 @@
           ansible.builtin.meta: end_host
           when: ansible_check_mode
 
-        - name: Release the final preparation mutation lease
-          ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-          vars:
-            mwan_operation_acquire: false
-            mwan_operation_phase: preparation-complete
-
         - name: Capture the pre-reboot boot identity
           ansible.builtin.command:
             argv: [cat, /proc/sys/kernel/random/boot_id]
           register: mwan_pre_reboot_boot_id
           changed_when: false
 
-        - name: Acquire the bounded reboot mutation lease
-          ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-          vars:
-            mwan_operation_phase: reboot
-            mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * 2 + 375 + 30 }}"
-
         - name: Schedule the reboot independently of the SSH connection
           ansible.builtin.command:
             argv: [systemd-run, --on-active=5, /usr/sbin/reboot]
-          timeout: "{{ mwan_operation_task_timeout_seconds }}"
           changed_when: true
 
         - name: Reconnect after the scheduled reboot
@@ -692,7 +449,6 @@
             timeout: 360
 
         - name: Read the post-reboot boot identity
-          timeout: "{{ mwan_operation_task_timeout_seconds }}"
           ansible.builtin.command:
             argv: [cat, /proc/sys/kernel/random/boot_id]
           register: mwan_post_reboot_boot_id
@@ -703,12 +459,6 @@
             that:
               - mwan_post_reboot_boot_id.stdout | trim != mwan_pre_reboot_boot_id.stdout | trim
             fail_msg: The gateway boot identity did not change after scheduling its reboot.
-
-        - name: Release the reboot lease without authorizing another mutation
-          ansible.builtin.include_tasks: tasks/mwan-operation-checkpoint.yml
-          vars:
-            mwan_operation_acquire: false
-            mwan_operation_phase: reboot-complete
 
         - name: Commit only the measured target identity and application replies
           delegate_to: "{{ mwan_proxmox_delegate }}"
@@ -729,6 +479,8 @@
             mwan_operation_armed: false
 
       rescue:
+        # The watch may already run the restore. The doubled bound covers that
+        # restore and the restore this command runs.
         - name: Recover through the exact hypervisor deployment operation
           delegate_to: "{{ mwan_proxmox_delegate }}"
           ansible.builtin.command:
@@ -740,7 +492,7 @@
               - "{{ mwan_operation_generation }}"
               - --config
               - /etc/mwan/config.toml
-          timeout: "{{ mwan_operation_recovery_timeout_seconds + mwan_operation_lease_seconds }}"
+          timeout: "{{ mwan_operation_recovery_timeout_seconds | int * 2 }}"
           changed_when: true
           when: mwan_operation_armed | bool
 
@@ -750,38 +502,11 @@
               Deployment failed at {{ ansible_failed_task.name }}.
               The hypervisor deployment operation owns snapshot recovery.
 
-
   handlers:
-    - name: Reload networkd
-      ansible.builtin.include_tasks: tasks/reload-mwan-networkd.yml
-
-    - name: Restart wpa_supplicant
-      ansible.builtin.include_tasks: tasks/restart-mwan-deployment-unit.yml
-      vars:
-        mwan_deployment_restart_unit: wpa_supplicant-mwan
-
+    # The shared cloudflared tasks notify this handler. The reboot starts
+    # cloudflared from the written token and unit.
     - name: Restart cloudflared
-      ansible.builtin.include_tasks: tasks/restart-mwan-deployment-unit.yml
-      vars:
-        mwan_deployment_restart_unit: cloudflared
-
-    # Handlers run in definition order, so the management services the
-    # daemon publishes into restart before the daemon does.
-    - name: Restart rousette
-      ansible.builtin.include_tasks: tasks/restart-mwan-deployment-unit.yml
-      vars:
-        mwan_deployment_restart_unit: rousette
-
-    - name: Restart nghttpx-wanconfig
-      ansible.builtin.include_tasks: tasks/restart-mwan-deployment-unit.yml
-      vars:
-        mwan_deployment_restart_unit: nghttpx-wanconfig
-
-    - name: Restart mwan-ifmgr@wan
-      ansible.builtin.include_tasks: tasks/restart-mwan-ifmgr.yml
-      vars:
-        mwan_ifmgr_restart_timeout_seconds: 120
-      when: mwan_ifmgr_wan_enabled | bool
+      ansible.builtin.meta: noop
 
 # The MWAN failover LXC is configured by deploy-mwan-failover.yml,
 # targeting mwan_failover_servers (prod) or mwan_failover_suburban_servers

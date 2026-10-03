@@ -6,41 +6,13 @@
             | reject('equalto', '40-mwanbr.network') | list)
          + (['40-mwanbr.network'] if not (mwan_ifmgr_wan_enabled | bool) else []) }}
 
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: gateway-preparation
-    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (mwan_networkd_previous_inputs | difference(mwan_networkd_current_inputs) | length) + 30 }}"
-    mwan_operation_lease_seconds: >-
-      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
-
 - name: Retire only inputs recorded by the prior deployment
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.file:
     path: "/etc/systemd/network/{{ item }}"
     state: absent
   loop: "{{ mwan_networkd_previous_inputs | difference(mwan_networkd_current_inputs) }}"
-  notify: Reload networkd
-
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: gateway-preparation
-
-- name: Create the managed networkd inventory directory
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  ansible.builtin.file:
-    path: /var/lib/mwan
-    state: directory
-    mode: "0755"
-
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: gateway-preparation
 
 - name: Store the accepted deployment's managed networkd inventory
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     dest: /var/lib/mwan/networkd-inputs.json
     content: "{{ mwan_networkd_current_inputs | to_nice_json }}\n"

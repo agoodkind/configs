@@ -1,14 +1,4 @@
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * 2 }}"
-
 - name: Install the front-end proxy
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  async: "{{ mwan_operation_task_timeout_seconds }}"
-  poll: 5
   ansible.builtin.apt:
     policy_rc_d: 101
     update_cache: true
@@ -17,17 +7,7 @@
       - nghttp2-proxy
     state: present
 
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * (2) + 30 }}"
-    mwan_operation_lease_seconds: >-
-      {{ mwan_operation_budget_seconds | int + mwan_operation_initial_lease_allowance_seconds | int }}
-
 - name: Create stack directories
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -38,15 +18,7 @@
     - "{{ wanconfig_deb_dir }}"
     - /etc/nghttpx
 
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * 2 }}"
-
 - name: Create the anonymous-access system user
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.user:
     name: yangnobody
     system: true
@@ -57,7 +29,6 @@
 # from the gateway after the copy, because check mode does not copy and a
 # gateway-side listing would then find nothing and fail the run.
 - name: List the pulled stack packages
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.find:
     paths: "{{ wanconfig_stack_dir }}/debs"
     patterns: "*.deb"
@@ -69,17 +40,9 @@
   ansible.builtin.assert:
     that:
       - wanconfig_debs.files | length > 0
-    fail_msg: "no .deb files under {{ wanconfig_stack_dir }}/debs; the pulled release holds no packages"
-
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * 2 }}"
+    fail_msg: "no .deb files under {{ wanconfig_stack_dir }}/debs; the pulled release contains no packages"
 
 - name: Copy the staged stack packages
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ wanconfig_stack_dir }}/debs/"
     dest: "{{ wanconfig_deb_dir }}/"
@@ -90,17 +53,7 @@
 # apt resolves the packages' interdependencies in one transaction. A
 # same-version reinstall is a no-op, which apt reports as 0 upgraded
 # and 0 newly installed.
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * 2 }}"
-
 - name: Install the stack packages with apt
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  async: "{{ mwan_operation_task_timeout_seconds }}"
-  poll: 5
   ansible.builtin.command:
     argv: >-
       {{
@@ -114,22 +67,11 @@
   changed_when: "'0 upgraded, 0 newly installed' not in wanconfig_apt_install.stdout"
 
 # sysrepo-tools ships a sysrepo-plugind unit that debhelper enables and
-# starts on install. Nothing on the gateway uses plugins; the daemon
-# would only hold the shared memory open across deploys.
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/mwan-operation-checkpoint.yml"
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds | int * 2 }}"
-
+# starts on install. The gateway uses no plugins. The plugin daemon would
+# keep the shared memory open across deploys.
 - name: Mask the sysrepo plugin daemon
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
-  async: "{{ mwan_operation_task_timeout_seconds }}"
-  poll: 5
   ansible.builtin.systemd:
     name: sysrepo-plugind.service
     state: stopped
     enabled: false
     masked: true
-
