@@ -18,11 +18,8 @@ module TackSearchNode
     'plugins.ml_commons.task_dispatch_policy' => 'least_load',
     'plugins.ml_commons.model_auto_redeploy.enable' => 'true'
   }.freeze
-  # Production members run a 2 GiB heap. The QA member runs 3 GiB (D9 QA trial).
-  JAVA_OPTS = {
-    production: '-Xms2g -Xmx2g -Djava.net.preferIPv6Addresses=true',
-    qa: '-Xms3g -Xmx3g -Djava.net.preferIPv6Addresses=true'
-  }.freeze
+  # Every QA and production member runs a 3 GiB heap.
+  JAVA_OPTS = '-Xms3g -Xmx3g -Djava.net.preferIPv6Addresses=true'
   CLUSTER_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars', 'all', 'search_cluster.yml')
   # The settings of /usr/share/opensearch/config/opensearch.yml in the pinned
   # opensearchproject/opensearch:3.8.0 image, read from the image on
@@ -89,14 +86,13 @@ end
 RSpec.describe TackSearchNode do
   it 'renders the pinned OpenSearch image and settings on every member', :aggregate_failures do
     { production: TackSearchInventory.rendered(:production, member_count: 3),
-      qa: TackSearchInventory.rendered(:qa) }.each do |environment, rendered|
+      qa: TackSearchInventory.rendered(:qa) }.each_value do |rendered|
       rendered.members.each do |member|
         service = described_class.service(rendered, member)
 
         expect(service.fetch('image')).to eq('opensearchproject/opensearch:3.8.0')
         expect(service.fetch('environment')).to include(TackSearchNode::CONTRACT)
-        expect(service.fetch('environment'))
-          .to include('OPENSEARCH_JAVA_OPTS' => TackSearchNode::JAVA_OPTS.fetch(environment))
+        expect(service.fetch('environment')).to include('OPENSEARCH_JAVA_OPTS' => TackSearchNode::JAVA_OPTS)
         expect(service.fetch('volumes')).to include('opensearch-data:/usr/share/opensearch/data')
         expect(service.fetch('ulimits')).to eq('nofile' => { 'soft' => 65_536, 'hard' => 65_536 })
         expect(service.fetch('environment')).to include('plugins.security.ssl.http.enabled' => 'true')

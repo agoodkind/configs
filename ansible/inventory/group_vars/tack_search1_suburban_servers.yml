@@ -1,4 +1,0 @@
----
-# QA search guest CT 227 only (D9 QA trial). The member runs a 3 GiB heap in
-# place of the 2 GiB heap in tack_search.yml. Production members keep 2 GiB.
-tack_search_java_opts: "-Xms3g -Xmx3g -Djava.net.preferIPv6Addresses=true"
