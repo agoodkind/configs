@@ -1,16 +1,4 @@
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-
-- name: Record a potentially outstanding legacy mutation
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: true
-  when: mwan_install_reuse_lease | bool
-
 - name: Deploy MWAN runtime environment file
-  timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
   ansible.builtin.template:
     src: "{{ repo_root }}/mwan/config/mwan.env.j2"
     dest: /etc/mwan/mwan.env
@@ -19,24 +7,7 @@
 # The mwan-agent and mwan-ifmgr units load this file via EnvironmentFile=.
 # SMTP2GO_API_KEY is read by internal/config/config.go and overrides the
 # smtp2go_api_key field in /etc/mwan/config.toml when set.
-- name: Record verified legacy mutation completion
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: false
-  when: mwan_install_reuse_lease | bool
-
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-
-- name: Record a potentially outstanding legacy mutation
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: true
-  when: mwan_install_reuse_lease | bool
-
 - name: Deploy MWAN secrets environment file
-  timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
   ansible.builtin.copy:
     dest: /etc/mwan/secrets.env
     content: |
@@ -45,30 +16,11 @@
     group: root
     mode: "0640"
   no_log: true
-  notify: "{{ ['Restart mwan-ifmgr@wan'] if mwan_install_notify_wan else [] }}"
-
-- name: Record verified legacy mutation completion
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: false
-  when: mwan_install_reuse_lease | bool
 
 - name: Read the normal runtime certificate before copying it
   ansible.builtin.include_tasks: read-mwan-testbed-certificate.yml
-  when: not mwan_install_reuse_lease | bool
-
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-
-- name: Record a potentially outstanding legacy mutation
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: true
-  when: mwan_install_reuse_lease | bool
 
 - name: Trust the testbed OPNsense API certificate for hairpin alias updates
-  timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
   ansible.builtin.copy:
     content: "{{ (mwan_nptv6_hairpin_certificate.stdout | from_json)['out-data'] }}"
     dest: /etc/mwan/opnsense-testbed.pem
@@ -76,10 +28,3 @@
     group: root
     mode: "0644"
   when: mwan_environment == 'testbed'
-  notify: "{{ ['Restart mwan-ifmgr@wan'] if mwan_install_notify_wan else [] }}"
-
-- name: Record verified legacy mutation completion
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: false
-  when: mwan_install_reuse_lease | bool
-

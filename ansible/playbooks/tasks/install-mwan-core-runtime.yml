@@ -1,34 +1,11 @@
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: >-
-      {{ mwan_operation_copy_timeout_seconds | int + mwan_operation_metadata_timeout_seconds | int }}
-
-- name: Record a potentially outstanding legacy mutation
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: true
-  when: mwan_install_reuse_lease | bool
-
 - name: Deploy mwan unified binary to MWAN VM
-  timeout: "{{ mwan_operation_copy_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ mwan_release_dir }}/linux_amd64/mwan"
     dest: /usr/local/bin/mwan
     mode: "0755"
-  notify: "{{ ['Restart mwan-ifmgr@wan'] if mwan_install_notify_wan else [] }}"
-
-- name: Record verified legacy mutation completion
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: false
-  when: mwan_install_reuse_lease | bool
 
 - name: Verify the MWAN VM binary is the released commit
-  ansible.builtin.include_tasks:
-    file: verify-mwan-release.yml
-    apply:
-      timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
+  ansible.builtin.include_tasks: verify-mwan-release.yml
   vars:
     mwan_installed_binary: /usr/local/bin/mwan
 
@@ -48,45 +25,14 @@
     success_msg: >-
       /usr/local/bin/mwan links libsysrepo {{ wanconfig_sysrepo_soversion }}.
 
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: "{{ mwan_operation_metadata_timeout_seconds }}"
-
-- name: Record a potentially outstanding legacy mutation
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: true
-  when: mwan_install_reuse_lease | bool
-
 - name: Create the sysrepo access group
-  timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
   ansible.builtin.group:
     name: sysrepo
     system: true
 
 # The unit starts before coldplug. StateDirectory would order startup after
 # systemd-tmpfiles-setup.
-- name: Record verified legacy mutation completion
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: false
-  when: mwan_install_reuse_lease | bool
-
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: "{{ mwan_operation_metadata_timeout_seconds | int * 2 }}"
-
-- name: Record a potentially outstanding legacy mutation
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: true
-  when: mwan_install_reuse_lease | bool
-
 - name: Deploy the ifmgr state directory rule on MWAN VM
-  timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
   ansible.builtin.copy:
     src: "{{ repo_root }}/mwan/config/tmpfiles-mwan.conf"
     dest: /etc/tmpfiles.d/mwan.conf
@@ -94,73 +40,24 @@
   register: mwan_ifmgr_tmpfiles
   when: mwan_ifmgr_wan_enabled | bool
 
-- name: Record verified legacy mutation completion
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: false
-  when: mwan_install_reuse_lease | bool
-
-- name: Record a potentially outstanding legacy mutation
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: true
-  when: mwan_install_reuse_lease | bool
-
 - name: Create the ifmgr state directory from the rule
-  timeout: "{{ mwan_operation_metadata_timeout_seconds }}"
   ansible.builtin.command: systemd-tmpfiles --create /etc/tmpfiles.d/mwan.conf
   changed_when: false
   when:
     - mwan_ifmgr_wan_enabled | bool
     - mwan_ifmgr_tmpfiles is changed
 
-# The installer enables units without starting them. Restart handlers apply
-# changed inputs after staging.
-- name: Record verified legacy mutation completion
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: false
-  when: mwan_install_reuse_lease | bool
-
-- name: Authorize the next gateway mutation
-  ansible.builtin.include_tasks: mwan-operation-checkpoint.yml
-  vars:
-    mwan_operation_phase: "{{ mwan_install_operation_phase }}"
-    mwan_operation_reuse_lease: "{{ mwan_install_reuse_lease }}"
-    mwan_operation_budget_seconds: "{{ mwan_operation_task_timeout_seconds }}"
-
-- name: Initialize the installer completion result
-  ansible.builtin.set_fact:
-    mwan_install: {}
-
-- name: Record a potentially outstanding legacy mutation
-  ansible.builtin.set_fact:
-    mwan_legacy_mutation_pending: true
-  when: mwan_install_reuse_lease | bool
-
-- name: Account for terminal candidate installer failures
-  block:
-    - name: Install the units and schema the mwan binary embeds
-      timeout: "{{ mwan_operation_task_timeout_seconds }}"
-      async: "{{ mwan_operation_task_timeout_seconds }}"
-      poll: 5
-      ansible.builtin.command:
-        argv:
-          - /usr/local/bin/mwan
-          - install
-          - --role
-          - wan
-          - --apply
-      register: mwan_install
-      changed_when: >-
-        mwan_install.stdout_lines
-        | select('match', '^(wrote|installed module|updated module|imported the) ')
-        | list | length > 0
-      notify: >-
-        {{ ['Restart rousette', 'Restart nghttpx-wanconfig']
-           + (['Restart mwan-ifmgr@wan'] if mwan_install_notify_wan else []) }}
-  always:
-    - name: Record proved installer completion
-      ansible.builtin.set_fact:
-        mwan_legacy_mutation_pending: false
-      when:
-        - mwan_install_reuse_lease | bool
-        - mwan_install is finished
-        - "'rc' in mwan_install"
+# The installer enables units without starting them. The reboot starts them.
+- name: Install the units and schema the mwan binary embeds
+  ansible.builtin.command:
+    argv:
+      - /usr/local/bin/mwan
+      - install
+      - --role
+      - wan
+      - --apply
+  register: mwan_install
+  changed_when: >-
+    mwan_install.stdout_lines
+    | select('match', '^(wrote|installed module|updated module|imported the) ')
+    | list | length > 0

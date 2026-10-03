@@ -1,5 +1,4 @@
 - name: Current testbed OPNsense web certificate is available for hairpin CA trust
-  timeout: "{{ mwan_operation_task_timeout_seconds }}"
   delegate_to: "{{ mwan_proxmox_delegate }}"
   ansible.builtin.command:
     argv:
