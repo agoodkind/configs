@@ -29,4 +29,3 @@
       - certificate_result['out-data'].startswith('-----BEGIN CERTIFICATE-----')
       - certificate_result['out-data'].strip().endswith('-----END CERTIFICATE-----')
   when: mwan_environment == 'testbed'
-
