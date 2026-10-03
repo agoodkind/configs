@@ -13,7 +13,10 @@ tack_ledger_node_name: ""
 # artifacts.opensearch.org that ML Commons downloads the pinned model from.
 tack_search_image: "opensearchproject/opensearch:3.8.0"
 tack_search_java_opts: "-Xms2g -Xmx2g -Djava.net.preferIPv6Addresses=true"
-tack_search_node_roles: "cluster_manager,data,ingest,ml"
+tack_search_role_set: >-
+  {{ ((tack_search_role_set_members | dict2items | selectattr('value', 'contains', service_name)
+       | map(attribute='key') | list) + ['combined']) | first }}
+tack_search_node_roles: "{{ tack_search_role_sets[tack_search_role_set] | join(',') }}"
 tack_search_nofile_limit: 65536
 
 # The node name is the first label of the guest's hostname. Production
@@ -27,9 +30,12 @@ tack_search_node_name: "{{ service_mapping[service_name].hostname.split('.') | f
 # as the initial cluster manager only while tack_search_bootstrap_cluster is
 # true.
 tack_search_discovery_type: "{{ 'single-node' if tack_search_single_node | bool else '' }}"
+# Each seed is the member address in brackets. OpenSearch refuses a bare
+# IPv6 address as a seed host.
 tack_search_seed_hosts: >-
   {{ '' if tack_search_single_node | bool
-     else tack_search_members | map('extract', service_mapping, 'ipv6') | join(',') }}
+     else tack_search_members | map('extract', service_mapping, 'ipv6')
+          | map('regex_replace', '^(.*)$', '[\1]') | join(',') }}
 tack_search_initial_cluster_manager_nodes: >-
   {{ tack_search_node_name
      if (not tack_search_single_node | bool
