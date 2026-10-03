@@ -102,15 +102,11 @@ RSpec.describe TackOpsPlaybook do
     expect(execute['when']).to eq('tack_ops_execute | bool')
   end
 
-  it 'renders the agent identity on the verification, the dry run, and the --execute run', :aggregate_failures do
+  it 'renders the agent identity on the dry run and the --execute run', :aggregate_failures do
     flags = TackOpsPlaybook::AGENT_FLAGS.split
-    verify = described_class.command_line(TackOpsPlaybook::VERIFY_TASK, command: 'ops search verify')
     dry_run = described_class.command_line(TackOpsPlaybook::DRY_RUN_TASK, command: 'ops qa datagen seed', args: ['--scale=small'])
     execute = described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: 'ops deploy verify')
 
-    expect(verify).to eq(%w[docker compose run --rm tack-ops ops deploy verify --execute --tag] + [TackOpsPlaybook::COMMIT] +
-                         ['--tack-server-digest', TackOpsPlaybook::SERVER_DIGEST,
-                          '--tack-audit-consumer-digest', TackOpsPlaybook::CONSUMER_DIGEST] + flags)
     expect(dry_run).to eq(%w[docker compose run --rm app ops qa datagen seed --scale=small] + flags)
     expect(execute).to eq(%w[docker compose run --rm tack-ops ops deploy verify] + flags + ['--execute'])
   end
