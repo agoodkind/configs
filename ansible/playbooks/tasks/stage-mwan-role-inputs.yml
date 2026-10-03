@@ -73,16 +73,23 @@
     vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
     vm_mgmt_ipv6: "{{ mwan_config_mgmt_addr }}"
     hostname: "{{ service_hostname }}"
+    # The daemon writes the name file for a management link that it owns. The
+    # daemon stops at startup when 10-mgmt.link matches that link's address.
+    mwan_mgmt_networkd_files: >-
+      {{ (['10-mgmt.link']
+          if not (mwan_ifmgr_wan_enabled | bool)
+             or 'mwan' not in (mwan_non_provider_connections
+                               | selectattr('name', 'equalto', mwan_mgmt_iface)
+                               | map(attribute='owner') | list)
+          else [])
+         + (['10-mgmt.network'] if not (mwan_ifmgr_wan_enabled | bool) else []) }}
 
 - name: Deploy management interface networkd configuration
   ansible.builtin.template:
     src: "{{ repo_root }}/ansible/templates/vm/{{ item }}.j2"
     dest: /etc/systemd/network/{{ item }}
     mode: "0644"
-  loop:
-    - 10-mgmt.link
-    - 10-mgmt.network
-  when: item != '10-mgmt.network' or not (mwan_ifmgr_wan_enabled | bool)
+  loop: "{{ mwan_mgmt_networkd_files }}"
 
 - name: Deploy systemd-networkd configuration files
   ansible.builtin.template:

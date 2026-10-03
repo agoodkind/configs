@@ -1,7 +1,7 @@
 - name: Record this deployment's exact managed networkd inputs
   ansible.builtin.set_fact:
     mwan_networkd_current_inputs: >-
-      {{ ['10-mgmt.link'] + (['10-mgmt.network'] if not (mwan_ifmgr_wan_enabled | bool) else [])
+      {{ mwan_mgmt_networkd_files
          + (mwan_networkd_files | map('basename')
             | reject('equalto', '40-mwanbr.network') | list)
          + (['40-mwanbr.network'] if not (mwan_ifmgr_wan_enabled | bool) else []) }}
