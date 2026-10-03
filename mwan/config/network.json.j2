@@ -184,9 +184,11 @@
   "name": connection.name,
   "type": "iana-if-type:other",
   "goodkind-mwan-steering:connection-id": connection.connection_id,
-  "goodkind-mwan-steering:owner": connection.owner,
-  "goodkind-mwan-steering:link-files": connection.link_files
+  "goodkind-mwan-steering:owner": connection.owner
 } %}
+{% if connection.link_files is defined %}
+{% set _ = entry.update({"goodkind-mwan-steering:link-files": connection.link_files}) %}
+{% endif %}
 {% set match = {} %}
 {% for key, value in connection.link.match.items() %}
 {% set _ = match.update({key | replace("_", "-"): value}) %}
