@@ -30,9 +30,12 @@ tack_search_node_name: "{{ service_mapping[service_name].hostname.split('.') | f
 # as the initial cluster manager only while tack_search_bootstrap_cluster is
 # true.
 tack_search_discovery_type: "{{ 'single-node' if tack_search_single_node | bool else '' }}"
+# Each seed is the member address in brackets. OpenSearch refuses a bare
+# IPv6 address as a seed host.
 tack_search_seed_hosts: >-
   {{ '' if tack_search_single_node | bool
-     else tack_search_members | map('extract', service_mapping, 'ipv6') | join(',') }}
+     else tack_search_members | map('extract', service_mapping, 'ipv6')
+          | map('regex_replace', '^(.*)$', '[\1]') | join(',') }}
 tack_search_initial_cluster_manager_nodes: >-
   {{ tack_search_node_name
      if (not tack_search_single_node | bool
