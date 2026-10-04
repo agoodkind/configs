@@ -36,6 +36,8 @@
     owner: root
     group: root
     mode: "0600"
+  # --diff would print the SMTP key.
+  diff: false
   become: true
   notify:
     - Restart mwan-opnsense-drain

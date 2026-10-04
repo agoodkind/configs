@@ -84,18 +84,17 @@ mwan_watchdog_pve_token_id: "root@pam!watchdog-test2"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
 mwan_watchdog_unit_description: "MWAN Testbed Watchdog"
 
-# mwan-ifmgr service on the host. Suburban has no OOB tunnel, so it enables
-# none of the OOB modules and declares no OOB interface or address. The role
-# name is the shared hypervisor role; which modules run is decided by which
-# sections render below.
-mwan_ifmgr_role: "host"
-# vmbr0 is the upstream bridge and the interface the event monitor watches.
-# DHCP and router solicitation stay off: the host gets its own addressing from
-# the uplink, and ifmgr only observes here.
-mwan_ifmgr_iface_key: "vmbr0"
-mwan_ifmgr_iface_name: "vmbr0"
-mwan_ifmgr_iface_dhcp_v4: false
+# Same out-of-band role as the production hypervisor, on the Monkeybrains
+# simulator bridge. IPv4 only: vmbr6 stays in the denied RA list below, because
+# an RA default route on vmbr6 would compete with the vmbr0 uplink route.
+mwan_ifmgr_role: "oob"
+mwan_ifmgr_oob_enabled: true
+mwan_ifmgr_iface_key: "vmbr6"
+mwan_ifmgr_iface_name: "vmbr6"
+mwan_ifmgr_iface_dhcp_v4: true
 mwan_ifmgr_iface_ra_solicit: false
+mwan_ifmgr_oob_addr: "3d06:bad:b01:2ff::1/128"
+mwan_ifmgr_policy_from_v6: "3d06:bad:b01:2ff::1"
 mwan_ifmgr_host_ipv6_policy_enabled: true
 mwan_ifmgr_host_ipv6_missing_iface_grace_period: "2m"
 mwan_ifmgr_host_ipv6_allowed_ra_uplink:
