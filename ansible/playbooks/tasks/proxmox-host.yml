@@ -18,8 +18,9 @@
   ansible.builtin.apt:
     name: "{{ proxmox_apt_packages }}"
     state: present
-    update_cache: true
-    cache_valid_time: 3600
+    # --check must not run `apt-get update` on the host.
+    update_cache: "{{ not ansible_check_mode }}"
+    cache_valid_time: "{{ 0 if ansible_check_mode else 3600 }}"
 
 # Debian lets both netcat providers coexist and picks `nc` by alternatives
 # priority, so installing the openbsd build takes the name only while the
@@ -77,6 +78,8 @@
     owner: root
     group: root
     mode: "0600"
+  # --diff would print the SMTP key and the Proxmox token secret.
+  diff: false
   register: proxmox_mwan_runtime_config
   notify:
     - Restart mwan-ifmgr
