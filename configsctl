@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly CONFIGSCTL_PACKAGE="goodkind.io/configsctl/cmd/configsctl"
-readonly CONFIGSCTL_VERSION="v0.0.0-20261004021807-89f073f009f8"
+readonly CONFIGSCTL_VERSION="v0.0.0-20261004173631-471002e11191"
 
 # configsctl reads inventory and playbook paths relative to its working directory.
 cd "$(dirname "${BASH_SOURCE[0]}")"

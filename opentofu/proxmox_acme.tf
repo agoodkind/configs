@@ -1,8 +1,11 @@
-# ACME certificates for the Proxmox web interface of each hypervisor. Proxmox
-# restricts ACME account changes to root@pam. Every resource here uses the
-# root provider alias of its hypervisor. Each hypervisor has its own Cloudflare
-# DNS token. The production vault host is not here: root@pam there requires a
-# second factor, which OpenTofu cannot supply. Its ACME setup is on the host.
+# ACME certificates for the Proxmox web interface of each hypervisor. Every
+# resource here uses the automation token of its hypervisor. The scoped roles
+# from the overlay module grant the token one Sys.ACME privilege for each
+# operation. Each hypervisor has its own Cloudflare DNS token.
+#
+# `tofu test` crashes on import blocks. Import an existing account with id
+# "default", a plugin with id "cf", and a certificate with its node name
+# through `configsctl tofu import`.
 locals {
   acme_directory = "https://acme-v02.api.letsencrypt.org/directory"
   acme_terms     = "https://letsencrypt.org/documents/LE-SA-v1.5-February-24-2025.pdf"
@@ -14,20 +17,55 @@ locals {
   acme_plugin_data_version = 1
 }
 
-# Suburban testbed host. The account and the plugin existed before OpenTofu
-# managed them. The host had no ACME certificate. `tofu test` crashes on import
-# blocks. Import the account with id "default" and the plugin with id "cf"
-# through `configsctl tofu import`.
-resource "proxmox_acme_account" "suburban" {
-  provider  = proxmox.suburban_root
+# Production vault host.
+resource "proxmox_acme_account" "vault" {
   name      = local.acme_account
   contact   = var.cloudflare_owner_email
   directory = local.acme_directory
   tos       = local.acme_terms
+
+  depends_on = [module.overlay]
+}
+
+resource "proxmox_acme_dns_plugin" "vault" {
+  plugin = local.acme_plugin
+  api    = "cf"
+
+  data_wo = {
+    CF_Account_ID = var.cloudflare_account_id
+    CF_Zone_ID    = local.cloudflare_zone_ids["goodkind.io"]
+    CF_Token      = var.vault_proxmox_acme_cloudflare_token
+  }
+  data_wo_version = local.acme_plugin_data_version
+
+  depends_on = [module.overlay]
+}
+
+resource "proxmox_acme_certificate" "vault" {
+  node_name = "vault"
+  account   = proxmox_acme_account.vault.name
+
+  domains = [
+    {
+      domain = "vault.home.goodkind.io"
+      plugin = proxmox_acme_dns_plugin.vault.plugin
+    }
+  ]
+}
+
+# Suburban testbed host.
+resource "proxmox_acme_account" "suburban" {
+  provider  = proxmox.suburban
+  name      = local.acme_account
+  contact   = var.cloudflare_owner_email
+  directory = local.acme_directory
+  tos       = local.acme_terms
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_dns_plugin" "suburban" {
-  provider = proxmox.suburban_root
+  provider = proxmox.suburban
   plugin   = local.acme_plugin
   api      = "cf"
 
@@ -37,10 +75,12 @@ resource "proxmox_acme_dns_plugin" "suburban" {
     CF_Token      = var.vault_suburban_acme_cloudflare_token
   }
   data_wo_version = local.acme_plugin_data_version
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_certificate" "suburban" {
-  provider  = proxmox.suburban_root
+  provider  = proxmox.suburban
   node_name = "hypervisor"
   account   = proxmox_acme_account.suburban.name
 
@@ -52,17 +92,19 @@ resource "proxmox_acme_certificate" "suburban" {
   ]
 }
 
-# Poweredge host. It had no ACME setup.
+# Poweredge host.
 resource "proxmox_acme_account" "poweredge" {
-  provider  = proxmox.poweredge_root
+  provider  = proxmox.poweredge
   name      = local.acme_account
   contact   = var.cloudflare_owner_email
   directory = local.acme_directory
   tos       = local.acme_terms
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_dns_plugin" "poweredge" {
-  provider = proxmox.poweredge_root
+  provider = proxmox.poweredge
   plugin   = local.acme_plugin
   api      = "cf"
 
@@ -72,10 +114,12 @@ resource "proxmox_acme_dns_plugin" "poweredge" {
     CF_Token      = var.vault_poweredge_acme_cloudflare_token
   }
   data_wo_version = local.acme_plugin_data_version
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_certificate" "poweredge" {
-  provider  = proxmox.poweredge_root
+  provider  = proxmox.poweredge
   node_name = "poweredge"
   account   = proxmox_acme_account.poweredge.name
 

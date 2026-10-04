@@ -2,57 +2,65 @@
 
 ## Backend
 
-OpenTofu state lives in the Cloudflare R2 bucket named tofu-state, outside the
-homelab, so losing a hypervisor or a workstation never loses the state. The
-backend speaks the S3 protocol with native lockfile locking, so concurrent runs
-block each other instead of corrupting state.
+OpenTofu stores its state in the Cloudflare R2 bucket named tofu-state. The
+bucket is outside the homelab and survives the loss of a hypervisor or a
+workstation. The backend uses the S3 protocol with a lock file. A second run
+waits for the lock.
 
-Run every tofu command through the repo control tool so credentials flow from
-the Ansible vault automatically:
+Run every tofu command through configsctl. configsctl reads the credentials
+from the Ansible vault.
 
 ```bash
 ./configsctl tofu plan
 ./configsctl tofu apply
 ```
 
-configsctl exports a vault secret to OpenTofu under two rules, and
-[configsctl.yml](../configsctl.yml) sets the module folder and the prefix that
-the rules use. The vault and the OpenTofu files are the only places that list
-a secret.
+A fresh checkout needs one `./configsctl tofu init` before its first plan.
 
-- A vault key with the same name as a variable declared in `opentofu/*.tf`
-  becomes that variable. To add a secret, add the vault key with
-  `configsctl set-secrets` and declare a variable with the same name.
-- A vault key named `vault_tofu_env_<NAME>` becomes the environment variable
-  `<NAME>`. The R2 access pair uses this rule as
-  `vault_tofu_env_AWS_ACCESS_KEY_ID` and `vault_tofu_env_AWS_SECRET_ACCESS_KEY`.
-  The S3 backend rejects sensitive variables and reads its credentials only
-  from those two names.
+## Secrets
 
-configsctl exports no other vault key. OpenTofu needs no `terraform.tfvars`
-file. A fresh checkout needs one `configsctl tofu init` before its first plan.
+configsctl exports only the vault keys that match one of two rules.
 
-To rotate the backend credential, mint a new Cloudflare API token with the
-Workers R2 Storage Write permission, derive the S3 pair (the access key id is
-the token id, the secret is the SHA-256 hex of the token value), and feed both
-`vault_tofu_env_AWS_*` names to `configsctl set-secrets`. The old token can
-then be revoked in the Cloudflare dashboard.
+| Vault key | OpenTofu receives |
+| --- | --- |
+| Same name as a variable declared in the OpenTofu files | That variable |
+| `vault_tofu_env_<NAME>` | The environment variable `<NAME>` |
+
+The S3 backend reads its credentials from the environment variables
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. The vault keys
+`vault_tofu_env_AWS_ACCESS_KEY_ID` and `vault_tofu_env_AWS_SECRET_ACCESS_KEY`
+supply them.
+
+To change the module folder or the `vault_tofu_env_` prefix, edit
+[configsctl.yml](../configsctl.yml).
+
+## Add a secret
+
+1. Add the vault key with `./configsctl set-secrets`.
+2. Declare a variable with the same name in the OpenTofu files.
+
+## Rotate the backend credential
+
+1. Create a Cloudflare API token with the Workers R2 Storage Write permission.
+2. Derive the S3 pair. The access key id is the token id. The secret is the
+   SHA-256 hex digest of the token value.
+3. Write both `vault_tofu_env_AWS_*` keys with `./configsctl set-secrets`.
+4. Revoke the old token in the Cloudflare dashboard.
 
 ## State encryption
 
-OpenTofu encrypts the state file in R2 and every saved plan file. The key
-comes from the vault key `vault_tofu_state_passphrase`. A checkout without
-[encryption.tf](encryption.tf) cannot read the encrypted state and fails every
-tofu command until it merges main.
+OpenTofu encrypts the state file in R2 and every saved plan file. OpenTofu
+derives the key from the vault key `vault_tofu_state_passphrase`.
 
-A lost passphrase makes the state unreadable. The passphrase is in the Ansible
-vault, and the vault password is in 1Password.
+A checkout without the encryption configuration fails every tofu command.
+Merge main into that checkout.
 
-Do not rename the `state` key provider or method in the encryption
-configuration. OpenTofu stores that name inside the encrypted data.
+A lost passphrase makes the state unreadable. The Ansible vault stores the
+passphrase, and 1Password stores the vault password.
 
-The backend declaration itself lives in [backend.tf](backend.tf); its endpoint
-embeds the Cloudflare account id, which is stable and not a secret.
+Do not rename the `state` key provider or the `state` method in
+[encryption.tf](encryption.tf). OpenTofu writes that name into the encrypted
+data.
 
 ## Attach an existing resource
 

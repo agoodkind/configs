@@ -7,6 +7,12 @@ variable "vault_proxmox_token_secret" {
   sensitive   = true
 }
 
+variable "vault_proxmox_acme_cloudflare_token" {
+  description = "Cloudflare DNS token that the production vault host uses for ACME DNS challenges"
+  type        = string
+  sensitive   = true
+}
+
 variable "proxmox_endpoint" {
   description = "Proxmox API base URL for the production vault host including port"
   type        = string
@@ -37,8 +43,8 @@ variable "suburban_proxmox_endpoint" {
   default     = "https://[3d06:bad:b01:200::1]:8006/"
 }
 
-variable "vault_poweredge_proxmox_root_password" {
-  description = "Root password of the poweredge host, for resources that Proxmox restricts to root@pam"
+variable "vault_poweredge_pve_token_secret" {
+  description = "Secret of the Proxmox API token for the poweredge host"
   type        = string
   sensitive   = true
 }

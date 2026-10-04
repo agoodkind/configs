@@ -187,10 +187,15 @@ mwan_non_provider_connections:
         dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv6('address') }}"
         search: ["{{ mwan_dns_domain }}"]
 
-# The deploy writes no systemd-networkd file to the testbed gateway. The daemon
-# owns every testbed link. The daemon stops at startup when a deployed name
-# file matches the address of a link that the daemon owns.
-mwan_networkd_files: []
+# The deploy writes the two AT&T unit files from mwan/networkd/testbed/, a direct
+# link with no VLAN and no 802.1X. systemd-networkd owns the AT&T link; the
+# daemon owns every other testbed link. The AT&T name file matches by
+# MACAddress. The daemon's startup conflict check accepts a name file with a MAC
+# key that differs from every owned link's address. The transit link has no
+# deployed file.
+mwan_networkd_files:
+  - testbed/20-att.link
+  - testbed/20-att.network
 
 # MAC addresses (from PVE config, used by .link files for stable naming)
 mwan_mgmt_mac: "BC:24:11:B3:9E:46"
@@ -321,32 +326,30 @@ mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 # in the matching entries. The testbed's links are virtio devices. Each entry
 # matches its device by the address Proxmox assigned.
 #
-# The daemon owns every testbed link. Each simulated ISP delegates from a pool
-# of one prefix, and Kea stores a lease under the client's DUID and IAID. Each
-# delegation sets the DUID and the IAID that systemd-networkd sent on that
-# link. networkd derives the IAID from the link's slot name.
+# The AT&T link stays under systemd-networkd with the deployed unit files, as in
+# production. The daemon owns every other testbed link. Each simulated ISP
+# delegates from a pool of one prefix, and Kea stores a lease under the client's
+# DUID and IAID. A daemon-owned delegation sets the DUID and the IAID that
+# systemd-networkd sent on that link. networkd derives the IAID from the link's
+# slot name.
 mwan_providers:
   - name: att
     connection_id: att
-    owner: mwan
+    owner: networkd
     iface: "{{ mwan_att_iface }}"
     vlan_id: "{{ mwan_att_vlan_id }}"
-    link:
-      match: { hardware_address: "{{ mwan_att_mac | lower }}" }
-    # The simulated ISP routes this block to the gateway's leased address. The
-    # gateway assigns no mapped address to the link.
+    # Hand-authored as in production. The testbed exercises the same exemption.
+    # Its two direct-link unit files stay under mwan/networkd/testbed/.
+    link_files: hand-authored
     ipv4:
       translation:
         mode: ietf-nat:napt44
         static_mappings:
-          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2", delivery: routed }
-          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.205.3", delivery: routed }
-          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.205.4", delivery: routed }
-          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.205.5", delivery: routed }
-          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.205.6", delivery: routed }
-      forwarding: true
-      dhcp: true
-      route_metric: 20
+          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2" }
+          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.205.3" }
+          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.205.4" }
+          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.205.5" }
+          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.205.6" }
     ipv6:
       translation:
         mode: ietf-nat:nptv6
@@ -354,14 +357,10 @@ mwan_providers:
           internal_prefix: "{{ mwan_internal_prefix }}"
           external_source: delegated
           expected_prefix: "3d06:bad:b01:2300::/60"
-      forwarding: true
       dhcp: true
-      accept_ra: true
       delegation:
         hint: "::/60"
-        iaid: 1845263992
-        duid_type: vendor
-        duid: "00:02:00:00:ab:11:11:18:28:f5:2b:50:d8:af"
+        use_delegated_prefix: true
         without_ra: solicit
     table: 100
     mark: 1
