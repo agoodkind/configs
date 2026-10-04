@@ -14,13 +14,9 @@ locals {
   # A new commit here reruns the provisioner on every listed hypervisor.
   proxmox_overlays_commit = "691e9280c44d51d6ea2498a31de4e2d716928d6f"
 
-  proxmox_overlays_service_mapping = yamldecode(
-    file("${path.module}/../ansible/inventory/group_vars/all/service_mapping.yml")
-  ).service_mapping
-
   # SSH address of each hypervisor that runs the overlay.
   proxmox_overlays_hosts = {
-    suburban = local.proxmox_overlays_service_mapping.suburban_hypervisor.ipv6
+    suburban = module.suburban.hypervisor_ipv6
   }
 }
 
