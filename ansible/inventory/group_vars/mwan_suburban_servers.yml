@@ -9,10 +9,10 @@
 # ----------------------------------------------------------------------------
 
 mwan_environment: "testbed"
-mwan_release_tag: "202610022307-af-054e41d"
+mwan_release_tag: "202610032358-b1-ab73e2c"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:df55e0e929b0921c8ce223d358090f71e94165ede9ac5c4db80c57d784f0cc19"
+    checksum: "sha256:2928b85de31011ad17eb91da0397d06178bd1af887ca371ddecb3c3d5dc7bf73"
   - name: wanconfig-stack_linux_amd64.tar.gz
     checksum: "sha256:ae11e8de8fcf714f6f5f1086f751a332345f83dc3b409b44570debd6b2ca051f"
 mwan_bootstrap_guest: false
@@ -145,20 +145,24 @@ mwan_monkeybrains_iface: "enmbrains0"
 mwan_astound_iface: "enastound0"
 mwan_routed_iface: "enrouted0"
 
+# The daemon owns both links. The served configuration rejects a false IPv6
+# dhcp leaf on a daemon-owned link. Each IPv6 family omits that leaf.
 mwan_non_provider_connections:
   - name: "{{ mwan_internal_iface }}"
     connection_id: enmwanbr0
-    owner: networkd
-    link_files: rendered
+    owner: mwan
     link:
       match:
         hardware_address: "{{ mwan_net1_mac }}"
     ipv4:
       address: "{{ mwan_internal_ipv4 }}"
       forwarding: true
+    # networkd accepted no router advertisement on this forwarding link. The
+    # sysctl file sets accept_ra to 2 for this link when the leaf is absent.
     ipv6:
       address: "{{ mwan_internal_ipv6 }}"
       forwarding: true
+      accept_ra: false
       routes:
         - destination: "{{ mwan_internal_prefix }}"
           gateway: "{{ mwan_opnsense_edge_ipv6 }}"
@@ -166,8 +170,7 @@ mwan_non_provider_connections:
           metric: 0
   - name: "{{ mwan_mgmt_iface }}"
     connection_id: enmgmt0
-    owner: networkd
-    link_files: rendered
+    owner: mwan
     link:
       match:
         hardware_address: "{{ vm_mgmt_mac }}"
@@ -178,21 +181,15 @@ mwan_non_provider_connections:
         search: []
     ipv6:
       address: "{{ mwan_config_mgmt_addr }}/64"
-      dhcp: false
       accept_ra: false
       resolver:
         dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv6('address') }}"
         search: ["{{ mwan_dns_domain }}"]
 
-# systemd-networkd files deployed to the testbed gateway. Testbed AT&T is a
-# direct link (no VLAN, no 802.1X) from mwan/networkd/testbed/; the internal
-# mwanbr link reuses the shared prod template. The daemon writes every rendered
-# provider's files from network.json.
-mwan_networkd_files:
-  - testbed/20-att.link
-  - testbed/20-att.network
-  - 40-mwanbr.link
-  - 40-mwanbr.network
+# The deploy writes no systemd-networkd file to the testbed gateway. The daemon
+# owns every testbed link. The daemon stops at startup when a deployed name
+# file matches the address of a link that the daemon owns.
+mwan_networkd_files: []
 
 # MAC addresses (from PVE config, used by .link files for stable naming)
 mwan_mgmt_mac: "BC:24:11:B3:9E:46"
@@ -320,28 +317,35 @@ mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 
 # The existing provider entries use the simulated ISPs' addresses. The routed
 # entry tests native IPv4 and IPv6. Production routing numbers stay the same
-# in the matching entries. link_files, the link block, and the per-family
-# blocks are described there; the testbed's links are virtio
-# devices matched by the address Proxmox assigned, so no entry matches by
-# driver or sets a hardware address.
+# in the matching entries. The testbed's links are virtio devices. Each entry
+# matches its device by the address Proxmox assigned.
+#
+# The daemon owns every testbed link. Each simulated ISP delegates from a pool
+# of one prefix, and Kea stores a lease under the client's DUID and IAID. Each
+# delegation sets the DUID and the IAID that systemd-networkd sent on that
+# link. networkd derives the IAID from the link's slot name.
 mwan_providers:
   - name: att
     connection_id: att
-    owner: networkd
+    owner: mwan
     iface: "{{ mwan_att_iface }}"
     vlan_id: "{{ mwan_att_vlan_id }}"
-    # Hand-authored as in production, so the testbed exercises the same
-    # exemption; its two direct-link unit files stay under mwan/networkd/testbed/.
-    link_files: hand-authored
+    link:
+      match: { hardware_address: "{{ mwan_att_mac | lower }}" }
+    # The simulated ISP routes this block to the gateway's leased address. The
+    # gateway assigns no mapped address to the link.
     ipv4:
       translation:
         mode: ietf-nat:napt44
         static_mappings:
-          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2" }
-          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.205.3" }
-          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.205.4" }
-          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.205.5" }
-          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.205.6" }
+          - { internal: "{{ mwan_static_internal_hosts[0] }}", external: "10.241.205.2", delivery: routed }
+          - { internal: "{{ mwan_static_internal_hosts[1] }}", external: "10.241.205.3", delivery: routed }
+          - { internal: "{{ mwan_static_internal_hosts[2] }}", external: "10.241.205.4", delivery: routed }
+          - { internal: "{{ mwan_static_internal_hosts[3] }}", external: "10.241.205.5", delivery: routed }
+          - { internal: "{{ mwan_static_internal_hosts[4] }}", external: "10.241.205.6", delivery: routed }
+      forwarding: true
+      dhcp: true
+      route_metric: 20
     ipv6:
       translation:
         mode: ietf-nat:nptv6
@@ -349,10 +353,14 @@ mwan_providers:
           internal_prefix: "{{ mwan_internal_prefix }}"
           external_source: delegated
           expected_prefix: "3d06:bad:b01:2300::/60"
+      forwarding: true
       dhcp: true
+      accept_ra: true
       delegation:
         hint: "::/60"
-        use_delegated_prefix: true
+        iaid: 1845263992
+        duid_type: vendor
+        duid: "00:02:00:00:ab:11:11:18:28:f5:2b:50:d8:af"
         without_ra: solicit
     table: 100
     mark: 1
@@ -428,10 +436,9 @@ mwan_providers:
 
   - name: monkeybrains
     connection_id: monkeybrains
-    owner: networkd
+    owner: mwan
     iface: "{{ mwan_monkeybrains_iface }}"
     vlan_id: ""
-    link_files: rendered
     link:
       match: { hardware_address: "{{ mwan_mbrains_mac | lower }}" }
     ipv4:
@@ -441,9 +448,9 @@ mwan_providers:
       forwarding: true
       dhcp: true
       route_metric: 5000
-    # mwan_monkeybrains_duid_raw_data is empty on the testbed. The daemon
-    # renders DUIDType and omits the DUIDRawData line; networkd applies the
-    # same default for an absent key and for an empty assignment.
+    # The DUID is the link-layer-time value networkd built from an empty raw
+    # value: a zero time and the link address. The route metric applies to the
+    # default route from the router advertisement.
     ipv6:
       translation:
         mode: ietf-nat:nptv6
@@ -457,11 +464,13 @@ mwan_providers:
       route_metric: 5000
       delegation:
         hint: "::/56"
+        iaid: 714156292
         duid_type: link-layer-time
-        duid: "{{ mwan_monkeybrains_duid_raw_data }}"
-        use_delegated_prefix: true
+        duid: "00:01:00:01:00:00:00:00:{{ mwan_mbrains_mac | lower }}"
         without_ra: solicit
-        router_lifetime_seconds: 1800
+      dhcpv6_client:
+        address_iaid: 714156292
+        request_address: true
     table: 300
     mark: 3
     mark_prio: 300
@@ -482,10 +491,9 @@ mwan_providers:
 
   - name: routed
     connection_id: routed
-    owner: networkd
+    owner: mwan
     iface: "{{ mwan_routed_iface }}"
     vlan_id: ""
-    link_files: rendered
     link:
       match: { hardware_address: "{{ mwan_routed_mac | lower }}" }
     ipv4:
@@ -500,7 +508,6 @@ mwan_providers:
       translation:
         mode: native
       forwarding: true
-      dhcp: false
       accept_ra: false
       address: "3d06:bad:b01:260::2/64"
       gateway: "{{ service_mapping.isp_routed_suburban.ipv6 }}"
@@ -526,10 +533,9 @@ mwan_providers:
   # Its routing identifiers differ from the routed-provider simulator.
   - name: astound
     connection_id: astound
-    owner: networkd
+    owner: mwan
     iface: "{{ mwan_astound_iface }}"
     vlan_id: ""
-    link_files: rendered
     link:
       match: { hardware_address: "{{ mwan_astound_mac | lower }}" }
     ipv4:
@@ -542,7 +548,6 @@ mwan_providers:
     ipv6:
       translation:
         mode: native
-      dhcp: false
       accept_ra: false
     table: 700
     mark: 5

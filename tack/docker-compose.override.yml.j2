@@ -45,6 +45,13 @@ services:
       plugins.ml_commons.only_run_on_ml_node: "true"
       plugins.ml_commons.task_dispatch_policy: least_load
       plugins.ml_commons.model_auto_redeploy.enable: "true"
+      # ML Commons refuses to load or run the search model on a member when
+      # the data disk has less free space than this value. Tack runs the
+      # model for every write and every search. The default is 5 GiB. On a
+      # 40 GiB disk that refusal would start at 87.5 percent use, before
+      # OpenSearch blocks writes at 95 percent. With 1 GiB it starts at 97.5
+      # percent use.
+      plugins.ml_commons.disk_free_space_threshold: 1gb
       # The HTTP and transport layers both use TLS with this member's
       # certificate, and each side verifies the other against the search
       # authority. A peer joins only when its certificate subject matches a
