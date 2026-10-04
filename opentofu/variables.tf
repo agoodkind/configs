@@ -7,24 +7,6 @@ variable "vault_proxmox_token_secret" {
   sensitive   = true
 }
 
-variable "vault_proxmox_root_password" {
-  description = "Root password of the production vault host, for resources that Proxmox restricts to root@pam"
-  type        = string
-  sensitive   = true
-}
-
-variable "proxmox_root_otp" {
-  description = "Current one-time code for root@pam on the production vault host. configsctl computes it from the vault key vault_tofu_totp_proxmox_root_otp."
-  type        = string
-  sensitive   = true
-}
-
-variable "vault_proxmox_acme_cloudflare_token" {
-  description = "Cloudflare DNS token that the production vault host uses for ACME DNS challenges"
-  type        = string
-  sensitive   = true
-}
-
 variable "proxmox_endpoint" {
   description = "Proxmox API base URL for the production vault host including port"
   type        = string
