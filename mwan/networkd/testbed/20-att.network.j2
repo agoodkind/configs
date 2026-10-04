@@ -1,10 +1,3 @@
-# deploy-mwan templates this file to /etc/systemd/network/20-att.network on the
-# testbed gateway. The testbed AT&T link has no VLAN and no 802.1X. The
-# simulated ISP reserves one DHCPv4 address for the MAC address of this link.
-#
-# The file has no [Route] and no [RoutingPolicyRule] section. The mwan daemon
-# installs the AT&T policy rules and the routes of the AT&T table.
-
 [Match]
 Name={{ mwan_att_iface }}
 
@@ -15,8 +8,6 @@ IPv4Forwarding=yes
 IPv6Forwarding=yes
 
 [DHCPv4]
-# The Webpass default route has metric 10. The kernel prefers Webpass in the
-# main table.
 RouteMetric=20
 
 [DHCPv6]

@@ -16,8 +16,6 @@ mwan_release_assets:
   - name: wanconfig-stack_linux_amd64.tar.gz
     checksum: "sha256:ae11e8de8fcf714f6f5f1086f751a332345f83dc3b409b44570debd6b2ca051f"
 mwan_bootstrap_guest: false
-# deploy-mwan renders network.json and the runtime config into this controller
-# directory. `.gitignore` excludes `.make/`.
 mwan_controller_artifact_root: "{{ playbook_dir | dirname | dirname }}/.make/mwan-controller/{{ mwan_environment }}"
 mwan_operation_armed: false
 mwan_operation_duration_seconds: 7200
@@ -147,8 +145,7 @@ mwan_monkeybrains_iface: "enmbrains0"
 mwan_astound_iface: "enastound0"
 mwan_routed_iface: "enrouted0"
 
-# Both entries omit `dhcp` under `ipv6`. The mwan daemon rejects `dhcp: false`
-# under `ipv6` on a connection with `owner: mwan` when it publishes network.json.
+# Do not set `dhcp: false` under ipv6 here. mwan rejects it on a link it owns.
 mwan_non_provider_connections:
   - name: "{{ mwan_internal_iface }}"
     connection_id: enmwanbr0
@@ -159,8 +156,7 @@ mwan_non_provider_connections:
     ipv4:
       address: "{{ mwan_internal_ipv4 }}"
       forwarding: true
-    # `accept_ra: false` is required. Without it, /etc/sysctl.d/99-mwan.conf
-    # sets accept_ra=2 on this link, and the link accepts router advertisements.
+    # Do not remove accept_ra. Without it the sysctl file sets accept_ra=2.
     ipv6:
       address: "{{ mwan_internal_ipv6 }}"
       forwarding: true
@@ -188,10 +184,6 @@ mwan_non_provider_connections:
         dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv6('address') }}"
         search: ["{{ mwan_dns_domain }}"]
 
-# deploy-mwan templates these files into /etc/systemd/network. systemd-networkd
-# owns the AT&T link, and the mwan daemon owns every other link. 20-att.link
-# must match its device with `MACAddress=`: the mwan daemon exits at startup
-# when a .link file without a MAC match key exists beside a link that it owns.
 mwan_networkd_files:
   - testbed/20-att.link
   - testbed/20-att.network
@@ -263,8 +255,7 @@ mwan_static_internal_hosts:
 mwan_internal_ipv4: "{{ service_mapping.mwan_suburban.ipv4_transit }}/29"
 mwan_internal_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}/64"
 mwan_internal_net_v4: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
-# The OPNsense address on the transit link. The mwan firewall routes WireGuard
-# traffic from this source address through the `mwan_pin_provider` provider.
+# OPNsense address on the transit link.
 mwan_opnsense_internal_v4: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 mwan_mwanbr_edge_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
@@ -322,21 +313,16 @@ mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 
 # The existing provider entries use the simulated ISPs' addresses. The routed
 # entry tests native IPv4 and IPv6. Production routing numbers stay the same
-# in the matching entries. Each entry with a `link` block matches its virtio
-# device by the MAC address that Proxmox assigned.
+# in the matching entries.
 #
-# systemd-networkd owns the AT&T link. The mwan daemon owns every other link.
-# Each simulated ISP delegates from a pool with one prefix, and Kea stores the
-# lease under the client DUID and IAID. Each entry with `owner: mwan` sets the
-# DUID and the IAID that systemd-networkd sent on that link.
+# Do not change a `duid` or `iaid` below. Each is the value networkd sent, and
+# the simulated ISP gives the prefix only to that DUID and IAID.
 mwan_providers:
   - name: att
     connection_id: att
     owner: networkd
     iface: "{{ mwan_att_iface }}"
     vlan_id: "{{ mwan_att_vlan_id }}"
-    # With `hand-authored`, deploy-mwan templates 20-att.link and
-    # 20-att.network, and the mwan daemon renders no unit file for this link.
     link_files: hand-authored
     ipv4:
       translation:
@@ -445,9 +431,6 @@ mwan_providers:
       forwarding: true
       dhcp: true
       route_metric: 5000
-    # systemd-networkd sent a link-layer-time DUID with time zero and the MAC
-    # address of this link. `route_metric` sets the metric of the default route
-    # that the kernel installs from the router advertisement.
     ipv6:
       translation:
         mode: ietf-nat:nptv6

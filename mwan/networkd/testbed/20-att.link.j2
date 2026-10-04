@@ -1,8 +1,4 @@
-# deploy-mwan templates this file to /etc/systemd/network/20-att.link on the
-# testbed gateway. The match must use `MACAddress=`: the mwan daemon exits at
-# startup when a .link file without a MAC match key exists beside a link that
-# it owns.
-
+# Match by MAC. mwan refuses to start beside a .link file with no MAC match.
 [Match]
 MACAddress={{ mwan_att_mac | lower }}
 
