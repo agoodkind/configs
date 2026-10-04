@@ -6,8 +6,10 @@
 # Once authenticated, AT&T will immediately put traffic on to vlan03242
 # therefore we do not need an att network file, only the att vlan 3242 file
 
-# Two MACs: the VF reports the hypervisor's MAC on first boot and the [Link]
-# MAC after. mwan will not start when a .link file does not have a MAC match.
+# Keep the PermanentMACAddress line. If it is removed, this file can match a
+# NIC that mwan owns, and mwan will not start.
+# It lists two MACs because the VF reports the hypervisor's MAC on the first
+# boot and the [Link] MAC on later boots.
 [Match]
 Driver=iavf
 PermanentMACAddress={{ mwan_att_vf_host_mac | lower }} {{ mwan_att_eap_identity | lower }}
