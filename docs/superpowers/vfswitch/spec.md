@@ -112,6 +112,16 @@ Poweredge, 2026-10-04, card firmware 236.1.173.0, kernel 7.0.14-20-pve.
 | nftables with conntrack, NAT, and marks | Pass |
 | Load an eBPF tc program, no token | Fail |
 | Load an eBPF tc program, with the token mount | Pass |
+| Load and attach the real MWAN NPT programs, with a narrow token mount | Pass |
+
+The narrow token mount allows these and no more:
+
+| Kind | Allowed |
+| --- | --- |
+| Commands | `prog_load`, `map_create`, `btf_load` |
+| Map types | `hash` |
+| Program types | `sched_cls`, `socket_filter` |
+| Attach types | `tcx_ingress`, `tcx_egress`, `cgroup_inet_ingress` |
 
 ### Speed of rollback
 
@@ -126,8 +136,8 @@ Poweredge, 2026-10-04, card firmware 236.1.173.0, kernel 7.0.14-20-pve.
 - The VFs after a reboot of poweredge.
 - The permanent MAC of a VF after a reboot. MWAN finds a device by its
   permanent MAC. Today it differs from the fixed MAC.
-- The real MWAN eBPF load. The test used a small test program and a different
-  attach method.
+- The full `mwan` program in the container. The test loaded its eBPF part
+  only.
 - MWAN's deploy for a container. Today it only supports a VM.
 
 ## Limits
