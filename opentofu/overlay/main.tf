@@ -77,16 +77,21 @@ locals {
   # brackets in that format.
   remote_host = strcontains(var.ssh_host, ":") ? "[${var.ssh_host}]" : var.ssh_host
 
+  # Proxmox evaluates a user's privileges on a path from the most specific
+  # path with an ACL entry for that user. An entry on /vms or /nodes/<node>
+  # replaces every role granted to the user on /, including VM.Audit, and the
+  # inventory plugin then lists no guest. The guest and node roles are granted
+  # on / with the user's other roles.
   roles = {
     ScopedContainerFeatures = {
-      path = "/vms"
+      path = "/"
       privileges = [
         "VM.Config.Nesting",
         "VM.Config.Keyctl",
       ]
     }
     ScopedVsock = {
-      path = "/vms"
+      path = "/"
       privileges = [
         "VM.Config.Vsock",
       ]
@@ -111,7 +116,7 @@ locals {
       ]
     }
     ScopedAcmeCertificate = {
-      path = "/nodes/${var.node_name}"
+      path = "/"
       privileges = [
         "Sys.ACME.Certificate.Order",
         "Sys.ACME.Certificate.Renew",
@@ -136,6 +141,13 @@ locals {
       "pveum acl modify ${local.roles[role].path} --users ${var.automation_user} --roles ${role} --propagate 1",
     ]
   ])
+
+  # Earlier grants put these roles on /vms and /nodes/<node>. `pveum acl
+  # delete` succeeds when the entry is absent.
+  revoke_commands = [
+    "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
+    "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
+  ]
 }
 
 data "http" "files" {
@@ -190,7 +202,7 @@ resource "terraform_data" "apply" {
 resource "terraform_data" "grant" {
   triggers_replace = [
     terraform_data.apply.id,
-    sha256(join("\n", local.grant_commands)),
+    sha256(join("\n", concat(local.grant_commands, local.revoke_commands))),
   ]
 
   connection {
@@ -201,6 +213,6 @@ resource "terraform_data" "grant" {
   }
 
   provisioner "remote-exec" {
-    inline = concat(["set -eu"], local.grant_commands)
+    inline = concat(["set -eu"], local.grant_commands, local.revoke_commands)
   }
 }
