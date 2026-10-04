@@ -11,11 +11,13 @@ tack_ledger_node_name: ""
 # no IPv4 route. java.net.preferIPv6Addresses makes the JVM connect to the
 # IPv6 address of a dual-stack host, such as the model artifact host
 # artifacts.opensearch.org that ML Commons downloads the pinned model from.
-# Every member runs a 3 GiB heap. At 2 GiB, used heap crosses the 85 percent
-# ML Commons memory breaker under the split workload, and query predictions
-# fail.
+# Every member runs a 3 GiB heap. G1PeriodicGCInterval starts a garbage
+# collection after 5 seconds without one. Queries allocate too little to start
+# a collection on their own, and without the periodic collection uncollected
+# garbage keeps used heap above the 85 percent ML Commons memory breaker, which
+# then refuses query predictions.
 tack_search_image: "opensearchproject/opensearch:3.8.0"
-tack_search_java_opts: "-Xms3g -Xmx3g -Djava.net.preferIPv6Addresses=true"
+tack_search_java_opts: "-Xms3g -Xmx3g -XX:G1PeriodicGCInterval=5000 -Djava.net.preferIPv6Addresses=true"
 tack_search_role_set: >-
   {{ ((tack_search_role_set_members | dict2items | selectattr('value', 'contains', service_name)
        | map(attribute='key') | list) + ['combined']) | first }}
