@@ -73,8 +73,9 @@
     vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
     vm_mgmt_ipv6: "{{ mwan_config_mgmt_addr }}"
     hostname: "{{ service_hostname }}"
-    # The daemon writes the name file for a management link that it owns. The
-    # daemon stops at startup when 10-mgmt.link matches that link's address.
+    # The list omits 10-mgmt.link when the management connection has
+    # `owner: mwan`. The mwan daemon writes its own .link file for that link
+    # and exits at startup when 10-mgmt.link matches the same MAC address.
     mwan_mgmt_networkd_files: >-
       {{ (['10-mgmt.link']
           if not (mwan_ifmgr_wan_enabled | bool)

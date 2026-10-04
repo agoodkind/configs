@@ -298,19 +298,16 @@
         - not mwan_bootstrap_guest | bool
         - not ansible_check_mode
 
-    # The arm tasks write no file on the gateway. The rescue never runs
-    # recover, because recover restores the snapshot and reboots a gateway
-    # that has no change. The arm command creates the hypervisor record only
-    # after its baseline checks pass. A later arm failure sets that record to
-    # disarmed, or to recovering when a mutation lease or a recovery exists.
-    # The hypervisor watchdog restores the snapshot of a recovering record.
-    # The rescue removes the snapshot when the hypervisor has no record or a
-    # disarmed record for this operation.
+    # The rescue does not run `mwan deploy-gate recover`. The arm tasks write no
+    # file on the gateway, and `recover` restores the snapshot and reboots it.
+    # The rescue runs `qm delsnapshot` only when `mwan deploy-gate status`
+    # reports no record for this operation or a record with status `disarmed`.
+    # The hypervisor watchdog restores the snapshot of a `recovering` record.
     - name: Arm preparation and activation observation before gateway writes
       when: not mwan_bootstrap_guest | bool
       block:
-        # The status command in the rescue reads this value when an arm task
-        # fails before the hypervisor generates the operation generation.
+        # `mwan deploy-gate status` in the rescue needs this variable when an
+        # arm task fails before arm-mwan-operation.yml sets the generation.
         - name: Initialize the operation generation
           ansible.builtin.set_fact:
             mwan_operation_generation: ""
@@ -326,7 +323,7 @@
               The check run created no snapshot and no hypervisor record.
           when: ansible_check_mode
 
-        # The status command exits zero only when the hypervisor record has
+        # `mwan deploy-gate status` exits 0 only when the hypervisor record has
         # this trace ID and this generation.
         - name: Read the hypervisor record of the failed arm
           delegate_to: "{{ mwan_proxmox_delegate }}"
@@ -357,9 +354,10 @@
             - mwan_operation_failed_arm.rc == 0
             - (mwan_operation_failed_arm.stdout | from_json).status != "disarmed"
 
-        # The status command reports an identity difference when the current
-        # hypervisor record is for another operation. Any other status error
-        # leaves the record state unknown.
+        # `mwan deploy-gate status` prints the identity message below when the
+        # hypervisor record is for another operation. After any other error
+        # the record state is unknown, and the deploy does not run
+        # `qm delsnapshot`.
         - name: Reject the failed arm when the record state is unknown
           ansible.builtin.fail:
             msg: >-
@@ -375,7 +373,7 @@
               'deployment operation identity differs from request or configured gateway'
               not in mwan_operation_failed_arm.stderr
 
-        # A disarmed record restores no snapshot.
+        # No process restores the snapshot of a `disarmed` record.
         - name: Remove the snapshot that no restore uses
           delegate_to: "{{ mwan_proxmox_delegate }}"
           ansible.builtin.command:
