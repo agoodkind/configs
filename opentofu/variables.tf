@@ -1,5 +1,8 @@
-variable "proxmox_api_token" {
-  description = "Proxmox API token for the production vault host in the form user@pam!tokenid=secret"
+# Each variable named vault_* takes its value from the Ansible vault key of the
+# same name. `configsctl tofu` exports a vault key only when a variable with
+# that name is declared here.
+variable "vault_proxmox_token_secret" {
+  description = "Secret of the Proxmox API token for the production vault host"
   type        = string
   sensitive   = true
 }
@@ -10,14 +13,20 @@ variable "proxmox_endpoint" {
   default     = "https://[3d06:bad:b01::254]:8006/"
 }
 
-variable "suburban_proxmox_api_token" {
-  description = "Proxmox API token for the suburban testbed host in the form user@pam!tokenid=secret"
+variable "vault_suburban_testbed_pve_token_secret" {
+  description = "Secret of the Proxmox API token for the suburban testbed host"
   type        = string
   sensitive   = true
 }
 
-variable "suburban_proxmox_root_password" {
+variable "vault_suburban_proxmox_root_password" {
   description = "Root password for privileged container feature changes on the suburban testbed"
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_suburban_acme_cloudflare_token" {
+  description = "Cloudflare DNS token that the suburban testbed host uses for ACME DNS challenges"
   type        = string
   sensitive   = true
 }
@@ -26,6 +35,30 @@ variable "suburban_proxmox_endpoint" {
   description = "Proxmox API base URL for the suburban testbed host including port"
   type        = string
   default     = "https://[3d06:bad:b01:200::1]:8006/"
+}
+
+variable "vault_poweredge_proxmox_root_password" {
+  description = "Root password of the poweredge host, for resources that Proxmox restricts to root@pam"
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_poweredge_acme_cloudflare_token" {
+  description = "Cloudflare DNS token that the poweredge host uses for ACME DNS challenges"
+  type        = string
+  sensitive   = true
+}
+
+variable "poweredge_proxmox_endpoint" {
+  description = "Proxmox API base URL for the poweredge host including port"
+  type        = string
+  default     = "https://poweredge.home.goodkind.io:8006/"
+}
+
+variable "vault_tofu_state_passphrase" {
+  description = "Passphrase that encrypts the OpenTofu state and plan files"
+  type        = string
+  sensitive   = true
 }
 
 variable "cloudflare_account_id" {

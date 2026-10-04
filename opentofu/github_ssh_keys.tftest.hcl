@@ -5,9 +5,22 @@ mock_provider "proxmox" {
   alias = "suburban"
 }
 
+mock_provider "proxmox" {
+  alias = "suburban_root"
+}
+
+mock_provider "proxmox" {
+  alias = "poweredge_root"
+}
+
 variables {
-  proxmox_api_token          = "test"
-  suburban_proxmox_api_token = "test"
+  vault_proxmox_token_secret              = "test"
+  vault_suburban_testbed_pve_token_secret = "test"
+  vault_suburban_proxmox_root_password    = "test"
+  vault_suburban_acme_cloudflare_token    = "test"
+  vault_poweredge_proxmox_root_password   = "test"
+  vault_poweredge_acme_cloudflare_token   = "test"
+  vault_tofu_state_passphrase             = "test-fixture-phrase-0123456789"
 }
 
 override_module {

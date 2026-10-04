@@ -13,7 +13,8 @@ terraform {
       version = ">= 5.0.0"
     }
   }
-  required_version = ">= 1.9"
+  # proxmox_acme_dns_plugin uses a write-only argument, which needs OpenTofu 1.11.
+  required_version = ">= 1.11"
 }
 
 # The provider reads CLOUDFLARE_API_TOKEN from the environment inherited by configsctl.
@@ -24,16 +25,30 @@ provider "cloudflare" {
   api_token = sensitive(trimspace(file(pathexpand(var.cloudflare_mwan_manage_token_file))))
 }
 
+locals {
+  # Both hypervisors issue the automation token under the principal that the
+  # shared Ansible variables define.
+  proxmox_token_principal = "${local.shared_vars.proxmox_api_user}!${local.shared_vars.proxmox_token_id}"
+}
+
 provider "proxmox" {
   endpoint  = var.proxmox_endpoint
-  api_token = var.proxmox_api_token
+  api_token = "${local.proxmox_token_principal}=${var.vault_proxmox_token_secret}"
   insecure  = true
+}
+
+provider "proxmox" {
+  alias    = "poweredge_root"
+  endpoint = var.poweredge_proxmox_endpoint
+  username = "root@pam"
+  password = var.vault_poweredge_proxmox_root_password
+  insecure = true
 }
 
 provider "proxmox" {
   alias     = "suburban"
   endpoint  = var.suburban_proxmox_endpoint
-  api_token = var.suburban_proxmox_api_token
+  api_token = "${local.proxmox_token_principal}=${var.vault_suburban_testbed_pve_token_secret}"
   insecure  = true
 }
 
@@ -41,6 +56,6 @@ provider "proxmox" {
   alias    = "suburban_root"
   endpoint = var.suburban_proxmox_endpoint
   username = "root@pam"
-  password = var.suburban_proxmox_root_password
+  password = var.vault_suburban_proxmox_root_password
   insecure = true
 }
