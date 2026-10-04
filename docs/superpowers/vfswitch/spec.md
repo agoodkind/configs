@@ -25,6 +25,10 @@ Measured on poweredge on 2026-10-04, firmware 236.1.173.0, kernel 7.0.14-20-pve.
 | Ping between the two virtual functions, one in each network namespace | 3 of 3 replies, about 0.3 ms |
 | IOMMU group of each SFP port | One group per port |
 | Embedded switch mode | `legacy` |
+| Two unprivileged Debian 13 containers, each with one whole port and one virtual function through `lxc.net.<n>.type: phys` lines in the container configuration | Both start. The host has none of the four devices while they run. |
+| Ping between the two containers over the virtual functions | 5 of 5 replies, about 0.2 ms. The host has no bridge. |
+| Host receive counter of `nic1` during that ping | Increased by 1 |
+| Container stop | The port and the virtual function are host devices again, and the virtual function has its fixed MAC address. The next start moves both into the container. |
 
 ## Contract
 
@@ -63,6 +67,10 @@ for these interfaces.
 
 A virtual function is a host network device. A container does not need PCI
 passthrough for it.
+
+The container configuration declares each device with `lxc.net.<n>.type: phys`,
+`lxc.net.<n>.link`, and `lxc.net.<n>.name`. Proxmox accepts these lines only
+from root on the host. The Proxmox API has no argument for them.
 
 ### 4. Forwarding
 
