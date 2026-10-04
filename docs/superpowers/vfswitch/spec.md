@@ -48,24 +48,25 @@ moves the device into the container at start and back to the host at stop. No
 
 ### Container 1: MWAN
 
-- Unprivileged.
-- Devices: `wan` (port `nic2`) and `mwanbr` (VF 0).
-- No management interface. The host runs commands in it with `pct`.
-- MWAN takes each device by name. The container config sets the names `wan`
-  and `mwanbr`, and they never change. MWAN does not look up a MAC address
-  and does not rename a device in a container.
+- Container 1 is unprivileged.
+- Container 1 has two devices: `wan` (port `nic2`) and `mwanbr` (VF 0).
+- Container 1 has no management interface. The host runs commands in
+  container 1 with `pct`.
+- MWAN finds each device by name. The container config sets the names `wan`
+  and `mwanbr`. MWAN does not look up a MAC address and does not rename a
+  device in a container.
 - MWAN loads eBPF programs. An unprivileged container needs a BPF token for
-  that. Proxmox mounts a BPF filesystem with delegation in the container at
-  start.
-- Rollback uses `pct snapshot` and `pct rollback`.
+  the load. Proxmox mounts a BPF filesystem with delegation in container 1 at
+  each start.
+- A rollback of container 1 uses `pct snapshot` and `pct rollback`.
 
 ### Container 2: router
 
-- Unprivileged.
-- Devices: `lan` (port `nic0`) and `mwanbr` (VF 1).
-- Runs Kea (DHCP), Unbound (DNS), and nftables.
-- Kea and Unbound start stopped. `nic0` is on the live LAN, and a second DHCP
-  server there would answer real clients.
+- Container 2 is unprivileged.
+- Container 2 has two devices: `lan` (port `nic0`) and `mwanbr` (VF 1).
+- Container 2 runs Kea (DHCP), Unbound (DNS), and nftables.
+- Kea and Unbound are installed and stopped. `nic0` is on the live LAN, and a
+  second DHCP server on that LAN answers real clients.
 
 ### Permissions
 
@@ -93,7 +94,7 @@ Poweredge, 2026-10-04, card firmware 236.1.173.0, kernel 7.0.14-20-pve.
 | VFs per port after SR-IOV is switched on | 8 |
 | Create VFs on a port that is set down | Rejected by the driver |
 | Create 2 VFs on `nic1` (no cable), force link up | Both links up |
-| Each SFP port can be given away alone | Yes |
+| Each SFP port is in its own IOMMU group | Yes |
 
 ### Link
 
@@ -102,7 +103,7 @@ Poweredge, 2026-10-04, card firmware 236.1.173.0, kernel 7.0.14-20-pve.
 | Two containers start, each with one port and one VF | Pass |
 | Ping between the containers | 5 of 5, about 0.2 ms |
 | Bridge on the host | None |
-| Host packet counter on `nic1` during the ping | Up by 1 |
+| Host receive counter on `nic1` during the ping | Increased by 1 |
 | Stop a container | Its devices return to the host |
 | Start it again | Its devices move back in |
 
@@ -137,19 +138,18 @@ The narrow token mount allows these and no more:
 ## Not tested yet
 
 - The VFs after a reboot of poweredge.
-- MWAN with devices matched by name. Today MWAN matches a device it owns by
-  permanent MAC, which a VM needs and a container does not.
-- The full `mwan` program in the container. The test loaded its eBPF part
-  only.
-- MWAN's deploy for a container. Today it only supports a VM.
+- MWAN in a container with devices found by name. The production VM runs
+  MWAN in that mode. No container has run it.
+- The full `mwan` program in the container. The test loaded only the NPT
+  eBPF programs.
+- The MWAN deploy for a container. The deploy supports only a VM.
 
 ## Limits
 
-- The card's switch stays in its default mode. Offloading routing rules to the
-  card is separate work.
-- `ens1f0` and `ens1f1` cannot be given away one at a time. Both stay on the
-  host.
-- Switching SR-IOV on or off needs a reboot of poweredge.
+- The switch in the card stays in `legacy` mode. `switchdev` mode with
+  offloaded routing rules is separate work.
+- `ens1f0` and `ens1f1` are in one IOMMU group. Both stay on the host.
+- A change of the SR-IOV setting needs a reboot of poweredge.
 
 ## Done when
 
