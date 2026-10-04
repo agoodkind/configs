@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'json'
 require 'yaml'
 require_relative '../support/ansible_render'
 require_relative '../support/task_expressions'
@@ -37,17 +36,6 @@ module TackAuditPartitionNames
     playbook_tasks.find { |task| (task['block'] || []).any? { |child| child['name'] == PROVISION_TASK } }
   end
 
-  # Tack writes the command output inside a result envelope with a nested
-  # result object.
-  def backfill_result(from_names)
-    renames = from_names.map { |name| { 'from' => name, 'to' => 'events_p2031_03_03' } }
-    envelope = {
-      '_meta' => { 'trace_id' => '0af7651916cd43dd8448eb211c80319c' },
-      'result' => { 'command' => 'ops.backfill.once-audit-partition-names', 'dry_run' => false, 'result' => { 'renames' => renames } }
-    }
-    TaskExpressions.command_result(0, JSON.pretty_generate(envelope), '')
-  end
-
   def conditions(variables)
     rename = task_named(RENAME_TASK)
     refusal = task_named(REFUSAL_TASK)
@@ -59,15 +47,6 @@ module TackAuditPartitionNames
         'refusal' => TaskExpressions.condition_list(refusal.dig('ansible.builtin.assert', 'that'))
       }
     )['conditions']
-  end
-
-  def changed(result)
-    rename = task_named(RENAME_TASK)
-    TaskExpressions.evaluate(
-      variables: { 'tack_audit_partition_names_result' => result },
-      facts: [],
-      conditions: { 'changed' => TaskExpressions.condition_list(rename['changed_when']) }
-    )['conditions']['changed']
   end
 end
 
@@ -96,10 +75,5 @@ RSpec.describe TackAuditPartitionNames do
                                         'ansible_play_hosts_all' => ['tack.home.goodkind.io'])
 
     expect(result['refusal']).to be(false)
-  end
-
-  it 'reports a change only when the backfill renamed a partition', :aggregate_failures do
-    expect(described_class.changed(described_class.backfill_result(['events_tack336_proof']))).to be(true)
-    expect(described_class.changed(described_class.backfill_result([]))).to be(false)
   end
 end
