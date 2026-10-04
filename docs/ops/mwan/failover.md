@@ -90,9 +90,10 @@ unresolved record with no running watch.
 
 A failure before the arm command succeeds runs no recovery, because the
 gateway has no change. The deploy removes the snapshot when the Proxmox host
-has no record for the operation. The deploy keeps the snapshot when a record
-exists, because the watchdog restores that snapshot for the record. The next
-arm command succeeds only after the record status is recovered or committed.
+has no record for the operation or a record with status disarmed. The deploy
+does not remove the snapshot of a record with any other status, because the
+watchdog restores that snapshot for the record. The next arm command succeeds
+only after the record status is recovered, committed, or disarmed.
 
 A bootstrap deploy creates no snapshot and arms no operation. A check run
 creates no snapshot, arms no operation, and ends before the reboot.

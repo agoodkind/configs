@@ -302,9 +302,10 @@
     # recover, because recover restores the snapshot and reboots a gateway
     # that has no change. The arm command creates the hypervisor record only
     # after its baseline checks pass. A later arm failure sets that record to
-    # recovering, and the hypervisor watchdog then restores the snapshot the
-    # record references. The rescue removes the snapshot only when the
-    # hypervisor has no record for this operation.
+    # disarmed, or to recovering when a mutation lease or a recovery exists.
+    # The hypervisor watchdog restores the snapshot of a recovering record.
+    # The rescue removes the snapshot when the hypervisor has no record or a
+    # disarmed record for this operation.
     - name: Arm preparation and activation observation before gateway writes
       when: not mwan_bootstrap_guest | bool
       block:
@@ -352,9 +353,12 @@
               and the deploy keeps that snapshot. The hypervisor watchdog
               recovers an unresolved record from that snapshot. The next arm
               succeeds only after the record status is recovered or committed.
-          when: mwan_operation_failed_arm.rc == 0
+          when:
+            - mwan_operation_failed_arm.rc == 0
+            - (mwan_operation_failed_arm.stdout | from_json).status != "disarmed"
 
-        - name: Remove the snapshot that no hypervisor record references
+        # A disarmed record restores no snapshot.
+        - name: Remove the snapshot that no restore uses
           delegate_to: "{{ mwan_proxmox_delegate }}"
           ansible.builtin.command:
             argv:
@@ -368,7 +372,7 @@
           ansible.builtin.fail:
             msg: >-
               Arm preparation failed at {{ ansible_failed_task.name }}.
-              The hypervisor has no record for operation
+              The hypervisor has no record or a disarmed record for operation
               {{ mwan_deploy_trace_id }}. The deploy removed snapshot
               {{ mwan_pre_deploy_snapshot_name }}.
 
