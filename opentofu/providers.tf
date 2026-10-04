@@ -45,22 +45,6 @@ provider "proxmox" {
   insecure = true
 }
 
-module "vault_root_login" {
-  source = "./root_login"
-
-  endpoint = var.proxmox_endpoint
-  password = var.vault_proxmox_root_password
-  otp      = var.proxmox_root_otp
-}
-
-provider "proxmox" {
-  alias                 = "vault_root"
-  endpoint              = var.proxmox_endpoint
-  auth_ticket           = module.vault_root_login.auth_ticket
-  csrf_prevention_token = module.vault_root_login.csrf_prevention_token
-  insecure              = true
-}
-
 provider "proxmox" {
   alias     = "suburban"
   endpoint  = var.suburban_proxmox_endpoint
