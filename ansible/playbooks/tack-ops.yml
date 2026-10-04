@@ -118,8 +118,11 @@
           {{ counts.dry_run | bool
              and counts.result.node_types.missing == 0
              and counts.result.property_definitions.missing == 0 }}
+      # A dry run prints two operator lines before the JSON envelope, and the
+      # envelope spans several lines.
       vars:
-        counts: "{{ (tack_metadata_name_index_read.stdout_lines | last | from_json).result }}"
+        output: "{{ tack_metadata_name_index_read.stdout }}"
+        counts: "{{ (output[output.index('{'):] | from_json).result }}"
       when: *tack_ops_index_build
 
     - name: Refuse a search index build without a complete metadata name index
