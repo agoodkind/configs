@@ -357,6 +357,24 @@
             - mwan_operation_failed_arm.rc == 0
             - (mwan_operation_failed_arm.stdout | from_json).status != "disarmed"
 
+        # The status command reports an identity difference when the current
+        # hypervisor record is for another operation. Any other status error
+        # leaves the record state unknown.
+        - name: Reject the failed arm when the record state is unknown
+          ansible.builtin.fail:
+            msg: >-
+              Arm preparation failed at {{ ansible_failed_task.name }}.
+              The status read for operation {{ mwan_deploy_trace_id }} failed
+              with exit code {{ mwan_operation_failed_arm.rc }}:
+              {{ mwan_operation_failed_arm.stderr_lines | last | default('') }}
+              The deploy did not remove snapshot
+              {{ mwan_pre_deploy_snapshot_name }}.
+          when:
+            - mwan_operation_failed_arm.rc != 0
+            - >-
+              'deployment operation identity differs from request or configured gateway'
+              not in mwan_operation_failed_arm.stderr
+
         # A disarmed record restores no snapshot.
         - name: Remove the snapshot that no restore uses
           delegate_to: "{{ mwan_proxmox_delegate }}"
