@@ -197,8 +197,7 @@ mwan_non_provider_connections:
         dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv6('address') }}"
         search: ["{{ mwan_dns_domain }}"]
 
-# List only AT&T files. mwan writes its own .link file for each NIC it owns,
-# and mwan will not start when a second .link file matches the same NIC.
+# mwan exits at startup when another .link file may match a NIC that mwan owns.
 mwan_networkd_files:
   - 20-att.link
   - 20-att.network
