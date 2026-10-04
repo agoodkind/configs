@@ -1,23 +1,20 @@
-# ACME certificates for the Proxmox web interface of each hypervisor. Every
-# resource here uses the automation token of its hypervisor. The scoped roles
-# from the overlay module grant the token one Sys.ACME privilege for each
-# operation. Each hypervisor has its own Cloudflare DNS token.
+# Each ACME account and DNS plugin depends on module.overlay. The automation
+# token of the provider needs the Sys.ACME roles that module.overlay grants.
 #
-# `tofu test` crashes on import blocks. Import an existing account with id
+# `tofu test` fails on an import block. Import an existing account with id
 # "default", a plugin with id "cf", and a certificate with its node name
-# through `configsctl tofu import`.
+# through `./configsctl tofu import`.
 locals {
   acme_directory = "https://acme-v02.api.letsencrypt.org/directory"
   acme_terms     = "https://letsencrypt.org/documents/LE-SA-v1.5-February-24-2025.pdf"
   acme_account   = "default"
   acme_plugin    = "cf"
 
-  # The plugin data is write-only: OpenTofu does not store a token in state.
-  # A rotated token needs a higher version number to be sent again.
+  # OpenTofu sends data_wo to Proxmox again only when this number increases.
+  # Increase it after a change of a Cloudflare DNS token.
   acme_plugin_data_version = 1
 }
 
-# Production vault host.
 resource "proxmox_acme_account" "vault" {
   name      = local.acme_account
   contact   = var.cloudflare_owner_email
@@ -53,7 +50,6 @@ resource "proxmox_acme_certificate" "vault" {
   ]
 }
 
-# Suburban testbed host.
 resource "proxmox_acme_account" "suburban" {
   provider  = proxmox.suburban
   name      = local.acme_account
@@ -92,7 +88,6 @@ resource "proxmox_acme_certificate" "suburban" {
   ]
 }
 
-# Poweredge host.
 resource "proxmox_acme_account" "poweredge" {
   provider  = proxmox.poweredge
   name      = local.acme_account

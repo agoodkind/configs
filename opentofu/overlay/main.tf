@@ -1,23 +1,14 @@
-# Scoped Proxmox privileges from agoodkind/proxmox-overlays on one hypervisor.
-#
-# Stock Proxmox restricts container nesting and keyctl changes, VM vsock, and
-# ACME changes to root@pam. The overlay adds one privilege for each operation,
-# and the roles below grant them to the automation user.
-#
-# OpenTofu declares the `pve-overlay` script and its patches as files on the
-# hypervisor. `pve-overlay apply` then writes patched copies of the installed
-# Proxmox modules to /etc/perl. The content of those copies depends on the
-# installed Proxmox version, and the script generates them on the host.
-#
-# Every step uses root SSH through the SSH agent. Role and ACL changes need an
-# administrator, and `pveum` on the host runs as root.
+# `pve-overlay apply` writes patched copies of the installed Proxmox Perl
+# modules to /etc/perl on the hypervisor. The patches add one privilege for
+# each operation that Proxmox otherwise allows only for root@pam.
 terraform {
   required_providers {
     http = {
       source  = "hashicorp/http"
       version = ">= 3.0"
     }
-    # The registry has no signing key for this provider.
+    # The OpenTofu registry has no signing key for tenstad/remote, and
+    # `tofu init` skips the signature check for it.
     remote = {
       source  = "tenstad/remote"
       version = ">= 0.2.1"
@@ -51,13 +42,14 @@ variable "acme_plugin" {
 }
 
 locals {
-  # A new commit here changes the declared files and reruns `apply`.
+  # A change of this commit changes the content of remote_file.files, and
+  # terraform_data.apply then reruns `pve-overlay apply`.
   commit = "bb4324db0f2bf3caef9cd5569e1b3b0afb411aea"
   source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${local.commit}"
   script = "/usr/local/sbin/pve-overlay"
 
-  # Repository path of each file, with its path and mode on the hypervisor.
-  # Every host path is in a directory that Debian creates.
+  # Key: the file path in agoodkind/proxmox-overlays. Debian creates
+  # /usr/local/sbin and /usr/local/share.
   files = {
     "pve-overlay" = {
       path        = local.script
@@ -81,28 +73,29 @@ locals {
     }
   }
 
-  # The remote provider joins host and port with a colon, and an IPv6 address
-  # needs brackets there.
+  # remote_file builds the SSH address as <host>:<port>. An IPv6 address needs
+  # brackets in that format.
   remote_host = strcontains(var.ssh_host, ":") ? "[${var.ssh_host}]" : var.ssh_host
 
-  # Each role with the ACL path of its grant.
+  # Proxmox evaluates a user's privileges on a path from the most specific
+  # path with an ACL entry for that user. An entry on /vms or /nodes/<node>
+  # replaces every role granted to the user on /, including VM.Audit, and the
+  # inventory plugin then lists no guest. The guest and node roles are granted
+  # on / with the user's other roles.
   roles = {
-    # Change `nesting` and `keyctl` on a container, also a privileged one.
     ScopedContainerFeatures = {
-      path = "/vms"
+      path = "/"
       privileges = [
         "VM.Config.Nesting",
         "VM.Config.Keyctl",
       ]
     }
-    # Enable the virtio vsock device on a VM.
     ScopedVsock = {
-      path = "/vms"
+      path = "/"
       privileges = [
         "VM.Config.Vsock",
       ]
     }
-    # Read, register, update, and remove one ACME account.
     ScopedAcmeAccount = {
       path = "/acme/accounts/${var.acme_account}"
       privileges = [
@@ -112,9 +105,6 @@ locals {
         "Sys.ACME.Account.Remove",
       ]
     }
-    # Read, add, change, and delete one DNS plugin, and set its credentials.
-    # The role omits Sys.ACME.Plugin.Secret.Audit: OpenTofu writes the
-    # credentials and never reads them back.
     ScopedAcmePlugin = {
       path = "/acme/plugins/${var.acme_plugin}"
       privileges = [
@@ -125,10 +115,8 @@ locals {
         "Sys.ACME.Plugin.Secret.Modify",
       ]
     }
-    # Order, renew, and revoke the node certificate, and read and change the
-    # ACME options of the node config.
     ScopedAcmeCertificate = {
-      path = "/nodes/${var.node_name}"
+      path = "/"
       privileges = [
         "Sys.ACME.Certificate.Order",
         "Sys.ACME.Certificate.Renew",
@@ -141,8 +129,8 @@ locals {
     }
   }
 
-  # `pveum role add` rejects an existing role, and `pveum role modify` rejects
-  # a missing one.
+  # `pveum role add` fails for an existing role, and `pveum role modify` fails
+  # for a missing role.
   grant_commands = flatten([
     for role in sort(keys(local.roles)) : [
       join(" ", [
@@ -153,6 +141,13 @@ locals {
       "pveum acl modify ${local.roles[role].path} --users ${var.automation_user} --roles ${role} --propagate 1",
     ]
   ])
+
+  # Earlier grants put these roles on /vms and /nodes/<node>. `pveum acl
+  # delete` succeeds when the entry is absent.
+  revoke_commands = [
+    "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
+    "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
+  ]
 }
 
 data "http" "files" {
@@ -182,8 +177,8 @@ resource "remote_file" "files" {
   permissions = each.value.permissions
 }
 
-# Generates the patched module copies. It reruns when a declared file changes.
-# A dpkg hook that `apply` installs reruns it after each package upgrade.
+# `pve-overlay apply` also installs a dpkg hook. The hook runs
+# `pve-overlay apply` after each package operation on the hypervisor.
 resource "terraform_data" "apply" {
   triggers_replace = [
     for name in sort(keys(remote_file.files)) :
@@ -202,12 +197,12 @@ resource "terraform_data" "apply" {
   }
 }
 
-# Creates the roles and grants them to the automation user. Proxmox rejects a
-# role with a privilege that the overlay has not added.
+# terraform_data.grant runs after terraform_data.apply. `pveum` rejects a role
+# with a privilege that `pve-overlay apply` has not added.
 resource "terraform_data" "grant" {
   triggers_replace = [
     terraform_data.apply.id,
-    sha256(join("\n", local.grant_commands)),
+    sha256(join("\n", concat(local.grant_commands, local.revoke_commands))),
   ]
 
   connection {
@@ -218,6 +213,6 @@ resource "terraform_data" "grant" {
   }
 
   provisioner "remote-exec" {
-    inline = concat(["set -eu"], local.grant_commands)
+    inline = concat(["set -eu"], local.grant_commands, local.revoke_commands)
   }
 }
