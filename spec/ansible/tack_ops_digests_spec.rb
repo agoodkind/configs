@@ -38,12 +38,15 @@ module TackOpsDigests
 end
 
 RSpec.describe TackOpsDigests do
-  it 'passes the request check with both digests and stops at the verify chdir', :aggregate_failures do
+  it 'passes both digests to ops deploy verify and stops at the verify chdir', :aggregate_failures do
     result = described_class.run(server_digest: TackOpsDigests::SERVER_DIGEST, consumer_digest: TackOpsDigests::CONSUMER_DIGEST)
 
     expect(result.exit_status.success?).to be(false)
     expect(result.output).not_to include(TackOpsDigests::REQUEST_MESSAGE)
     expect(result.output).to include(TackOpsDigests::VERIFY_TASK)
+    # The failed verify task prints the command module argument list that ansible built.
+    expect(result.output).to include(%("--tack-server-digest", "#{TackOpsDigests::SERVER_DIGEST}"))
+    expect(result.output).to include(%("--tack-audit-consumer-digest", "#{TackOpsDigests::CONSUMER_DIGEST}"))
   end
 
   it 'refuses a missing digest before the verify task', :aggregate_failures do
