@@ -1,0 +1,12 @@
+# Managed by Ansible (prep-guests.yml)
+#
+# Set a service-oriented default working directory for interactive shells.
+# Override per-container with `login_dir` in the vars file.
+export PREP_CTS_SERVICE="${service}"
+export PREP_CTS_LOGIN_DIR="${login_dir}"
+
+if [ -n "$${PS1-}" ] && [ -n "$${PREP_CTS_LOGIN_DIR-}" ]; then
+  if [ -d "$${PREP_CTS_LOGIN_DIR}" ] && [ "$${PWD-}" != "$${PREP_CTS_LOGIN_DIR}" ]; then
+    cd "$${PREP_CTS_LOGIN_DIR}" || true
+  fi
+fi

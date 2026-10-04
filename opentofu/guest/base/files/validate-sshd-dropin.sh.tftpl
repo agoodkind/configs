@@ -1,0 +1,21 @@
+set -eu
+
+new_dropin=%s
+candidate=$(mktemp)
+trap 'rm -f "$candidate"' EXIT
+
+placed=0
+for dropin in ${dropin_dir}/*.conf; do
+    if [ "$dropin" = '${destination}' ]; then
+        cat "$new_dropin" >> "$candidate"
+        placed=1
+    elif [ -f "$dropin" ]; then
+        cat "$dropin" >> "$candidate"
+    fi
+done
+if [ "$placed" -eq 0 ]; then
+    cat "$new_dropin" >> "$candidate"
+fi
+
+sed '/^[[:space:]]*include[[:space:]]/Id' /etc/ssh/sshd_config >> "$candidate"
+sshd -t -f "$candidate"
