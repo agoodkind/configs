@@ -60,6 +60,22 @@
       run_once: true
       delegate_to: localhost
 
+    # The production ledger has no audit.events child outside the weekly name
+    # form, and the partition name backfill (TACK-551) is only for QA.
+    - name: Refuse the audit partition name backfill on a run with a production guest
+      ansible.builtin.assert:
+        that:
+          - >-
+            not (tack_audit_partition_names_backfill | bool
+                 and (ansible_play_hosts_all | intersect(groups['tack_prod_all'] | default([]))) | length > 0)
+        fail_msg: >-
+          tack_audit_partition_names_backfill=true renames audit partitions
+          before provision, and this run includes a production guest. The flag
+          is only for the QA ledger.
+        quiet: true
+      run_once: true
+      delegate_to: localhost
+
     - name: Check the operator identity
       ansible.builtin.import_tasks: tasks/tack-ops-identity-guard.yml
 
@@ -1000,6 +1016,31 @@
     # --extra-var tack_ledger_bootstrap=true so yb1 creates the universe),
     # provision dials the data nodes, then the app starts.
     - block:
+
+        # Audit partition name backfill (TACK-551). Remove this task, the
+        # assert "Refuse the audit partition name backfill on a run with a
+        # production guest", the variable tack_audit_partition_names_backfill,
+        # and spec/ansible/tack_audit_partition_names_spec.rb together with the
+        # Tack command `ops backfill once-audit-partition-names`, which Tack
+        # removes by 2026-11-30.
+        #
+        # Migration 017 refuses to apply while an audit.events child has a
+        # name outside events_pYYYY_MM_DD, and the QA ledger has one. The
+        # backfill renames that child to the name of its week. It runs before
+        # provision applies the migrations. It records through the audit login
+        # of a migrated ledger and runs only when a QA deploy sets the flag.
+        # The command writes its log to the log volume, and stdout contains
+        # only the JSON result.
+        - name: Rename the audit partitions outside the weekly name form
+          ansible.builtin.command:
+            cmd: >-
+              docker compose run --rm -e LOG_DISABLE_STDOUT=true tack-ops
+              ops backfill once-audit-partition-names --execute --output json
+              {{ tack_ops_identity_flags }}
+            chdir: "{{ tack_install_dir }}"
+          register: tack_audit_partition_names_result
+          changed_when: (tack_audit_partition_names_result.stdout | from_json).result.result.renames | length > 0
+          when: tack_audit_partition_names_backfill | bool
 
         # --execute is the action gate every audited operator command now
         # carries (TACK-328). Without it the command prints its plan and
