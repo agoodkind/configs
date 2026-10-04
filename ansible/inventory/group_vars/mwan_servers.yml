@@ -197,8 +197,8 @@ mwan_non_provider_connections:
         dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv6('address') }}"
         search: ["{{ mwan_dns_domain }}"]
 
-# AT&T files only. mwan refuses to start beside a .link file that matches a
-# link it owns.
+# AT&T files only. mwan will not start when a .link file here matches a link
+# it owns.
 mwan_networkd_files:
   - 20-att.link
   - 20-att.network
