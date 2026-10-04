@@ -28,8 +28,9 @@ current failover path uses BGP route control.
 BGP Graceful Restart (RFC 4724) lets the agent restart its BGP process without
 flapping its routes in the helper. The helper retains the restarter's prefixes
 for `restart_time` seconds and only flushes them if the session does not come
-back. The agent restarts on every deploy, so GR is the path to zero-flap
-deploys. With GR off, the agent restart briefly drops the WAN route.
+back. With GR off, an agent restart drops the WAN route until the session
+returns. Every deploy reboots the gateway. Production and the testbed set GR
+off, so OPNsense selects the backup peer during that reboot.
 
 When GR is enabled the speaker negotiates the capability globally and per
 peer, and allows graceful restart on stop. The agent shutdown path skips the
@@ -58,6 +59,47 @@ neighbor, but the mwan agent's embedded speaker does not participate yet, so no
 BFD session forms; fast WAN failure detection relies on the watchdog gRPC
 withdraw path.
 
+## Deploy operation
+
+The MWAN VM deploy changes the running gateway only at a reboot. A deployment
+operation on the Proxmox host restores the gateway when that reboot breaks
+connectivity.
+
+The deploy validates the rendered network document and firewall with the
+released binary on the Proxmox host before it creates a snapshot. The deploy
+then creates the `pre-deploy-<trace id>` snapshot and runs
+`mwan deploy-gate arm`. The arm command verifies the gateway's installed
+files, the snapshot, and the inbound and downstream application checks from
+the configured observers. The arm command then writes the operation record
+and starts a watch unit on the Proxmox host. The watch repeats the application
+checks until the operation status is committed or recovered.
+
+The deploy writes the release and the gateway configuration after the arm
+command succeeds. The running daemon reads none of those files. The deploy
+then reboots the gateway, and the reboot starts every unit from the written
+files. After the gateway reports a new boot ID, `mwan deploy-gate commit`
+verifies the written files and the application checks and sets the operation
+status to committed.
+
+A failure after the arm command succeeds runs `mwan deploy-gate recover`. The
+recover command stops the gateway, restores the snapshot, starts the gateway,
+and waits for the previous files and the application checks. The watch runs
+the same recovery when the application checks fail repeatedly or the
+operation deadline passes. The watchdog runs the same recovery for an
+unresolved record with no running watch.
+
+A failure before the arm command succeeds runs no recovery, because the
+gateway has no change. The deploy removes the snapshot when the Proxmox host
+has no record for the operation or a record with status disarmed. The deploy
+does not remove the snapshot of a record with any other status, because the
+watchdog restores that snapshot for the record. The next arm command succeeds
+only after the record status is recovered, committed, or disarmed. The deploy
+also does not remove the snapshot when the status read fails for any reason
+other than a record for another operation.
+
+A bootstrap deploy creates no snapshot and arms no operation. A check run
+creates no snapshot, arms no operation, and ends before the reboot.
+
 ## Watchdog rollback design
 
 The watchdog runs on the Proxmox host. It bases the rollback decision on
@@ -68,8 +110,8 @@ probably external.
 
 Two signals count as a recent config change:
 
-1. **Deploy timestamp** (`/var/run/mwan-last-deploy`), written by the deploy
-   playbook before pushing new config.
+1. **Deploy timestamp** (`/var/lib/mwan/last-deploy`), written by the deploy
+   playbook before it writes the release to the gateway.
 2. **Config hash change**, detected by `checkConfigHash` when the composite
    hash reported by `mwan-agent` changes.
 
@@ -97,8 +139,8 @@ Hash-change recency window: a hash change is "recent" for
 Two snapshot types with different owners:
 
 - **`pre-deploy-*`** snapshots are owned by the deploy playbook. The playbook
-  must create `pre-deploy-<unix-timestamp>` before pushing any config to the
-  MWAN VM. Without it, a fresh or recently changed VM may have no rollback
+  creates `pre-deploy-<trace id>` before it arms the deployment operation.
+  Without it, a fresh or recently changed VM may have no rollback
   target until a `known-good-*` snapshot is created (which takes many healthy
   probe cycles).
 - **`known-good-*`** snapshots are owned by the watchdog and taken
@@ -118,9 +160,16 @@ Rollback target order is: latest `pre-deploy-*`, then most recent
    snapshot.
 
 Pruning keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 2) and
-`MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first. The deploy
-playbook keeps at most 1 `pre-deploy-*` snapshot, pruning immediately after
-it creates the new one.
+`MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first. The total counts
+`pre-deploy-*` snapshots, and the watchdog deletes only `known-good-*`
+snapshots to meet it.
+
+No deploy task and no watchdog pass deletes the `pre-deploy-*` snapshot of a
+committed deploy. A recovery deletes the `pre-deploy-*` and `known-good-*`
+snapshots taken after the snapshot it restores. The deploy removes its own
+snapshot only when the arm command fails before the Proxmox host has a record
+for the operation. Committed deploys therefore accumulate `pre-deploy-*`
+snapshots until an operator deletes them.
 
 Proxmox snapshot names are capped at 40 characters and longer names truncate
 silently. Put the full intent in `--description` and keep the name short. Do

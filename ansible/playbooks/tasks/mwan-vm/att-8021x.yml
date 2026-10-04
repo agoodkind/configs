@@ -2,7 +2,8 @@
 # AT&T 802.1X (EAP-TLS) supplicant, ONT access, and VLAN bringup for the MWAN
 # VM. Prod-only: production AT&T is a 802.1X-authenticated GPON uplink behind an
 # ONT, while the testbed AT&T is a simulated ISP LXC on a direct link with no
-# 802.1X. Included by deploy-mwan.yml gated on mwan_att_8021x_enabled.
+# 802.1X. Included by tasks/stage-mwan-role-inputs.yml gated on
+# mwan_att_8021x_enabled.
 
 - name: Deploy wpa_supplicant config for AT&T 802.1X
   ansible.builtin.template:

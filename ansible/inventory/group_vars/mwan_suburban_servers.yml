@@ -258,8 +258,8 @@ mwan_static_internal_hosts:
 mwan_internal_ipv4: "{{ service_mapping.mwan_suburban.ipv4_transit }}/29"
 mwan_internal_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}/64"
 mwan_internal_net_v4: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
-# The OPNsense end of that link. The nftables template pins the router's
-# WireGuard control plane to one WAN by this source address.
+# The OPNsense end of that link. The firewall section of network.json pins the
+# router's WireGuard control plane to one WAN by this source address.
 mwan_opnsense_internal_v4: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 mwan_mwanbr_edge_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
