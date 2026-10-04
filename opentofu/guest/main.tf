@@ -13,10 +13,9 @@ locals {
   # "suburban" in clyde.suburban.goodkind.io.
   guests = {
     for name in local.enrolled : name => {
-      vmid     = local.service_mapping[name].vmid
-      hostname = local.service_mapping[name].hostname
-      kind     = "lxc"
-      node     = split(".", local.service_mapping[name].hostname)[1]
+      vmid = local.service_mapping[name].vmid
+      kind = "lxc"
+      node = split(".", local.service_mapping[name].hostname)[1]
     }
   }
 
@@ -66,11 +65,10 @@ module "base" {
   source   = "./base"
   for_each = local.guests
 
-  node     = each.value.node
-  vmid     = each.value.vmid
-  kind     = each.value.kind
-  name     = each.key
-  hostname = each.value.hostname
+  node = each.value.node
+  vmid = each.value.vmid
+  kind = each.value.kind
+  name = each.key
 
   authorized_keys = concat(local.github_keys, local.sshpiper_lines)
   login_dir       = local.shared_vars.login_dir

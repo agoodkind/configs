@@ -27,14 +27,37 @@ variable "name" {
   type        = string
 }
 
-variable "hostname" {
-  description = "Fully qualified host name of the guest."
-  type        = string
-}
-
 variable "authorized_keys" {
   description = "Lines of the global authorized_keys file, in any order."
   type        = list(string)
+}
+
+variable "packages" {
+  description = "Names of the apt packages that every guest has installed."
+  type        = set(string)
+  default = [
+    "apache2-utils",
+    "curl",
+    "gh",
+    "git",
+    "git-lfs",
+    "gpg",
+    "htop",
+    "jq",
+    "locales",
+    "msmtp",
+    "msmtp-mta",
+    "neovim",
+    "net-tools",
+    "ripgrep",
+    "rsyslog",
+    "tcpdump",
+    "tree",
+    "tzdata",
+    "unzip",
+    "wget",
+    "yq",
+  ]
 }
 
 variable "login_dir" {
@@ -111,7 +134,11 @@ resource "pveguest_file" "sshd_dropin" {
     dropin_dir  = local.sshd_dropin_dir
   })
 
-  depends_on = [pveguest_file.authorized_keys]
+  # `sshd -t` fails without /run/sshd.
+  depends_on = [
+    pveguest_file.authorized_keys,
+    pveguest_systemd_unit.tmpfiles_setup,
+  ]
 }
 
 resource "pveguest_file" "sshd_tmpfiles" {
@@ -123,6 +150,25 @@ resource "pveguest_file" "sshd_tmpfiles" {
   content = file("${path.module}/files/sshd-tmpfiles.conf")
 
   depends_on = [pveguest_file.authorized_keys]
+}
+
+# A restart of this oneshot unit runs `systemd-tmpfiles --create --remove
+# --boot` and creates /run/sshd. On Debian 12 that command also deletes the
+# content of /tmp. The unit is static, and pveguest_systemd_unit runs neither
+# `systemctl enable` nor `systemctl disable` for a static unit. The unit has
+# RemainAfterExit=yes and stays active after its command exits.
+resource "pveguest_systemd_unit" "tmpfiles_setup" {
+  node = var.node
+  vmid = var.vmid
+  kind = var.kind
+
+  name    = "systemd-tmpfiles-setup.service"
+  enabled = true
+  active  = true
+
+  restart_on = {
+    sshd = pveguest_file.sshd_tmpfiles.write_id
+  }
 }
 
 resource "pveguest_systemd_unit" "ssh" {
@@ -140,6 +186,16 @@ resource "pveguest_systemd_unit" "ssh" {
     { authorized_keys = pveguest_file.authorized_keys.write_id },
     { for key, dropin in pveguest_file.sshd_dropin : key => dropin.write_id },
   )
+
+  depends_on = [pveguest_systemd_unit.tmpfiles_setup]
+}
+
+resource "pveguest_apt_packages" "base" {
+  node = var.node
+  vmid = var.vmid
+  kind = var.kind
+
+  packages = var.packages
 }
 
 resource "pveguest_file" "rsyslog_local_time" {
@@ -149,6 +205,8 @@ resource "pveguest_file" "rsyslog_local_time" {
 
   path    = "/etc/rsyslog.d/50-default-local.conf"
   content = file("${path.module}/files/rsyslog-local-time.conf")
+
+  depends_on = [pveguest_apt_packages.base]
 }
 
 resource "pveguest_systemd_unit" "rsyslog" {
@@ -163,6 +221,8 @@ resource "pveguest_systemd_unit" "rsyslog" {
   restart_on = {
     local_time = pveguest_file.rsyslog_local_time.write_id
   }
+
+  depends_on = [pveguest_apt_packages.base]
 }
 
 resource "pveguest_file" "systemd_timeout" {
@@ -199,7 +259,9 @@ resource "pveguest_file" "revision" {
     pveguest_file.authorized_keys,
     pveguest_file.sshd_dropin,
     pveguest_file.sshd_tmpfiles,
+    pveguest_systemd_unit.tmpfiles_setup,
     pveguest_systemd_unit.ssh,
+    pveguest_apt_packages.base,
     pveguest_file.rsyslog_local_time,
     pveguest_systemd_unit.rsyslog,
     pveguest_file.systemd_timeout,
