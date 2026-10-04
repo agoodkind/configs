@@ -141,6 +141,15 @@ allows a plan for the others.
 - The first version covers apt and systemd on Debian. Alpine guests are out of
   scope.
 - A VM file larger than 1 MiB exceeds the stdin limit of `qm guest exec`.
+- The guest module declares base state only. On the MWAN gateway the daemon
+  owns `/etc/systemd/network/10-mwan-*.link` and the `20-<interface>.*` files,
+  and the MWAN deploy owns `/etc/mwan/`. The module declares no file under
+  those paths.
+- The MWAN deploy and the hypervisor watchdog also use the guest agent of the
+  gateway VM. An apply for an MWAN guest runs only in a window agreed with
+  the MWAN deploy owner. The guest agent is unavailable for about 30 seconds
+  after a gateway reboot or a snapshot restore, and Read fails during that
+  time.
 - A plan needs root SSH to each hypervisor with an enrolled guest.
 - Guests marked `inventory: false` are enrolled like any other guest. The
   transport needs no inventory address.
