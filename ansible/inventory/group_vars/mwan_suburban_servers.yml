@@ -9,10 +9,10 @@
 # ----------------------------------------------------------------------------
 
 mwan_environment: "testbed"
-mwan_release_tag: "202610032217-b0-a9738d3"
+mwan_release_tag: "202610032358-b1-ab73e2c"
 mwan_release_assets:
   - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:de0bc0098a617b0a92decff902e3b0b000538034e19b994bf8ccfd49af082a78"
+    checksum: "sha256:2928b85de31011ad17eb91da0397d06178bd1af887ca371ddecb3c3d5dc7bf73"
   - name: wanconfig-stack_linux_amd64.tar.gz
     checksum: "sha256:ae11e8de8fcf714f6f5f1086f751a332345f83dc3b409b44570debd6b2ca051f"
 mwan_bootstrap_guest: false
@@ -449,9 +449,8 @@ mwan_providers:
       dhcp: true
       route_metric: 5000
     # The DUID is the link-layer-time value networkd built from an empty raw
-    # value: a zero time and the link address. The family sets no route metric,
-    # because the served configuration rejects an IPv6 metric with no gateway;
-    # the kernel installs the advertised default route at its own metric.
+    # value: a zero time and the link address. The route metric applies to the
+    # default route from the router advertisement.
     ipv6:
       translation:
         mode: ietf-nat:nptv6
@@ -462,6 +461,7 @@ mwan_providers:
       forwarding: true
       dhcp: true
       accept_ra: true
+      route_metric: 5000
       delegation:
         hint: "::/56"
         iaid: 714156292
