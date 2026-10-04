@@ -1,8 +1,8 @@
 tofu:
-  # Path relative to the repository root. `configsctl tofu` exports a vault key
+  # Path relative to the repository root. `./configsctl tofu` exports a vault key
   # as TF_VAR_<key> when a file in this directory declares a variable with the
   # key name.
   module_dir: opentofu
-  # `configsctl tofu` exports a vault key <env_key_prefix><NAME> as the
+  # `./configsctl tofu` exports a vault key <env_key_prefix><NAME> as the
   # environment variable <NAME>.
   env_key_prefix: vault_tofu_env_

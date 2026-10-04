@@ -1,5 +1,5 @@
 terraform {
-  # `configsctl tofu` sets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from the
+  # `./configsctl tofu` sets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from the
   # vault keys vault_tofu_env_AWS_ACCESS_KEY_ID and
   # vault_tofu_env_AWS_SECRET_ACCESS_KEY. The S3 backend rejects a sensitive
   # variable in this block.

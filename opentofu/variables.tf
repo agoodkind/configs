@@ -1,4 +1,4 @@
-# `configsctl tofu` sets each variable named vault_* from the Ansible vault key
+# `./configsctl tofu` sets each variable named vault_* from the Ansible vault key
 # with the same name.
 variable "vault_proxmox_token_secret" {
   description = "Secret of the Proxmox API token for the production vault host"
