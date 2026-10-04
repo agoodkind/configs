@@ -77,7 +77,7 @@
     owner: root
     group: root
     mode: "0600"
-  # The file has secrets.
+  # Do not print the diff: the file has secrets.
   diff: false
   register: proxmox_mwan_runtime_config
   notify:
