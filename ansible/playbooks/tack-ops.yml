@@ -65,8 +65,8 @@
           and never on a production guest. tack_commit is the 40-character Tack
           commit the guest runs. tack_server_digest and
           tack_audit_consumer_digest are the CI index digests of the reviewed
-          build, each sha256: and 64 lowercase hex. Each extra argument is one --flag or
-          --flag=value token and never --execute, --operator-*, or
+          build; each is sha256: followed by 64 lowercase hex characters. Each
+          extra argument is one --flag or --flag=value token and never --execute, --operator-*, or
           --deploy-commit. Command "{{ tack_ops_command }}", arguments
           {{ tack_ops_args }}, commit "{{ tack_commit }}", tack-server digest
           "{{ tack_server_digest }}", tack-audit-consumer digest
