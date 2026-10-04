@@ -1,8 +1,3 @@
-output "hypervisor_ipv6" {
-  description = "Management IPv6 address of the suburban hypervisor."
-  value       = local.service_mapping.suburban_hypervisor.ipv6
-}
-
 output "mwan_suburban_vmid" {
   description = "VMID assigned to the suburban MWAN VM."
   value       = proxmox_virtual_environment_vm.mwan_suburban.vm_id
