@@ -180,6 +180,8 @@ The existing OpenTofu files become one workspace without a state change.
   enrolled guest.
 - A split of the existing workspace into DNS and one workspace per hypervisor
   is separate work. Each split moves resources between state files.
+- No scheduled job reports drift. A plan or the gate before a service deploy
+  reports it.
 - Guests marked `inventory: false` are enrolled like any other guest. The
   transport needs no inventory address.
 
@@ -220,9 +222,3 @@ The existing OpenTofu files become one workspace without a state change.
 6. Enroll the poweredge guests, then the vault guests one group at a time. The
    proxy guest is last.
 7. Delete `prep-guests`, `deploy-ssh-keys`, the marker tasks, and their specs.
-
-## Open decisions
-
-| Decision | Options |
-| --- | --- |
-| Scheduled drift report | A: none; drift appears at the next plan. B: a timer runs the plan daily and sends mail on a change. |
