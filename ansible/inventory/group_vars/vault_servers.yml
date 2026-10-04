@@ -87,7 +87,7 @@ tack_guest_fstrim_vmids:
   - "{{ service_mapping.tack_data2.vmid }}"
   - "{{ service_mapping.tack_data3.vmid }}"
   - "{{ service_mapping.tack_app2.vmid }}"
-  - "{{ service_mapping.tack_search1.vmid }}"
+# Add service_mapping.tack_search1.vmid when the production search guest exists.
 tack_thin_pool: "pve/data"
 
 # Slow storage tier (TACK-495): the Samsung 870 EVO directory storage beside
