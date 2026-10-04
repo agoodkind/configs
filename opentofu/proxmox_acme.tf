@@ -23,6 +23,8 @@ resource "proxmox_acme_account" "vault" {
   contact   = var.cloudflare_owner_email
   directory = local.acme_directory
   tos       = local.acme_terms
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_dns_plugin" "vault" {
@@ -35,6 +37,8 @@ resource "proxmox_acme_dns_plugin" "vault" {
     CF_Token      = var.vault_proxmox_acme_cloudflare_token
   }
   data_wo_version = local.acme_plugin_data_version
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_certificate" "vault" {
@@ -56,6 +60,8 @@ resource "proxmox_acme_account" "suburban" {
   contact   = var.cloudflare_owner_email
   directory = local.acme_directory
   tos       = local.acme_terms
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_dns_plugin" "suburban" {
@@ -69,6 +75,8 @@ resource "proxmox_acme_dns_plugin" "suburban" {
     CF_Token      = var.vault_suburban_acme_cloudflare_token
   }
   data_wo_version = local.acme_plugin_data_version
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_certificate" "suburban" {
@@ -91,6 +99,8 @@ resource "proxmox_acme_account" "poweredge" {
   contact   = var.cloudflare_owner_email
   directory = local.acme_directory
   tos       = local.acme_terms
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_dns_plugin" "poweredge" {
@@ -104,6 +114,8 @@ resource "proxmox_acme_dns_plugin" "poweredge" {
     CF_Token      = var.vault_poweredge_acme_cloudflare_token
   }
   data_wo_version = local.acme_plugin_data_version
+
+  depends_on = [module.overlay]
 }
 
 resource "proxmox_acme_certificate" "poweredge" {
