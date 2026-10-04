@@ -1,6 +1,3 @@
-# The Proxmox overlay and its scoped roles on each hypervisor. The automation
-# token then manages ACME and the other root-only operations without a root
-# login.
 locals {
   suburban_hypervisor = yamldecode(
     file("${path.module}/../ansible/inventory/group_vars/all/service_mapping.yml")
@@ -33,7 +30,6 @@ module "overlay" {
   acme_plugin     = local.acme_plugin
 }
 
-# The suburban overlay was declared inside the suburban module.
 moved {
   from = module.suburban.remote_file.proxmox_overlays
   to   = module.overlay["suburban"].remote_file.files

@@ -1,6 +1,5 @@
-# Each variable named vault_* takes its value from the Ansible vault key of the
-# same name. `configsctl tofu` exports a vault key only when a variable with
-# that name is declared here.
+# `configsctl tofu` sets each variable named vault_* from the Ansible vault key
+# with the same name.
 variable "vault_proxmox_token_secret" {
   description = "Secret of the Proxmox API token for the production vault host"
   type        = string
