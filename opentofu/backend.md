@@ -15,9 +15,9 @@ the Ansible vault automatically:
 ./configsctl tofu apply
 ```
 
-configsctl exports a vault secret to OpenTofu under two rules, and
-[configsctl.yml](../configsctl.yml) sets the module folder and the prefix that
-the rules use. The vault and the OpenTofu files are the only places that list
+configsctl exports a vault secret to OpenTofu under three rules, and
+[configsctl.yml](../configsctl.yml) sets the module folder and the prefixes
+that the rules use. The vault and the OpenTofu files are the only places that list
 a secret.
 
 - A vault key with the same name as a variable declared in `opentofu/*.tf`
@@ -28,6 +28,12 @@ a secret.
   `vault_tofu_env_AWS_ACCESS_KEY_ID` and `vault_tofu_env_AWS_SECRET_ACCESS_KEY`.
   The S3 backend rejects sensitive variables and reads its credentials only
   from those two names.
+
+- A vault key named `vault_tofu_totp_<name>` stores a one-time-code seed.
+  configsctl exports the current code as the variable `<name>` when
+  `opentofu/*.tf` declares it. The root login of the vault hypervisor uses this
+  rule: root there requires a second factor, and its `opentofu` TOTP entry
+  exists only for these runs.
 
 configsctl exports no other vault key. OpenTofu needs no `terraform.tfvars`
 file. A fresh checkout needs one `configsctl tofu init` before its first plan.
