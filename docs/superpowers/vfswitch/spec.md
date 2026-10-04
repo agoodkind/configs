@@ -80,6 +80,13 @@ those frames.
 
 Each container kernel routes, translates addresses, and filters in software.
 
+### 5. Container 2
+
+Container 2 runs Kea for DHCP, Unbound for DNS, and nftables for forwarding
+and address translation. Kea and Unbound are installed and stopped at first.
+`nic0` has a static address and answers no DHCP request on the live LAN until
+the cutover.
+
 ## Boundaries
 
 - The embedded switch stays in `legacy` mode. `switchdev` mode with offloaded
@@ -109,6 +116,4 @@ Each container kernel routes, translates addresses, and filters in software.
 
 | Decision | Options |
 | --- | --- |
-| Router software in container 2 | A: dnsmasq for DHCP and DNS with nftables. B: another stack. |
-| LAN exposure of container 2 | A: `nic0` stays unplugged from the live LAN until the cutover. B: container 2 runs with DHCP off while `nic0` is on the live LAN. |
 | Declaration | A: the host network file and both containers in OpenTofu. B: the host network file by hand, the containers in OpenTofu. |
