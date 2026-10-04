@@ -6,7 +6,7 @@
 # Once authenticated, AT&T will immediately put traffic on to vlan03242
 # therefore we do not need an att network file, only the att vlan 3242 file
 
-# mwan exits at startup when another .link file may match a NIC that mwan owns.
+# This file must match only the AT&T NIC and never a NIC that mwan controls.
 # The VF has the first MAC on its first boot and the second MAC after.
 [Match]
 Driver=iavf

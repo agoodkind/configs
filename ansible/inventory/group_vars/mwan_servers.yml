@@ -197,7 +197,6 @@ mwan_non_provider_connections:
         dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv6('address') }}"
         search: ["{{ mwan_dns_domain }}"]
 
-# mwan exits at startup when another .link file may match a NIC that mwan owns.
 mwan_networkd_files:
   - 20-att.link
   - 20-att.network
