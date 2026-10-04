@@ -571,6 +571,31 @@
             mwan_operation_armed: false
 
       rescue:
+        - name: Save the gateway journal before the restore deletes it
+          when: mwan_operation_armed | bool
+          block:
+            - name: Write the gateway journal of this boot to a file
+              ansible.builtin.shell: |
+                set -o pipefail
+                journalctl -b --no-pager -o short-precise | gzip > /run/mwan-failed-boot-journal.gz
+              args:
+                executable: /bin/bash
+              changed_when: true
+              timeout: 60
+
+            - name: Copy the gateway journal to the controller
+              ansible.builtin.fetch:
+                src: /run/mwan-failed-boot-journal.gz
+                dest: "{{ mwan_controller_artifact_root }}/failed-boot-journal-{{ mwan_deploy_trace_id }}.gz"
+                flat: true
+              timeout: 60
+          rescue:
+            - name: Continue to the restore without the gateway journal
+              ansible.builtin.debug:
+                msg: >-
+                  The gateway journal of the failed boot was not saved:
+                  {{ ansible_failed_result.msg | default('no message') }}
+
         # The watch may already run the restore. The doubled bound covers that
         # restore and the restore this command runs.
         - name: Recover through the exact hypervisor deployment operation
