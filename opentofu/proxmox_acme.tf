@@ -1,8 +1,8 @@
 # ACME certificates for the Proxmox web interface of each hypervisor. Proxmox
 # restricts ACME account changes to root@pam. Every resource here uses the
 # root provider alias of its hypervisor. Each hypervisor has its own Cloudflare
-# DNS token. The production vault host is not here: root@pam there requires a
-# second factor, which OpenTofu cannot supply. Its ACME setup is on the host.
+# DNS token. A root@pam login with a second factor also passes a one-time
+# code, which configsctl computes from a seed in the vault.
 locals {
   acme_directory = "https://acme-v02.api.letsencrypt.org/directory"
   acme_terms     = "https://letsencrypt.org/documents/LE-SA-v1.5-February-24-2025.pdf"
@@ -12,6 +12,43 @@ locals {
   # The plugin data is write-only: OpenTofu does not store a token in state.
   # A rotated token needs a higher version number to be sent again.
   acme_plugin_data_version = 1
+}
+
+# Production vault host. The account, the plugin, and the certificate existed
+# before OpenTofu managed them. Import ids: account "default", plugin "cf",
+# certificate "vault".
+resource "proxmox_acme_account" "vault" {
+  provider  = proxmox.vault_root
+  name      = local.acme_account
+  contact   = var.cloudflare_owner_email
+  directory = local.acme_directory
+  tos       = local.acme_terms
+}
+
+resource "proxmox_acme_dns_plugin" "vault" {
+  provider = proxmox.vault_root
+  plugin   = local.acme_plugin
+  api      = "cf"
+
+  data_wo = {
+    CF_Account_ID = var.cloudflare_account_id
+    CF_Zone_ID    = local.cloudflare_zone_ids["goodkind.io"]
+    CF_Token      = var.vault_proxmox_acme_cloudflare_token
+  }
+  data_wo_version = local.acme_plugin_data_version
+}
+
+resource "proxmox_acme_certificate" "vault" {
+  provider  = proxmox.vault_root
+  node_name = "vault"
+  account   = proxmox_acme_account.vault.name
+
+  domains = [
+    {
+      domain = "vault.home.goodkind.io"
+      plugin = proxmox_acme_dns_plugin.vault.plugin
+    }
+  ]
 }
 
 # Suburban testbed host. The account and the plugin existed before OpenTofu

@@ -2,6 +2,10 @@ mock_provider "http" {}
 mock_provider "proxmox" {}
 
 mock_provider "proxmox" {
+  alias = "vault_root"
+}
+
+mock_provider "proxmox" {
   alias = "suburban"
 }
 
@@ -15,6 +19,9 @@ mock_provider "proxmox" {
 
 variables {
   vault_proxmox_token_secret              = "test"
+  vault_proxmox_root_password             = "test"
+  proxmox_root_otp                        = "000000"
+  vault_proxmox_acme_cloudflare_token     = "test"
   vault_suburban_testbed_pve_token_secret = "test"
   vault_suburban_proxmox_root_password    = "test"
   vault_suburban_acme_cloudflare_token    = "test"
@@ -29,6 +36,14 @@ override_module {
 
 override_module {
   target = module.vault
+}
+
+override_module {
+  target = module.vault_root_login
+  outputs = {
+    auth_ticket           = "test"
+    csrf_prevention_token = "test"
+  }
 }
 
 run "accepts_github_ssh_keys" {
