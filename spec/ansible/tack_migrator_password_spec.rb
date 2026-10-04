@@ -2,9 +2,7 @@
 
 require_relative '../support/tack_search_inventory'
 
-# `ops audit seed-roles` sets the password of the tack_migrator login from
-# TACK_MIGRATOR_PASSWORD and refuses an empty value (TACK-554). Each
-# environment renders its own vault key.
+# `ops audit seed-roles` refuses an empty TACK_MIGRATOR_PASSWORD (TACK-554).
 RSpec.describe 'the tack_migrator password in the Tack environment file' do
   {
     qa: 'render-only-vault_tack_qa_migrator_password',
