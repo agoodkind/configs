@@ -73,10 +73,10 @@ module TackOpsIdentityFlags
   # Runs a real playbook, deploy-tack by default, in check mode against that
   # inventory, with the agent shell markers set or removed, and returns its
   # output and exit status.
-  def run_deploy(identity, agent:, playbook: PLAYBOOK_FILE)
+  def run_deploy(identity, agent:, playbook: PLAYBOOK_FILE, inventory_text: DEPLOY_INVENTORY)
     Dir.mktmpdir('identity-guard') do |directory|
       inventory = File.join(directory, 'inventory.ini')
-      File.write(inventory, DEPLOY_INVENTORY)
+      File.write(inventory, inventory_text)
       password = File.join(directory, 'vault-password')
       File.write(password, AnsibleRender::VAULT_PASSWORD_PLACEHOLDER, perm: AnsibleRender::SECRET_FILE_MODE)
       argv = [AnsibleRender::PLAYBOOK_COMMAND, '--check', '--inventory', inventory, playbook,
