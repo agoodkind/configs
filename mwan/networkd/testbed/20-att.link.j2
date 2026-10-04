@@ -1,4 +1,4 @@
-# Match by MAC. mwan refuses to start beside a .link file with no MAC match.
+# mwan will not start when a .link file does not have a MAC match.
 [Match]
 MACAddress={{ mwan_att_mac | lower }}
 
