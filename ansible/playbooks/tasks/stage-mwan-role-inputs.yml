@@ -73,8 +73,6 @@
     vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
     vm_mgmt_ipv6: "{{ mwan_config_mgmt_addr }}"
     hostname: "{{ service_hostname }}"
-    # mwan exits at startup when another .link file may match a NIC that mwan
-    # owns.
     mwan_mgmt_networkd_files: >-
       {{ (['10-mgmt.link']
           if not (mwan_ifmgr_wan_enabled | bool)

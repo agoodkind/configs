@@ -1,4 +1,4 @@
-# mwan exits at startup when another .link file may match a NIC that mwan owns.
+# This file must match only the AT&T NIC and never a NIC that mwan controls.
 [Match]
 MACAddress={{ mwan_att_mac | lower }}
 
