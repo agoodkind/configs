@@ -5,7 +5,8 @@ require 'yaml'
 require_relative '../support/ansible_render'
 require_relative '../support/task_expressions'
 
-# TACK-551, removed with the deploy-tack rename task by 2026-11-30.
+# Remove this file by 2026-11-30 with the deploy-tack task "Rename the audit
+# partitions outside the weekly name form" (TACK-551).
 module TackAuditPartitionNames
   PLAYBOOK_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'deploy-tack.yml')
   GROUP_VARS_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars', 'tack_all.yml')
@@ -32,13 +33,12 @@ module TackAuditPartitionNames
     task
   end
 
-  # The block that contains the provision task.
   def provision_block
     playbook_tasks.find { |task| (task['block'] || []).any? { |child| child['name'] == PROVISION_TASK } }
   end
 
-  # A registered result of the backfill with --output json, in Tack's result
-  # envelope, with one rename per name in from_names.
+  # Tack writes the command output inside a result envelope with a nested
+  # result object.
   def backfill_result(from_names)
     renames = from_names.map { |name| { 'from' => name, 'to' => 'events_p2031_03_03' } }
     envelope = {
