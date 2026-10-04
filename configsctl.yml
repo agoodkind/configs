@@ -6,3 +6,7 @@ tofu:
   # A vault key named <env_key_prefix><NAME> exports to OpenTofu as the
   # environment variable <NAME>.
   env_key_prefix: vault_tofu_env_
+  # A vault key named <totp_key_prefix><name> stores a one-time-code seed.
+  # The current code exports as the OpenTofu variable <name> when the module
+  # declares it.
+  totp_key_prefix: vault_tofu_totp_
