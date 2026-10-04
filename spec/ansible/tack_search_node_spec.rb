@@ -19,8 +19,8 @@ module TackSearchNode
     'plugins.ml_commons.model_auto_redeploy.enable' => 'true',
     'plugins.ml_commons.disk_free_space_threshold' => '1gb'
   }.freeze
-  # Every QA and production member runs a 3 GiB heap.
-  JAVA_OPTS = '-Xms3g -Xmx3g -Djava.net.preferIPv6Addresses=true'
+  # Every QA and production member runs a 3 GiB heap with a periodic collection.
+  JAVA_OPTS = '-Xms3g -Xmx3g -XX:G1PeriodicGCInterval=5000 -Djava.net.preferIPv6Addresses=true'
   CLUSTER_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars', 'all', 'search_cluster.yml')
   # The settings of /usr/share/opensearch/config/opensearch.yml in the pinned
   # opensearchproject/opensearch:3.8.0 image, read from the image on
