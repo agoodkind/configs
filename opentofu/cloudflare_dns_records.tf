@@ -183,6 +183,14 @@ locals {
       ttl     = 1
       proxied = false
     }
+    "goodkind.io/AAAA/poweredge.home.goodkind.io/6e3b4e4f" = {
+      zone    = "goodkind.io"
+      name    = "poweredge.home.goodkind.io"
+      type    = "AAAA"
+      content = "3d06:bad:b01:300::254"
+      ttl     = 1
+      proxied = false
+    }
     "goodkind.io/AAAA/unifi.home.goodkind.io/3f88d2f2" = {
       zone    = "goodkind.io"
       name    = "unifi.home.goodkind.io"
