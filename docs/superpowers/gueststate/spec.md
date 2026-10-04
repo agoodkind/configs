@@ -180,8 +180,6 @@ The existing OpenTofu files become one workspace without a state change.
   enrolled guest.
 - A split of the existing workspace into DNS and one workspace per hypervisor
   is separate work. Each split moves resources between state files.
-- No scheduled job reports drift. A plan or the gate before a service deploy
-  reports it.
 - Guests marked `inventory: false` are enrolled like any other guest. The
   transport needs no inventory address.
 
