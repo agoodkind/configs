@@ -49,6 +49,7 @@ variable "packages" {
     "msmtp-mta",
     "neovim",
     "net-tools",
+    "openssh-server",
     "ripgrep",
     "rsyslog",
     "tcpdump",
@@ -134,10 +135,9 @@ resource "pveguest_file" "sshd_dropin" {
     dropin_dir  = local.sshd_dropin_dir
   })
 
-  # `sshd -t` fails without /run/sshd.
   depends_on = [
     pveguest_file.authorized_keys,
-    pveguest_systemd_unit.tmpfiles_setup,
+    pveguest_apt_packages.base,
   ]
 }
 
@@ -150,25 +150,6 @@ resource "pveguest_file" "sshd_tmpfiles" {
   content = file("${path.module}/files/sshd-tmpfiles.conf")
 
   depends_on = [pveguest_file.authorized_keys]
-}
-
-# A restart of this oneshot unit runs `systemd-tmpfiles --create --remove
-# --boot` and creates /run/sshd. On Debian 12 that command also deletes the
-# content of /tmp. The unit is static, and pveguest_systemd_unit runs neither
-# `systemctl enable` nor `systemctl disable` for a static unit. The unit has
-# RemainAfterExit=yes and stays active after its command exits.
-resource "pveguest_systemd_unit" "tmpfiles_setup" {
-  node = var.node
-  vmid = var.vmid
-  kind = var.kind
-
-  name    = "systemd-tmpfiles-setup.service"
-  enabled = true
-  active  = true
-
-  restart_on = {
-    sshd = pveguest_file.sshd_tmpfiles.write_id
-  }
 }
 
 resource "pveguest_systemd_unit" "ssh" {
@@ -187,7 +168,7 @@ resource "pveguest_systemd_unit" "ssh" {
     { for key, dropin in pveguest_file.sshd_dropin : key => dropin.write_id },
   )
 
-  depends_on = [pveguest_systemd_unit.tmpfiles_setup]
+  depends_on = [pveguest_apt_packages.base]
 }
 
 resource "pveguest_apt_packages" "base" {
@@ -259,7 +240,6 @@ resource "pveguest_file" "revision" {
     pveguest_file.authorized_keys,
     pveguest_file.sshd_dropin,
     pveguest_file.sshd_tmpfiles,
-    pveguest_systemd_unit.tmpfiles_setup,
     pveguest_systemd_unit.ssh,
     pveguest_apt_packages.base,
     pveguest_file.rsyslog_local_time,
