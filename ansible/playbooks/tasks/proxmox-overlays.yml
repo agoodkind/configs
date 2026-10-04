@@ -1,0 +1,33 @@
+---
+# Scoped Proxmox privileges from agoodkind/proxmox-overlays. Imported by
+# proxmox-host.yml, gated by proxmox_overlays_enabled.
+#
+# `pve-overlay apply` writes patched copies of seven Proxmox Perl modules to
+# /etc/perl, installs a dpkg hook that runs it again after each package
+# upgrade, and restarts the Proxmox API services when a copy changes. The
+# patched modules add VM.Config.Nesting, VM.Config.Keyctl, VM.Config.Vsock,
+# and Sys.ACME.Account.*. opentofu/proxmox_scoped_roles.tf grants them.
+
+- name: Create the proxmox-overlays directory
+  ansible.builtin.file:
+    path: "{{ proxmox_overlays_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Fetch proxmox-overlays at the pinned commit
+  ansible.builtin.unarchive:
+    src: "https://github.com/agoodkind/proxmox-overlays/archive/{{ proxmox_overlays_commit }}.tar.gz"
+    dest: "{{ proxmox_overlays_dir }}"
+    remote_src: true
+    extra_opts:
+      - --strip-components=1
+
+- name: Apply the proxmox-overlays patches
+  ansible.builtin.command:
+    argv:
+      - "{{ proxmox_overlays_dir }}/pve-overlay"
+      - apply
+  register: proxmox_overlays_apply
+  changed_when: "'wrote ' in proxmox_overlays_apply.stdout"

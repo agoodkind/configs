@@ -323,6 +323,10 @@
 - name: Set or remove the ZFS ARC ceiling
   ansible.builtin.import_tasks: proxmox-zfs-arc.yml
 
+- name: Apply the scoped Proxmox privilege overlay
+  ansible.builtin.import_tasks: proxmox-overlays.yml
+  when: proxmox_overlays_enabled | bool
+
 - name: Set the OpenSearch memory-map prerequisite for the search guests
   ansible.builtin.import_tasks: tack-search-memory-map.yml
   when: tack_search_proxy_enabled | bool

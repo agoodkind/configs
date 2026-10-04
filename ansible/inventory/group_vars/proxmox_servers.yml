@@ -169,6 +169,13 @@ proxmox_slow_storage_bwlimit_kib: 51200
 proxmox_slow_storage_volume_moves: []
 proxmox_slow_storage_scratch_mounts: []
 
+# Scoped Proxmox privileges from agoodkind/proxmox-overlays. A hypervisor that
+# sets proxmox_overlays_enabled to true fetches the repository at
+# proxmox_overlays_commit and runs `pve-overlay apply`.
+proxmox_overlays_enabled: false
+proxmox_overlays_commit: "691e9280c44d51d6ea2498a31de4e2d716928d6f"
+proxmox_overlays_dir: /usr/local/share/proxmox-overlays
+
 # Per-minute storage recording (TACK-483). A hypervisor that
 # sets proxmox_storage_recording_enabled to true appends per-device ZFS wait
 # times every minute, per-dataset write deltas every minute, an hourly latency

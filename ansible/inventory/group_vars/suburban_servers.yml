@@ -122,6 +122,10 @@ mwan_ifmgr_host_ipv6_denied_ra_ifaces:
 # sticky: the kernel stops recomputing it from ports.
 suburban_vmbrtrunk_hwaddress: "2e:00:00:21:00:05"
 
+# Scoped Proxmox privileges (agoodkind/proxmox-overlays). Suburban runs the
+# overlay first; vault stays on packaged modules.
+proxmox_overlays_enabled: true
+
 # Cloudflared OOB stays off on suburban (no host OOB tunnel today).
 
 # Slow storage tier (TACK-495): a ZFS mirror on the two Crucial BX500 drives,
