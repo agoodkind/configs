@@ -1,119 +1,150 @@
-# Hardware-switched link between two containers on poweredge
+# Two router containers on poweredge, linked by the network card
 
-Two containers on poweredge exchange frames through the embedded switch of the
-Broadcom BCM57504 card. No Linux bridge forwards those frames. Each container
-also owns one whole SFP port.
+Poweredge runs two containers. Container 1 is the MWAN gateway. Container 2 is
+a small router with DHCP and DNS. The Broadcom network card links them. No
+Linux bridge is used.
 
-## Defect this replaces
+## Why
 
-A Linux bridge between two router containers forwards every frame on a host
-CPU. The frame enters the host network stack once for each container. The
-BCM57504 card has an embedded switch on each port, and the card was not using
-it: SR-IOV was off in the stored card settings.
+A Linux bridge copies every frame on a host CPU. The card has a switch built
+into each port, and that switch can do the same job in hardware.
 
-## Measured facts
+## Terms
 
-Measured on poweredge on 2026-10-04, firmware 236.1.173.0, kernel 7.0.14-20-pve.
+A port is one of the four SFP ports on the card: `nic0` to `nic3`.
 
-| Fact | Result |
-| --- | --- |
-| Stored setting `enable_sriov` | Set to `true` on all four ports with `devlink dev param set`, active after one reboot |
-| Virtual functions per port | 8 |
-| Virtual function creation on a port that is administratively down | The driver rejects it |
-| Two virtual functions on `nic1`, a port with no module | Created |
-| `ip link set nic1 vf <n> state enable` with no cable | Both virtual function links are up |
-| Ping between the two virtual functions, one in each network namespace | 3 of 3 replies, about 0.3 ms |
-| IOMMU group of each SFP port | One group per port |
-| Embedded switch mode | `legacy` |
-| Two unprivileged Debian 13 containers, each with one whole port and one virtual function through `lxc.net.<n>.type: phys` lines in the container configuration | Both start. The host has none of the four devices while they run. |
-| Ping between the two containers over the virtual functions | 5 of 5 replies, about 0.2 ms. The host has no bridge. |
-| Host receive counter of `nic1` during that ping | Increased by 1 |
-| Container stop | The port and the virtual function are host devices again, and the virtual function has its fixed MAC address. The next start moves both into the container. |
+A virtual function (VF) is an extra network device that the card creates on a
+port. The card switches frames between the VFs of one port.
 
-## Contract
+## Design
 
-### 1. Ports
+### Who owns each port
 
-| Port | Role | Owner |
+| Port | Use | Owner |
 | --- | --- | --- |
-| `ens1f0` | Proxmox management | The host. The address is on the port, and the port is in no bridge. |
-| `nic2` | WAN in | Container 1, whole port |
-| `nic0` | LAN out | Container 2, whole port |
-| `nic1` | Link between the containers | The host owns the port. Container 1 owns virtual function 0. Container 2 owns virtual function 1. |
-| `nic3`, `ens1f1` | Unused | The host, no address |
+| `ens1f0` | Proxmox management | Host |
+| `nic2` | WAN in | Container 1 |
+| `nic0` | LAN out | Container 2 |
+| `nic1` | Link between the containers | VF 0 to container 1, VF 1 to container 2 |
+| `nic3`, `ens1f1` | Unused | Host |
 
-The host assigns no address and no bridge to `nic0`, `nic1`, `nic2`, or `nic3`.
+The host puts no address and no bridge on `nic0` to `nic3`.
 
-### 2. Virtual functions on the host
+### The link between the containers
 
-The host network configuration declares `nic1` with `auto` and `manual`. Its
-`post-up` commands run after the port is up, in this order:
+1. `nic1` has two VFs.
+2. Each VF has a fixed MAC address.
+3. Each VF has its link forced up. `nic1` has no cable.
+4. The card switches frames between the two VFs. The host does not see them.
 
-1. Write `2` to `sriov_numvfs` of the port.
-2. Set a fixed MAC address on each virtual function.
-3. Set `state enable` on each virtual function.
+Each container still routes and filters in its own kernel. Only the link is in
+hardware.
 
-The driver rejects step 1 on a port that is down. `state enable` gives each
-virtual function a link while the port has no cable.
+### How a container gets its devices
 
-A fixed MAC address gives each container the same address after every boot.
+A container gets a whole port or a VF as a normal network device. Proxmox
+moves the device into the container at start and back to the host at stop. No
+`veth` pair exists.
 
-### 3. Container interfaces
+### Container 1: MWAN
 
-Each container receives its interfaces as existing host network devices. The
-container start moves each device into the container network namespace, and
-the container stop returns it to the host. No `veth` pair and no bridge exist
-for these interfaces.
+- Unprivileged.
+- Devices: `wan` (port `nic2`) and `mwanbr` (VF 0).
+- No management interface. The host runs commands in it with `pct`.
+- MWAN loads eBPF programs. An unprivileged container needs a BPF token for
+  that. Proxmox mounts a BPF filesystem with delegation in the container at
+  start.
+- Rollback uses `pct snapshot` and `pct rollback`.
 
-A virtual function is a host network device. A container does not need PCI
-passthrough for it.
+### Container 2: router
 
-The container configuration declares each device with `lxc.net.<n>.type: phys`,
-`lxc.net.<n>.link`, and `lxc.net.<n>.name`. Proxmox accepts these lines only
-from root on the host. The Proxmox API has no argument for them.
+- Unprivileged.
+- Devices: `lan` (port `nic0`) and `mwanbr` (VF 1).
+- Runs Kea (DHCP), Unbound (DNS), and nftables.
+- Kea and Unbound start stopped. `nic0` is on the live LAN, and a second DHCP
+  server there would answer real clients.
 
-### 4. Forwarding
+### Permissions
 
-The embedded switch of `nic1` forwards frames between virtual function 0 and
-virtual function 1 by MAC address. The host network stack does not process
-those frames.
+Every Proxmox step uses the automation token and a narrow overlay privilege.
+No step uses a root login.
 
-Each container kernel routes, translates addresses, and filters in software.
-
-### 5. Container 2
-
-Container 2 runs Kea for DHCP, Unbound for DNS, and nftables for forwarding
-and address translation. Kea and Unbound are installed and stopped at first.
-`nic0` has a static address and answers no DHCP request on the live LAN until
-the cutover.
-
-## Boundaries
-
-- The embedded switch stays in `legacy` mode. `switchdev` mode with offloaded
-  flow rules is separate work.
-- The PCIe card ports `ens1f0` and `ens1f1` share one IOMMU group and stay on
-  the host.
-- A change of `enable_sriov` needs a reboot of poweredge.
-- `nic0` is connected to the live LAN `10.230.0.0/24`. A DHCP server in
-  container 2 answers clients on that LAN.
-
-## Acceptance criteria
-
-- AC1: After a reboot of poweredge, `nic1` has two virtual functions with the
-  declared MAC addresses and `link-state enable`.
-- AC2: Container 1 has `nic2` and virtual function 0. Container 2 has `nic0`
-  and virtual function 1. The host has none of the four devices while both
-  containers run.
-- AC3: Container 1 and container 2 exchange ping replies over the virtual
-  functions with no bridge on the host.
-- AC4: During AC3, the host receive counter of `nic1` does not increase by the
-  ping frames.
-- AC5: After a container stop, its devices are host devices again, and the
-  next start moves them into the container.
-- AC6: `ens1f0` has the management address before and after every step.
-
-## Open decisions
-
-| Decision | Options |
+| Step | Overlay privilege |
 | --- | --- |
-| Declaration | A: the host network file and both containers in OpenTofu. B: the host network file by hand, the containers in OpenTofu. |
+| Create the VFs and set MAC and link state | `Sys.SRIOV.Modify` |
+| Give a container a port or a VF | `VM.Config.HostNIC` and `Sys.HostNIC.Use` |
+| Mount the BPF filesystem with delegation | `VM.Config.BPFDelegate` |
+| Run commands and write files in a container | `VM.Guest.Exec`, `VM.Guest.FileRead`, `VM.Guest.FileWrite` |
+
+The overlay does not have these four yet. The test results below came from
+hand steps as root.
+
+## Test results
+
+Poweredge, 2026-10-04, card firmware 236.1.173.0, kernel 7.0.14-20-pve.
+
+### Card
+
+| Test | Result |
+| --- | --- |
+| VFs per port after SR-IOV is switched on | 8 |
+| Create VFs on a port that is set down | Rejected by the driver |
+| Create 2 VFs on `nic1` (no cable), force link up | Both links up |
+| Each SFP port can be given away alone | Yes |
+
+### Link
+
+| Test | Result |
+| --- | --- |
+| Two containers start, each with one port and one VF | Pass |
+| Ping between the containers | 5 of 5, about 0.2 ms |
+| Bridge on the host | None |
+| Host packet counter on `nic1` during the ping | Up by 1 |
+| Stop a container | Its devices return to the host |
+| Start it again | Its devices move back in |
+
+### MWAN needs, in an unprivileged container
+
+| Test | Result |
+| --- | --- |
+| sysctl writes under `/proc/sys/net` | Pass |
+| Policy rule and route in a separate table | Pass |
+| nftables with conntrack, NAT, and marks | Pass |
+| Load an eBPF tc program, no token | Fail |
+| Load an eBPF tc program, with the token mount | Pass |
+
+### Speed of rollback
+
+| Step | Time |
+| --- | --- |
+| `pct snapshot` | 0.8 s |
+| `pct rollback` and start | 3.4 s |
+| `pct reboot` | 3.1 s |
+
+## Not tested yet
+
+- The VFs after a reboot of poweredge.
+- The permanent MAC of a VF after a reboot. MWAN finds a device by its
+  permanent MAC. Today it differs from the fixed MAC.
+- The real MWAN eBPF load. The test used a small test program and a different
+  attach method.
+- MWAN's deploy for a container. Today it only supports a VM.
+
+## Limits
+
+- The card's switch stays in its default mode. Offloading routing rules to the
+  card is separate work.
+- `ens1f0` and `ens1f1` cannot be given away one at a time. Both stay on the
+  host.
+- Switching SR-IOV on or off needs a reboot of poweredge.
+
+## Done when
+
+1. After a reboot, `nic1` has two VFs with the fixed MACs and link up.
+2. Container 1 has `nic2` and VF 0. Container 2 has `nic0` and VF 1.
+3. The containers ping each other with no bridge on the host.
+4. The host counter on `nic1` does not count the ping frames.
+5. A stopped container returns its devices, and a start takes them again.
+6. `ens1f0` keeps the management address through every step.
+7. MWAN runs in container 1, unprivileged, with NPTv6 loaded.
+8. No step used a root login.
