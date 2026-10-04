@@ -157,6 +157,9 @@
       register: locale_uncommented
       changed_when: false
       failed_when: false
+      # Run this read under --check too: a later `when` needs its result.
+      # The same applies to each `check_mode: false` below.
+      check_mode: false
 
     - name: Uncomment en_US.UTF-8 in locale.gen
       ansible.builtin.lineinfile:
@@ -173,6 +176,7 @@
       register: locale_generated
       changed_when: false
       failed_when: false
+      check_mode: false
 
     - name: Generate en_US.UTF-8 locale
       ansible.builtin.command: locale-gen
@@ -187,6 +191,7 @@
       register: locale_set
       changed_when: false
       failed_when: false
+      check_mode: false
 
     - name: Update system locale
       ansible.builtin.command: update-locale LANG=en_US.UTF-8
@@ -303,6 +308,7 @@
       register: host_timezone
       changed_when: false
       failed_when: false
+      check_mode: false
       delegate_to: localhost
 
     - name: Get current container timezone
@@ -310,6 +316,7 @@
       register: container_timezone
       changed_when: false
       failed_when: false
+      check_mode: false
 
     - name: Set timezone to host timezone
       ansible.builtin.command: timedatectl set-timezone "{{ host_timezone.stdout }}"
