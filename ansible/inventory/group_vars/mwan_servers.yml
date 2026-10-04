@@ -158,8 +158,7 @@ mwan_internal_iface: "enmwanbr0"
 # Monkeybrains fallback WAN (virtio)
 mwan_monkeybrains_iface: "enmbrains0"
 
-# The daemon owns both links. The served configuration rejects a false IPv6
-# dhcp leaf on a daemon-owned link. Each IPv6 family omits that leaf.
+# Do not set `dhcp: false` under ipv6 here. mwan rejects it on a link it owns.
 mwan_non_provider_connections:
   - name: "{{ mwan_internal_iface }}"
     connection_id: enmwanbr0
@@ -170,8 +169,7 @@ mwan_non_provider_connections:
     ipv4:
       address: "{{ mwan_internal_ipv4 }}"
       forwarding: true
-    # networkd accepted no router advertisement on this forwarding link. The
-    # sysctl file sets accept_ra to 2 for this link when the leaf is absent.
+    # Do not remove accept_ra. Without it the sysctl file sets accept_ra=2.
     ipv6:
       address: "{{ mwan_internal_ipv6 }}"
       forwarding: true
@@ -199,12 +197,8 @@ mwan_non_provider_connections:
         dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv6('address') }}"
         search: ["{{ mwan_dns_domain }}"]
 
-# systemd-networkd files deployed to the VM (under mwan/networkd/). Prod AT&T is
-# an 802.1X VLAN (21-att-vlan.*); the testbed overrides att with the direct-link
-# variant under mwan/networkd/testbed/. systemd-networkd owns the AT&T link, and
-# the daemon owns every other link. This list has only the hand-authored AT&T
-# files. The daemon stops at startup when a deployed name file matches the
-# address of a link that the daemon owns.
+# AT&T files only. mwan refuses to start beside a .link file that matches a
+# link it owns.
 mwan_networkd_files:
   - 20-att.link
   - 20-att.network
@@ -231,7 +225,7 @@ mwan_enabled_services:
   - wpa-authenticated.path
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "f8:9b:6e:f8:86:11"
-# The address x710-vf-setup.service assigns to the virtual function on the hypervisor.
+# MAC that x710-vf-setup.service on the hypervisor gives the AT&T VF.
 mwan_att_vf_host_mac: "d0:fc:d0:7c:85:30"
 
 # The deploy writes the 802.1X certificates to /etc/wpa_supplicant/ from vault
@@ -248,10 +242,9 @@ mwan_att_vf_host_mac: "d0:fc:d0:7c:85:30"
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_webpass_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
-# The address the I226-V NIC reports as permanent. The owned name file matches it.
+# The NIC's real MAC.
 mwan_webpass_permanent_mac: "64:62:66:23:f9:84"
-# The IAID systemd-networkd sent on each link. The provider keeps the delegation
-# for the same DUID and IAID.
+# Do not change. The ISP gives the prefix only to the IAID networkd sent.
 mwan_webpass_iaid: 4009731696
 mwan_monkeybrains_iaid: 1370549548
 
@@ -519,15 +512,10 @@ mwan_providers:
     owner: mwan
     iface: "{{ mwan_webpass_iface }}"
     vlan_id: ""
-    # The daemon matches the I226-V passthrough by its permanent address and
-    # sets the Webpass registered address on it. Webpass provisioned the
-    # registered address, not the NIC's own address.
+    # Match the NIC's real MAC, then set the MAC registered with Webpass.
     link:
       match: { hardware_address: "{{ mwan_webpass_permanent_mac }}" }
       hardware_address: "{{ mwan_webpass_mac }}"
-    # Static IPv4 inside the Webpass block. The default route metric is above
-    # the management link's metric. The gateway assigns each mapped address to
-    # the link.
     ipv4:
       translation:
         mode: ietf-nat:napt44
@@ -559,7 +547,6 @@ mwan_providers:
         iaid: "{{ mwan_webpass_iaid }}"
         duid_type: link-layer-time
         duid: "{{ mwan_webpass_duid }}"
-        # networkd waited for a router advertisement on this link.
         without_ra: "no"
     table: 200
     mark: 2
