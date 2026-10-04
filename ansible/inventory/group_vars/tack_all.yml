@@ -397,9 +397,6 @@ tack_ledger_bootstrap: false
 # --extra-var tack_ledger_audit_bootstrap=true, which runs
 # ops ledger audit-bootstrap on yb1 after it starts. Run B leaves it off.
 tack_ledger_audit_bootstrap: false
-# A QA deploy passes --extra-var tack_audit_partition_names_backfill=true once,
-# which runs ops backfill once-audit-partition-names before provision
-# (TACK-551). Remove it with that command by 2026-11-30.
 tack_audit_partition_names_backfill: false
 tack_ledger_join_target: >-
   {{ ('' if (tack_ledger_bootstrap | bool and tack_ledger_node_name == 'yb1')

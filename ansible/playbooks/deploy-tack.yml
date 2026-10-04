@@ -60,8 +60,6 @@
       run_once: true
       delegate_to: localhost
 
-    # The production ledger has no audit.events child outside the weekly name
-    # form, and the partition name backfill (TACK-551) is only for QA.
     - name: Refuse the audit partition name backfill on a run with a production guest
       ansible.builtin.assert:
         that:
@@ -1017,20 +1015,8 @@
     # provision dials the data nodes, then the app starts.
     - block:
 
-        # Audit partition name backfill (TACK-551). Remove this task, the
-        # assert "Refuse the audit partition name backfill on a run with a
-        # production guest", the variable tack_audit_partition_names_backfill,
-        # and spec/ansible/tack_audit_partition_names_spec.rb together with the
-        # Tack command `ops backfill once-audit-partition-names`, which Tack
-        # removes by 2026-11-30.
-        #
-        # Migration 017 refuses to apply while an audit.events child has a
-        # name outside events_pYYYY_MM_DD, and the QA ledger has one. The
-        # backfill renames that child to the name of its week. It runs before
-        # provision applies the migrations. It records through the audit login
-        # of a migrated ledger and runs only when a QA deploy sets the flag.
-        # The command writes its log to the log volume, and stdout contains
-        # only the JSON result.
+        # TACK-551, removed with the Tack command by 2026-11-30. Migration 017
+        # refuses the misnamed QA audit partition; this rename runs first.
         - name: Rename the audit partitions outside the weekly name form
           ansible.builtin.command:
             cmd: >-

@@ -101,11 +101,10 @@ module TackOpsIdentityFlags
     "--operator-service #{service} --operator-session #{session} #{identity} --deploy-commit #{COMMIT}"
   end
 
-  # The ledger bootstrap guards and the audit partition name guard run before
-  # the identity check and read tack_ledger_bootstrap,
-  # tack_ledger_audit_bootstrap, and tack_audit_partition_names_backfill. The
-  # temporary inventory loads no group vars. The run passes the identity
-  # variables and these flags as tack_all.yml renders them.
+  # The two ledger bootstrap guards run before the identity check and read
+  # tack_ledger_bootstrap and tack_ledger_audit_bootstrap, which this
+  # inventory does not set. The temporary inventory loads no group vars. The
+  # run passes the identity variables tack_all.yml would render.
   def identity(service:, session:, overrides: {})
     email = operator_email(service)
     { 'tack_ops_agent_service' => service, 'tack_ops_agent_session' => session,

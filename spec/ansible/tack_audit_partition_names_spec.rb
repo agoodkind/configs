@@ -5,10 +5,7 @@ require 'yaml'
 require_relative '../support/ansible_render'
 require_relative '../support/task_expressions'
 
-# A QA deploy with tack_audit_partition_names_backfill renames the audit.events
-# children outside the weekly name form before provision applies migration 017
-# (TACK-551). Remove this file together with the backfill task, the production
-# refusal, and the variable, which Tack removes by 2026-11-30.
+# TACK-551, removed with the deploy-tack rename task by 2026-11-30.
 module TackAuditPartitionNames
   PLAYBOOK_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'deploy-tack.yml')
   GROUP_VARS_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars', 'tack_all.yml')
