@@ -3,15 +3,9 @@
 require 'tmpdir'
 require_relative '../support/tack_ops_identity'
 
-# These examples run the real tack-ops playbook in check mode on one local
-# host in tack_qa_all. tack_install_dir is a directory that does not exist:
-# a run that passes the request check stops at the chdir of the verify task,
-# before the command module runs docker.
-#
-# The audit row of ops deploy verify records deploy_commit and the agent
-# identity, and no command flag. The play command line and the ops deploy
-# verify result line record both expected digests, and the error records them
-# on a mismatch. The QA reset and production run evidence save both lines.
+# The run sets tack_install_dir to a directory that does not exist. A run that
+# passes the request check stops at the chdir of the verify task, before the
+# command module runs docker.
 module TackOpsDigests
   PLAYBOOK_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tack-ops.yml')
   INVENTORY = "[tack_qa_all]\ntack-qa-test ansible_connection=local\n[tack_prod_all]\n" \
@@ -24,7 +18,6 @@ module TackOpsDigests
 
   module_function
 
-  # Runs tack-ops as a human operator with the given digests.
   def run(server_digest:, consumer_digest:)
     Dir.mktmpdir('tack-ops-digests') do |directory|
       variables = TackOpsIdentityFlags.identity(service: '', session: '').merge(
@@ -44,7 +37,7 @@ RSpec.describe TackOpsDigests do
     expect(result.exit_status.success?).to be(false)
     expect(result.output).not_to include(TackOpsDigests::REQUEST_MESSAGE)
     expect(result.output).to include(TackOpsDigests::VERIFY_TASK)
-    # The failed verify task prints the command module argument list that ansible built.
+    # Ansible prints the argument list of the failed command task.
     expect(result.output).to include(%("--tack-server-digest", "#{TackOpsDigests::SERVER_DIGEST}"))
     expect(result.output).to include(%("--tack-audit-consumer-digest", "#{TackOpsDigests::CONSUMER_DIGEST}"))
   end

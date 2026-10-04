@@ -63,8 +63,9 @@ tack_ops_identity_flags: >-
 tack_ops_command: ""
 tack_ops_args: []
 tack_ops_execute: false
-# The CI multi-platform index digests of the reviewed build, sha256: and 64
-# lowercase hex. A run passes both; the playbook refuses an empty value.
+# Each value is the CI multi-platform index digest of one image of the
+# reviewed build: sha256: followed by 64 lowercase hex characters.
+# tack-ops.yml refuses an empty value.
 tack_server_digest: ""
 tack_audit_consumer_digest: ""
 
