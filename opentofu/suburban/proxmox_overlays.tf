@@ -10,7 +10,7 @@
 # installed Proxmox version, and the script generates them on the host.
 locals {
   # A new commit here changes the declared files and reruns `apply`.
-  proxmox_overlays_commit = "22130ff5136228bcc651730f829f6a041e78240a"
+  proxmox_overlays_commit = "bb4324db0f2bf3caef9cd5569e1b3b0afb411aea"
   proxmox_overlays_source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${local.proxmox_overlays_commit}"
   proxmox_overlays_script = "/usr/local/sbin/pve-overlay"
 
@@ -148,8 +148,61 @@ resource "proxmox_acl" "scoped_vsock" {
 
 resource "proxmox_acl" "scoped_acme_account" {
   provider  = proxmox.root
-  path      = "/acme/accounts"
+  path      = "/acme/accounts/${var.acme_account}"
   role_id   = proxmox_virtual_environment_role.scoped_acme_account.role_id
+  user_id   = var.automation_user
+  propagate = true
+}
+
+# Read, add, change, and delete one DNS plugin, and set its credentials. The
+# role omits Sys.ACME.Plugin.Secret.Audit: OpenTofu writes the credentials and
+# never reads them back.
+resource "proxmox_virtual_environment_role" "scoped_acme_plugin" {
+  provider = proxmox.root
+  role_id  = "ScopedAcmePlugin"
+
+  privileges = [
+    "Sys.ACME.Plugin.Audit",
+    "Sys.ACME.Plugin.Create",
+    "Sys.ACME.Plugin.Modify",
+    "Sys.ACME.Plugin.Remove",
+    "Sys.ACME.Plugin.Secret.Modify",
+  ]
+
+  depends_on = [terraform_data.proxmox_overlays_apply]
+}
+
+resource "proxmox_acl" "scoped_acme_plugin" {
+  provider  = proxmox.root
+  path      = "/acme/plugins/${var.acme_plugin}"
+  role_id   = proxmox_virtual_environment_role.scoped_acme_plugin.role_id
+  user_id   = var.automation_user
+  propagate = true
+}
+
+# Order, renew, and revoke the node certificate, and read and change the ACME
+# options of the node config.
+resource "proxmox_virtual_environment_role" "scoped_acme_certificate" {
+  provider = proxmox.root
+  role_id  = "ScopedAcmeCertificate"
+
+  privileges = [
+    "Sys.ACME.Certificate.Order",
+    "Sys.ACME.Certificate.Renew",
+    "Sys.ACME.Certificate.Revoke",
+    "Sys.ACME.Config.Audit",
+    "Sys.ACME.Config.Account.Modify",
+    "Sys.ACME.Config.Domain.Modify",
+    "Sys.ACME.Config.Domain.Remove",
+  ]
+
+  depends_on = [terraform_data.proxmox_overlays_apply]
+}
+
+resource "proxmox_acl" "scoped_acme_certificate" {
+  provider  = proxmox.root
+  path      = "/nodes/hypervisor"
+  role_id   = proxmox_virtual_environment_role.scoped_acme_certificate.role_id
   user_id   = var.automation_user
   propagate = true
 }

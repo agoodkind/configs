@@ -33,6 +33,8 @@ module "suburban" {
     proxmox.root = proxmox.suburban_root
   }
 
+  acme_account    = local.acme_account
+  acme_plugin     = local.acme_plugin
   automation_user = local.shared_vars.proxmox_api_user
   ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
 }

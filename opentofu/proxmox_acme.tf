@@ -56,10 +56,10 @@ resource "proxmox_acme_certificate" "vault" {
 # blocks. Import the account with id "default" and the plugin with id "cf"
 # through `configsctl tofu import`.
 #
-# The account uses the automation token, not root@pam. The role
-# ScopedAcmeAccount in suburban/proxmox_overlays.tf grants the token the
-# Sys.ACME.Account privileges. The plugin and the certificate still need
-# Sys.Modify and use the root provider.
+# The account, the plugin, and the certificate use the automation token, not
+# root@pam. The roles ScopedAcmeAccount, ScopedAcmePlugin, and
+# ScopedAcmeCertificate in suburban/proxmox_overlays.tf grant the token one
+# Sys.ACME privilege for each operation.
 resource "proxmox_acme_account" "suburban" {
   provider  = proxmox.suburban
   name      = local.acme_account
@@ -69,7 +69,7 @@ resource "proxmox_acme_account" "suburban" {
 }
 
 resource "proxmox_acme_dns_plugin" "suburban" {
-  provider = proxmox.suburban_root
+  provider = proxmox.suburban
   plugin   = local.acme_plugin
   api      = "cf"
 
@@ -82,7 +82,7 @@ resource "proxmox_acme_dns_plugin" "suburban" {
 }
 
 resource "proxmox_acme_certificate" "suburban" {
-  provider  = proxmox.suburban_root
+  provider  = proxmox.suburban
   node_name = "hypervisor"
   account   = proxmox_acme_account.suburban.name
 
