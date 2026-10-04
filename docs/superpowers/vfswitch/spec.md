@@ -51,6 +51,9 @@ moves the device into the container at start and back to the host at stop. No
 - Unprivileged.
 - Devices: `wan` (port `nic2`) and `mwanbr` (VF 0).
 - No management interface. The host runs commands in it with `pct`.
+- MWAN takes each device by name. The container config sets the names `wan`
+  and `mwanbr`, and they never change. MWAN does not look up a MAC address
+  and does not rename a device in a container.
 - MWAN loads eBPF programs. An unprivileged container needs a BPF token for
   that. Proxmox mounts a BPF filesystem with delegation in the container at
   start.
@@ -134,8 +137,8 @@ The narrow token mount allows these and no more:
 ## Not tested yet
 
 - The VFs after a reboot of poweredge.
-- The permanent MAC of a VF after a reboot. MWAN finds a device by its
-  permanent MAC. Today it differs from the fixed MAC.
+- MWAN with devices matched by name. Today MWAN matches a device it owns by
+  permanent MAC, which a VM needs and a container does not.
 - The full `mwan` program in the container. The test loaded its eBPF part
   only.
 - MWAN's deploy for a container. Today it only supports a VM.
