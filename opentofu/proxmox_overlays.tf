@@ -14,10 +14,14 @@ locals {
   # A new commit here reruns the provisioner on every listed hypervisor.
   proxmox_overlays_commit = "691e9280c44d51d6ea2498a31de4e2d716928d6f"
 
-  # SSH address of each hypervisor that runs the overlay. The addresses match
-  # ansible/inventory/hosts.
+  # Proxmox API endpoint of each hypervisor that runs the overlay. The SSH
+  # address is the bracketed IPv6 address in the endpoint URL.
+  proxmox_overlays_endpoints = {
+    suburban = var.suburban_proxmox_endpoint
+  }
   proxmox_overlays_hosts = {
-    suburban = "3d06:bad:b01:200::1"
+    for name, endpoint in local.proxmox_overlays_endpoints :
+    name => regex("\\[([^\\]]+)\\]", endpoint)[0]
   }
 }
 
