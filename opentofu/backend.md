@@ -48,8 +48,8 @@ tofu command until it merges main.
 A lost passphrase makes the state unreadable. The passphrase is in the Ansible
 vault, and the vault password is in 1Password.
 
-Do not rename the `state` or `migrate` blocks in the encryption configuration.
-OpenTofu stores those names inside the encrypted data.
+Do not rename the `state` key provider or method in the encryption
+configuration. OpenTofu stores that name inside the encrypted data.
 
 The backend declaration itself lives in [backend.tf](backend.tf); its endpoint
 embeds the Cloudflare account id, which is stable and not a secret.
