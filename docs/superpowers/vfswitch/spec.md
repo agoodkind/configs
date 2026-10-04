@@ -1,13 +1,6 @@
-# Two router containers on poweredge, linked by the network card
+# Hardware-switched link between router containers
 
-Poweredge runs two containers. Container 1 is the MWAN gateway. Container 2 is
-a small router with DHCP and DNS. The Broadcom network card links them. No
-Linux bridge is used.
-
-## Why
-
-A Linux bridge copies every frame on a host CPU. The card has a switch built
-into each port, and that switch can do the same job in hardware.
+This design connects an MWAN gateway container and a router container through the Broadcom network card on poweredge. The router runs Kea, Unbound, and nftables. The design does not use a Linux bridge between the containers.
 
 ## Terms
 
@@ -28,30 +21,23 @@ port. The card switches frames between the VFs of one port.
 | `nic1` | Link between the containers | VF 0 to container 1, VF 1 to container 2 |
 | `nic3`, `ens1f1` | Unused | Host |
 
-The host puts no address and no bridge on `nic0` to `nic3`.
+The host must not assign addresses to nic0 through nic3 or add these ports to a bridge.
 
 ### The link between the containers
 
-1. `nic1` has two VFs.
-2. Each VF has a fixed MAC address.
-3. Each VF has its link forced up. `nic1` has no cable.
-4. The card switches frames between the two VFs. The host does not see them.
+Configure two virtual functions on nic1. Assign each virtual function a fixed MAC address and force its link state up. The physical port does not have a cable. The card must switch Ethernet frames between the virtual functions.
 
-Each container still routes and filters in its own kernel. Only the link is in
-hardware.
+The containers share the host kernel. Each container has a separate network namespace for routing and filtering.
 
 ### How a container gets its devices
 
-A container gets a whole port or a VF as a normal network device. Proxmox
-moves the device into the container at start and back to the host at stop. No
-`veth` pair exists.
+Proxmox assigns the existing port and virtual function to the container network namespace at startup. Proxmox returns both devices to the host when the container stops. These interfaces do not use veth pairs.
 
 ### Container 1: MWAN
 
 - Container 1 is unprivileged.
 - Container 1 has two devices: `wan` (port `nic2`) and `mwanbr` (VF 0).
-- Container 1 has no management interface. The host runs commands in
-  container 1 with `pct`.
+- Container 1 does not have a management interface. The host executes container commands with pct.
 - MWAN finds each device by name. The container config sets the names `wan`
   and `mwanbr`. MWAN does not look up a MAC address and does not rename a
   device in a container.
@@ -70,8 +56,7 @@ moves the device into the container at start and back to the host at stop. No
 
 ### Permissions
 
-Every Proxmox step uses the automation token and a narrow overlay privilege.
-No step uses a root login.
+The completed implementation must use the automation token and scoped overlay privileges for Proxmox operations. It must not require a root login.
 
 | Step | Overlay privilege |
 | --- | --- |
@@ -80,8 +65,7 @@ No step uses a root login.
 | Mount the BPF filesystem with delegation | `VM.Config.BPFDelegate` |
 | Run commands and write files in a container | `VM.Guest.Exec`, `VM.Guest.FileRead`, `VM.Guest.FileWrite` |
 
-The overlay does not have these four yet. The test results below came from
-hand steps as root.
+The recorded tests used root commands. Operation through the automation token remains an acceptance requirement.
 
 ## Test results
 
@@ -118,7 +102,7 @@ Poweredge, 2026-10-04, card firmware 236.1.173.0, kernel 7.0.14-20-pve.
 | Load an eBPF tc program, with the token mount | Pass |
 | Load and attach the real MWAN NPT programs, with a narrow token mount | Pass |
 
-The narrow token mount allows these and no more:
+The test mount permitted the following BPF operations.
 
 | Kind | Allowed |
 | --- | --- |
@@ -153,11 +137,11 @@ The narrow token mount allows these and no more:
 
 ## Done when
 
-1. After a reboot, `nic1` has two VFs with the fixed MACs and link up.
-2. Container 1 has `nic2` and VF 0. Container 2 has `nic0` and VF 1.
-3. The containers ping each other with no bridge on the host.
-4. The host counter on `nic1` does not count the ping frames.
+1. After a host reboot, nic1 has two virtual functions with the configured MAC addresses and enabled links.
+2. Container 1 has nic2 and virtual function 0. Container 2 has nic0 and virtual function 1.
+3. The containers exchange ping replies without a host bridge.
+4. The nic1 host receive counter does not increase for those ping frames.
 5. A stopped container returns its devices, and a start takes them again.
-6. `ens1f0` keeps the management address through every step.
-7. MWAN runs in container 1, unprivileged, with NPTv6 loaded.
-8. No step used a root login.
+6. The host management address remains configured on ens1f0 throughout the test.
+7. MWAN runs in the unprivileged gateway container with NPTv6 loaded.
+8. The completed automation executes all Proxmox operations through the scoped token privileges.
