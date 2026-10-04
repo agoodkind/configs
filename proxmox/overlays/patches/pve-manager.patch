@@ -1,0 +1,123 @@
+From eefd811cd279787afb1bd99fe59aefce043e3df0 Mon Sep 17 00:00:00 2001
+From: Alexander Goodkind <alex@goodkind.io>
+Date: Sat, 3 Oct 2026 21:57:19 -0700
+Subject: [PATCH] Add Sys.ACME.Account permission checks to ACME account API
+ methods
+
+Co-authored-by: Claude <noreply@anthropic.com>
+---
+ PVE/API2/ACMEAccount.pm | 46 +++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 44 insertions(+), 2 deletions(-)
+
+diff --git a/PVE/API2/ACMEAccount.pm b/PVE/API2/ACMEAccount.pm
+index 86946ec6..2023cc31 100644
+--- a/PVE/API2/ACMEAccount.pm
++++ b/PVE/API2/ACMEAccount.pm
+@@ -37,6 +37,16 @@ my $account_contact_from_param = sub {
+ };
+ my $acme_account_dir = PVE::CertHelpers::acme_account_dir();
+ 
++# root@pam is always allowed, matching the check in check_api2_permissions
++my $check_account_privilege = sub {
++    my ($rpcenv, $authuser, $account_name, $priv, $noerr) = @_;
++
++    return 1 if $authuser eq 'root@pam';
++
++    my $path = "/acme/accounts/${account_name}";
++    return $rpcenv->check($authuser, $path, [$priv], $noerr);
++};
++
+ __PACKAGE__->register_method({
+     name => 'index',
+     path => '',
+@@ -73,7 +83,11 @@ __PACKAGE__->register_method({
+     name => 'account_index',
+     path => 'account',
+     method => 'GET',
+-    permissions => { user => 'all' },
++    permissions => {
++        description => "Only accounts with Sys.ACME.Account.Audit on"
++            . " /acme/accounts/<name> are listed.",
++        user => 'all',
++    },
+     description => "ACMEAccount index.",
+     protected => 1,
+     parameters => {
+@@ -91,8 +105,20 @@ __PACKAGE__->register_method({
+     code => sub {
+         my ($param) = @_;
+ 
++        my $rpcenv = PVE::RPCEnvironment::get();
++        my $authuser = $rpcenv->get_user();
++
+         my $accounts = PVE::CertHelpers::list_acme_accounts();
+-        return [map { { name => $_ } } @$accounts];
++
++        my $visible_accounts = [];
++        for my $account_name (@$accounts) {
++            my $allowed = $check_account_privilege->(
++                $rpcenv, $authuser, $account_name, 'Sys.ACME.Account.Audit', 1,
++            );
++            push @$visible_accounts, { name => $account_name } if $allowed;
++        }
++
++        return $visible_accounts;
+     },
+ });
+ 
+@@ -101,6 +127,11 @@ __PACKAGE__->register_method({
+     path => 'account',
+     method => 'POST',
+     description => "Register a new ACME account with CA.",
++    permissions => {
++        description => "Requires Sys.ACME.Account.Create on /acme/accounts/<name>."
++            . " The name defaults to 'default' when omitted.",
++        user => 'all',
++    },
+     protected => 1,
+     parameters => {
+         additionalProperties => 0,
+@@ -143,6 +174,8 @@ __PACKAGE__->register_method({
+         my $authuser = $rpcenv->get_user();
+ 
+         my $account_name = extract_param($param, 'name') // 'default';
++        $check_account_privilege->($rpcenv, $authuser, $account_name, 'Sys.ACME.Account.Create');
++
+         my $account_file = "${acme_account_dir}/${account_name}";
+         mkdir $acme_account_dir if !-e $acme_account_dir;
+ 
+@@ -249,6 +282,9 @@ __PACKAGE__->register_method({
+     method => 'PUT',
+     description =>
+         "Update existing ACME account information with CA. Note: not specifying any new account information triggers a refresh.",
++    permissions => {
++        check => ['perm', '/acme/accounts/{name}', ['Sys.ACME.Account.Modify']],
++    },
+     protected => 1,
+     parameters => {
+         additionalProperties => 0,
+@@ -279,6 +315,9 @@ __PACKAGE__->register_method({
+     path => 'account/{name}',
+     method => 'GET',
+     description => "Return existing ACME account information.",
++    permissions => {
++        check => ['perm', '/acme/accounts/{name}', ['Sys.ACME.Account.Audit']],
++    },
+     protected => 1,
+     parameters => {
+         additionalProperties => 0,
+@@ -336,6 +375,9 @@ __PACKAGE__->register_method({
+     path => 'account/{name}',
+     method => 'DELETE',
+     description => "Deactivate existing ACME account at CA.",
++    permissions => {
++        check => ['perm', '/acme/accounts/{name}', ['Sys.ACME.Account.Remove']],
++    },
+     protected => 1,
+     parameters => {
+         additionalProperties => 0,
+
+base-commit: 58350116c198b838dfb50739e886bc92bcc751c3
+-- 
+2.55.0
+

@@ -1,0 +1,271 @@
+#!/usr/bin/perl
+
+# Applies the patches in this repository to the packaged Proxmox VE modules
+# and writes the results to /etc/perl. Debian Perl searches /etc/perl before
+# /usr/share/perl5, also in taint mode, and every Proxmox program then loads
+# the patched copies.
+
+use strict;
+use warnings;
+
+use Cwd qw(abs_path);
+use File::Basename qw(dirname);
+use File::Path qw(make_path);
+use Getopt::Long qw(GetOptions);
+
+my $PATCHES_DIR = dirname(abs_path($0)) . '/patches';
+my $PACKAGED_MODULE_DIR = '/usr/share/perl5';
+my $DEFAULT_TARGET_DIR = '/etc/perl';
+my $DPKG_HOOK_FILE = '/etc/dpkg/dpkg.cfg.d/pve-overlay';
+
+# Units that load the patched modules at start.
+my @UNITS = qw(pvedaemon pveproxy pvestatd pvescheduler pve-ha-lrm);
+
+my $source_root = '';
+my $target_dir = $DEFAULT_TARGET_DIR;
+my $hook_mode = 0;
+my $system_mode = 1;
+
+sub read_file {
+    my ($path) = @_;
+    open(my $handle, '<', $path) or die "cannot read $path: $!\n";
+    local $/ = undef;
+    my $content = <$handle>;
+    close($handle);
+    return $content;
+}
+
+sub write_file {
+    my ($path, $content) = @_;
+    make_path(dirname($path));
+    my $temporary_path = "$path.new";
+    open(my $handle, '>', $temporary_path) or die "cannot write $temporary_path: $!\n";
+    print {$handle} $content;
+    close($handle) or die "cannot write $temporary_path: $!\n";
+    rename($temporary_path, $path) or die "cannot rename $temporary_path: $!\n";
+}
+
+# Returns one entry per patched module: the path below the module directory
+# and the diff of that file. Each patch file is the commit of one fork. Files
+# outside PVE/*.pm, such as tests, are not installed and are skipped.
+sub read_module_diffs {
+    my @modules;
+    for my $patch_path (sort glob("$PATCHES_DIR/*.patch")) {
+        for my $file_diff (split(/^(?=diff --git )/m, read_file($patch_path))) {
+            next if $file_diff !~ m{^diff --git a/(?:src/)?(PVE/\S+\.pm) b/};
+            push @modules, { relative_path => $1, diff => $file_diff };
+        }
+    }
+    die "pve-overlay: $PATCHES_DIR has no module patches\n" if !@modules;
+    return @modules;
+}
+
+sub block_matches_at {
+    my ($lines, $block, $index) = @_;
+    return 0 if $index < 0 || $index + scalar(@$block) > scalar(@$lines);
+    for my $offset (0 .. $#$block) {
+        return 0 if $lines->[$index + $offset] ne $block->[$offset];
+    }
+    return 1;
+}
+
+# Finds the old lines of a hunk. The position from the hunk header wins. A
+# moved block is accepted only when exactly one position matches.
+sub find_block {
+    my ($lines, $block, $expected_index) = @_;
+    return $expected_index if block_matches_at($lines, $block, $expected_index);
+    my @matches = grep { block_matches_at($lines, $block, $_) } 0 .. scalar(@$lines);
+    return scalar(@matches) == 1 ? $matches[0] : undef;
+}
+
+# Parses the hunks of one file diff. The line counts in each hunk header
+# bound the hunk, and text after the last hunk is ignored.
+sub parse_hunks {
+    my ($diff) = @_;
+    my @hunks;
+    my ($old_remaining, $new_remaining) = (0, 0);
+    for my $line (split(/\n/, $diff)) {
+        if ($old_remaining == 0 && $new_remaining == 0) {
+            next if $line !~ /^@@ -(\d+)(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
+            ($old_remaining, $new_remaining) = ($2 // 1, $3 // 1);
+            push @hunks, { start => $1, old => [], new => [] };
+            next;
+        }
+        next if $line =~ /^\\/;
+        # Some tools strip the single space of an empty context line.
+        $line = ' ' if $line eq '';
+        my ($kind, $text) = (substr($line, 0, 1), substr($line, 1));
+        if ($kind eq ' ' || $kind eq '-') {
+            push @{ $hunks[-1]{old} }, $text;
+            $old_remaining--;
+        }
+        if ($kind eq ' ' || $kind eq '+') {
+            push @{ $hunks[-1]{new} }, $text;
+            $new_remaining--;
+        }
+    }
+    return @hunks;
+}
+
+# Applies one file diff to the text of that file. Every context line and
+# every removed line must match exactly.
+sub apply_diff {
+    my ($original, $diff, $label) = @_;
+
+    my @lines = split(/\n/, $original, -1);
+    my @hunks = parse_hunks($diff);
+    die "$label: the patch has no hunks\n" if !@hunks;
+
+    my $line_shift = 0;
+    for my $hunk (@hunks) {
+        my $index = find_block(\@lines, $hunk->{old}, $hunk->{start} - 1 + $line_shift);
+        die "$label: the hunk at line $hunk->{start} does not apply\n" if !defined($index);
+        splice(@lines, $index, scalar(@{ $hunk->{old} }), @{ $hunk->{new} });
+        $line_shift += scalar(@{ $hunk->{new} }) - scalar(@{ $hunk->{old} });
+    }
+    return join("\n", @lines);
+}
+
+# Returns the patched text of every module, keyed by target path.
+sub build_patched_modules {
+    my %patched;
+    for my $module (read_module_diffs()) {
+        my $relative_path = $module->{relative_path};
+        my $packaged_text = read_file("$source_root$PACKAGED_MODULE_DIR/$relative_path");
+        $patched{"$target_dir/$relative_path"} =
+            apply_diff($packaged_text, $module->{diff}, $relative_path);
+    }
+    return \%patched;
+}
+
+sub restart_units {
+    return if !$system_mode;
+    for my $unit (@UNITS) {
+        system('systemctl', 'try-restart', "$unit.service") == 0
+            or warn "pve-overlay: systemctl try-restart $unit.service failed\n";
+    }
+}
+
+sub remove_copies {
+    my $removed_count = 0;
+    for my $module (read_module_diffs()) {
+        my $path = "$target_dir/$module->{relative_path}";
+        next if !-e $path;
+        unlink($path) or die "cannot remove $path: $!\n";
+        $removed_count++;
+    }
+    return $removed_count;
+}
+
+sub command_check {
+    build_patched_modules();
+    print "every patch applies to the modules under $source_root$PACKAGED_MODULE_DIR\n";
+}
+
+sub command_apply {
+    my $patched = eval { build_patched_modules() };
+    if (my $error = $@) {
+        # A patched copy of an older module must not shadow a newer package.
+        my $removed_count = remove_copies();
+        restart_units() if $removed_count;
+        die "pve-overlay: removed the patched copies, Proxmox runs packaged modules: $error";
+    }
+
+    my $changed_count = 0;
+    for my $path (sort keys %$patched) {
+        next if -e $path && read_file($path) eq $patched->{$path};
+        write_file($path, $patched->{$path});
+        print "wrote $path\n";
+        $changed_count++;
+    }
+
+    if ($system_mode) {
+        write_file($DPKG_HOOK_FILE, "post-invoke=" . abs_path($0) . " apply --hook\n");
+    }
+    restart_units() if $changed_count;
+    print "the patched copies are current\n" if !$changed_count;
+}
+
+sub command_remove {
+    my $removed_count = remove_copies();
+    unlink($DPKG_HOOK_FILE) if $system_mode && -e $DPKG_HOOK_FILE;
+    restart_units() if $removed_count;
+    print "removed $removed_count patched copies\n";
+}
+
+sub command_status {
+    my $patched = eval { build_patched_modules() };
+    if (my $error = $@) {
+        print "drift: $error";
+        return 1;
+    }
+    my $stale_count = 0;
+    for my $path (sort keys %$patched) {
+        my $state = 'missing';
+        if (-e $path) {
+            $state = read_file($path) eq $patched->{$path} ? 'current' : 'stale';
+        }
+        $stale_count++ if $state ne 'current';
+        print "$state  $path\n";
+    }
+    return $stale_count ? 1 : 0;
+}
+
+# Loads each module in a taint-mode Perl process and confirms that Perl
+# compiled the patched copy, not the packaged module.
+sub command_compile {
+    for my $module (read_module_diffs()) {
+        my $relative_path = $module->{relative_path};
+        my $target_path = "$target_dir/$relative_path";
+        my $program = 'require $ARGV[0]; print $INC{$ARGV[0]}';
+        my $loaded_path = qx{$^X -T -e '$program' $relative_path};
+        die "pve-overlay: $relative_path does not compile\n" if $? != 0;
+        die "pve-overlay: Perl loaded $loaded_path instead of $target_path\n"
+            if $loaded_path ne $target_path;
+        print "compiled $target_path\n";
+    }
+}
+
+sub usage {
+    die <<"USAGE";
+usage: pve-overlay <command> [options]
+
+  apply    write patched copies of the packaged modules to $DEFAULT_TARGET_DIR
+  remove   delete the patched copies
+  status   compare the patched copies with the packaged modules
+  check    test that every patch applies, without writing files
+  compile  load every patched copy in a taint-mode Perl process
+
+  --source-root DIR  read packaged modules below DIR instead of /
+  --target-dir DIR   write patched copies to DIR instead of $DEFAULT_TARGET_DIR
+  --no-system        skip the dpkg hook and the service restarts
+  --hook             dpkg hook mode: report a failure and exit 0
+USAGE
+}
+
+my $command = shift(@ARGV) // usage();
+GetOptions(
+    'source-root=s' => \$source_root,
+    'target-dir=s' => \$target_dir,
+    'system!' => \$system_mode,
+    'hook' => \$hook_mode,
+) or usage();
+
+my %commands = (
+    apply => \&command_apply,
+    remove => \&command_remove,
+    status => \&command_status,
+    check => \&command_check,
+    compile => \&command_compile,
+);
+my $handler = $commands{$command} or usage();
+
+if ($command eq 'status') {
+    exit($handler->());
+}
+eval { $handler->() };
+if (my $error = $@) {
+    warn $error;
+    # dpkg aborts the package operation when a hook exits nonzero.
+    exit($hook_mode ? 0 : 1);
+}

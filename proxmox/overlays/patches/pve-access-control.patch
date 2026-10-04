@@ -1,0 +1,103 @@
+From 9c4a75d6ee55b3bc7b79328cbb0e2fbdc1c363e6 Mon Sep 17 00:00:00 2001
+From: Alexander Goodkind <alex@goodkind.io>
+Date: Sat, 3 Oct 2026 21:57:08 -0700
+Subject: [PATCH] Add scoped VM and ACME account privileges and /acme ACL paths
+ to AccessControl
+
+Co-authored-by: Claude <noreply@anthropic.com>
+---
+ README                   |  7 +++++++
+ src/PVE/AccessControl.pm | 13 ++++++++++++-
+ src/test/perm-test1.pl   |  5 ++++-
+ 3 files changed, 23 insertions(+), 2 deletions(-)
+
+diff --git a/README b/README
+index 1e64786..11bc28b 100644
+--- a/README
++++ b/README
+@@ -90,6 +90,10 @@ privileges:
+ 	Realm.Allocate: create/modify/remove authentication realms
+ 	SDN.Allocate: manage SDN configuration
+ 	SDN.Audit: view SDN configuration
++	Sys.ACME.Account.Audit: view ACME accounts
++	Sys.ACME.Account.Create: register ACME accounts
++	Sys.ACME.Account.Modify: update ACME accounts
++	Sys.ACME.Account.Remove: deactivate ACME accounts
+ 	Sys.Audit: view node status/config, Corosync cluster config, and HA config
+ 	Sys.Console: console access to node
+ 	Sys.Incoming: allow incoming data streams from other clusters (experimental)
+@@ -110,9 +114,12 @@ privileges:
+ 	VM.Config.Cloudinit: modify Cloud-init parameters
+ 	VM.Config.Disk: add/modify/remove disks
+ 	VM.Config.HWType: modify emulated hardware types
++	VM.Config.Keyctl: change the container keyctl feature flag
+ 	VM.Config.Memory: modify memory settings
++	VM.Config.Nesting: change the container nesting feature flag
+ 	VM.Config.Network: add/modify/remove network devices
+ 	VM.Config.Options: modify any other VM configuration
++	VM.Config.Vsock: add/modify/remove the virtio-vsock device
+ 	VM.Console: console access to VM
+ 	VM.GuestAgent.Audit: issue informational QEMU guest agent commands
+ 	VM.GuestAgent.FileRead: read files from the guest via QEMU guest agent
+diff --git a/src/PVE/AccessControl.pm b/src/PVE/AccessControl.pm
+index 8879ab8..acd9056 100644
+--- a/src/PVE/AccessControl.pm
++++ b/src/PVE/AccessControl.pm
+@@ -1056,7 +1056,11 @@ sub delete_pool_acl {
+ # user: a normal user/customer can to that
+ my $privgroups = {
+     VM => {
+-        root => [],
++        root => [
++            'VM.Config.Nesting',
++            'VM.Config.Keyctl',
++            'VM.Config.Vsock',
++        ],
+         admin => [
+             'VM.Config.Disk',
+             'VM.Config.CPU',
+@@ -1092,6 +1096,10 @@ my $privgroups = {
+             'Sys.Modify', # edit/change node settings
+             'Sys.Incoming', # incoming storage/guest migrations
+             'Sys.AccessNetwork', # for, e.g., downloading ISOs from any URL
++            'Sys.ACME.Account.Audit',
++            'Sys.ACME.Account.Create',
++            'Sys.ACME.Account.Modify',
++            'Sys.ACME.Account.Remove',
+         ],
+         admin => [
+             'Sys.Console', 'Sys.Syslog',
+@@ -1282,6 +1290,9 @@ sub check_path {
+     my ($path) = @_;
+     return $path =~ m!^(
+ 	/
++	|/acme
++	|/acme/accounts
++	|/acme/accounts/[A-Za-z][A-Za-z0-9_\-]+
+ 	|/access
+ 	|/access/groups
+ 	|/access/groups/[[:alnum:]\.\-\_]+
+diff --git a/src/test/perm-test1.pl b/src/test/perm-test1.pl
+index d323447..dabdc50 100755
+--- a/src/test/perm-test1.pl
++++ b/src/test/perm-test1.pl
+@@ -81,10 +81,13 @@ check_permission(
+         . 'Pool.Allocate,Pool.Audit,'
+         . 'Realm.Allocate,Realm.AllocateUser,'
+         . 'SDN.Allocate,SDN.Audit,SDN.Use,'
++        . 'Sys.ACME.Account.Audit,Sys.ACME.Account.Create,Sys.ACME.Account.Modify,'
++        . 'Sys.ACME.Account.Remove,'
+         . 'Sys.AccessNetwork,Sys.Audit,Sys.Console,Sys.Incoming,Sys.Modify,Sys.PowerMgmt,Sys.Syslog,'
+         . 'User.Modify,'
+         . 'VM.Allocate,VM.Audit,VM.Backup,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,'
+-        . 'VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,'
++        . 'VM.Config.Disk,VM.Config.HWType,VM.Config.Keyctl,VM.Config.Memory,VM.Config.Nesting,'
++        . 'VM.Config.Network,VM.Config.Options,VM.Config.Vsock,'
+         . 'VM.Console,VM.GuestAgent.Audit,VM.GuestAgent.FileRead,VM.GuestAgent.FileSystemMgmt,'
+         . 'VM.GuestAgent.FileWrite,VM.GuestAgent.Unrestricted,VM.Migrate,VM.PowerMgmt,VM.Replicate,'
+         . 'VM.Snapshot,VM.Snapshot.Rollback',
+
+base-commit: dff26b458651b4e1141ff0a41a296d2904b16228
+-- 
+2.55.0
+
