@@ -34,8 +34,9 @@ returned its own exit status.
 ### 2. Provider
 
 A new provider, `pveguest`, is built on `terraform-plugin-framework` with
-protocol 6 in its own repository. OpenTofu installs it from a filesystem
-mirror. No registry publication is required.
+protocol 6 in its own repository, `agoodkind/terraform-provider-pveguest`.
+OpenTofu installs it from a filesystem mirror. No registry publication is
+required.
 
 Each resource identifies its guest with three arguments: `node`, `vmid`, and
 `kind` (`lxc` or `qemu`). The provider block lists the hypervisors and their
@@ -187,5 +188,4 @@ allows a plan for the others.
 | --- | --- |
 | Where the guest state is planned | A: the existing root module, with the enrolled set as the limit. B: a second root module with its own state file. A DNS change then opens no SSH session. `configsctl` needs a second module setting. |
 | Mail delivery | A: one SMTP2GO user per guest, as in section 7. B: one internal relay guest and no secret on any other guest. |
-| Provider name and repository | A: `pveguest` in `agoodkind/terraform-provider-pveguest`. B: another name. |
 | Scheduled drift report | A: none; drift appears at the next plan. B: a timer runs the plan daily and sends mail on a change. |
