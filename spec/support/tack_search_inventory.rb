@@ -34,8 +34,8 @@ module TackSearchInventory
   }.freeze
   SECRET_NAMES = %w[
     yugabyte_password audit_writer_password audit_reader_password audit_redactor_password
-    audit_operator_password search_username search_password search_password_hash search_ca
-    search_proxy_certificate search_proxy_private_key search_cursor_key
+    audit_operator_password migrator_password search_username search_password search_password_hash
+    search_ca search_proxy_certificate search_proxy_private_key search_cursor_key
   ].freeze
   SHARED_SECRETS = %w[vault_seaweedfs_s3_access_key vault_seaweedfs_s3_secret_key].freeze
 

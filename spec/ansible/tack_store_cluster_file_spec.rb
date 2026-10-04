@@ -41,6 +41,8 @@ module TackStoreClusterFile
   # the run with an undefined error.
   SKIPPED_TASK = { 'changed' => false, 'skipped' => true }.freeze
 
+  RENDER_ONLY_MIGRATOR_LOGIN = %w[render only migrator login].join('-')
+
   # The per-environment and per-guest values the environment template reads on a
   # guest that runs no store process and no backup timers. Every other value
   # comes from the group_vars file the render play loads.
@@ -52,6 +54,7 @@ module TackStoreClusterFile
     'tack_audit_redactor_password' => 'render-only-redactor-login',
     'tack_audit_operator_password' => 'render-only-operator-login',
     'tack_app_password' => 'render-only-app-login',
+    'tack_migrator_password' => RENDER_ONLY_MIGRATOR_LOGIN,
     'tack_audit_valid_signers' => ['ed25519:0000000000000000'],
     'tack_kafka_cluster_id' => 'renderOnlyClusterId00A',
     'tack_datagen_allow_target' => 'qa',
