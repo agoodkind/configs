@@ -26,7 +26,7 @@ provider "cloudflare" {
 }
 
 locals {
-  # Both hypervisors issue the automation token under the principal that the
+  # Every hypervisor issues the automation token under the principal that the
   # shared Ansible variables define.
   proxmox_token_principal = "${local.shared_vars.proxmox_api_user}!${local.shared_vars.proxmox_token_id}"
 }
@@ -38,11 +38,10 @@ provider "proxmox" {
 }
 
 provider "proxmox" {
-  alias    = "poweredge_root"
-  endpoint = var.poweredge_proxmox_endpoint
-  username = "root@pam"
-  password = var.vault_poweredge_proxmox_root_password
-  insecure = true
+  alias     = "poweredge"
+  endpoint  = var.poweredge_proxmox_endpoint
+  api_token = "${local.proxmox_token_principal}=${var.vault_poweredge_pve_token_secret}"
+  insecure  = true
 }
 
 provider "proxmox" {
