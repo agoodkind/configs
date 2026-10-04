@@ -33,7 +33,8 @@ module "suburban" {
     proxmox.root = proxmox.suburban_root
   }
 
-  ssh_keys = trimspace(data.http.github_ssh_keys.response_body)
+  automation_user = local.shared_vars.proxmox_api_user
+  ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
 }
 
 module "vault" {

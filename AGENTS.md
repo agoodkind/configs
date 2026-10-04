@@ -1,7 +1,12 @@
 # AGENTS
 
 This repository provisions guests with OpenTofu and configures them with
-Ansible. It holds no Go module, and the deploy installs the `mwan` and
+Ansible. A migration to OpenTofu is in progress. Put new host and guest
+configuration in OpenTofu, and keep each resource thin: fetch code from its own
+repository and run it, instead of copying logic into this repository. Add
+Ansible only where OpenTofu cannot express the change.
+
+It holds no Go module, and the deploy installs the `mwan` and
 `opnsensectl` binaries from the pinned releases of
 [agoodkind/mwan](https://github.com/agoodkind/mwan) and
 [agoodkind/opnsensectl](https://github.com/agoodkind/opnsensectl). Read
