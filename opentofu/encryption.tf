@@ -1,13 +1,9 @@
 terraform {
   # OpenTofu encrypts the state file in R2 and every saved plan file with a key
   # derived from the vault key vault_tofu_state_passphrase. OpenTofu stores the
-  # names "state" and "migrate" inside the encrypted data, so renaming either
-  # block makes the existing state unreadable.
+  # name "state" inside the encrypted data. Renaming the key provider or the
+  # method makes the existing state unreadable.
   encryption {
-    # The fallback reads the state that existed before encryption. The first
-    # apply rewrites the state encrypted.
-    method "unencrypted" "migrate" {}
-
     key_provider "pbkdf2" "state" {
       passphrase = var.vault_tofu_state_passphrase
     }
@@ -17,19 +13,13 @@ terraform {
     }
 
     state {
-      method = method.aes_gcm.state
-
-      fallback {
-        method = method.unencrypted.migrate
-      }
+      method   = method.aes_gcm.state
+      enforced = true
     }
 
     plan {
-      method = method.aes_gcm.state
-
-      fallback {
-        method = method.unencrypted.migrate
-      }
+      method   = method.aes_gcm.state
+      enforced = true
     }
   }
 }
