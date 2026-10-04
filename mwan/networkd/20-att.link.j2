@@ -6,8 +6,13 @@
 # Once authenticated, AT&T will immediately put traffic on to vlan03242
 # therefore we do not need an att network file, only the att vlan 3242 file
 
+# The hypervisor assigns {{ mwan_att_vf_host_mac }} to the virtual function. The
+# [Link] section sets the authentication address, and the function reports that
+# address as permanent on later guest boots. The match lists both addresses.
+# The mwan daemon stops at startup beside a name file with no MAC match key.
 [Match]
 Driver=iavf
+PermanentMACAddress={{ mwan_att_vf_host_mac | lower }} {{ mwan_att_eap_identity | lower }}
 
 [Link]
 Name={{ mwan_att_iface }}

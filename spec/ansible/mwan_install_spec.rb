@@ -382,7 +382,7 @@ RSpec.describe MwanInstall do
       management: '3d06:bad:b01::113', dns_v4: ['10.250.0.1'], dns_v6: ['3d06:bad:b01::1'],
       transit_v4: '10.250.250.3', transit_v6: '3d06:bad:b01:fe::3',
       return_prefix: '3d06:bad:b01::/60', return_gateway: '3d06:bad:b01:fe::2',
-      management_dhcp_v6: false, transit_accept_ra: nil
+      management_dhcp_v6: nil, transit_accept_ra: false
     },
     'render_mwan_network.yml' => {
       management_mac: 'BC:24:11:B3:9E:46', transit_mac: 'BC:24:11:49:5D:94',
