@@ -1,5 +1,4 @@
-# Keep the MACAddress line. If it is removed, this file can match a NIC that
-# mwan owns, and mwan will not start.
+# mwan exits at startup when another .link file may match a NIC that mwan owns.
 [Match]
 MACAddress={{ mwan_att_mac | lower }}
 

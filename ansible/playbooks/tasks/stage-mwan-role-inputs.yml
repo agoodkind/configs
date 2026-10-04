@@ -73,8 +73,8 @@
     vm_mgmt_dns_domain: "{{ mwan_dns_domain }}"
     vm_mgmt_ipv6: "{{ mwan_config_mgmt_addr }}"
     hostname: "{{ service_hostname }}"
-    # Skip 10-mgmt.link when mwan owns the management NIC. mwan writes its own
-    # .link file for that NIC, and mwan will not start when a second one exists.
+    # mwan exits at startup when another .link file may match a NIC that mwan
+    # owns.
     mwan_mgmt_networkd_files: >-
       {{ (['10-mgmt.link']
           if not (mwan_ifmgr_wan_enabled | bool)
