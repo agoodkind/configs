@@ -82,10 +82,10 @@ hash recorded at the last apply.
 
 ### 6. Guest module
 
-One shared module, `opentofu/guest`, declares the base state of one guest. A
-root file instantiates it with `for_each` over guests from the Ansible service
-mapping, in the same shape as the overlay module. A guest joins through an
-explicit enrolled set.
+One shared module declares the base state of one guest. The `guest` workspace
+(section 10) instantiates it with `for_each` over guests from the Ansible
+service mapping, in the same shape as the overlay module. A guest joins
+through an explicit enrolled set.
 
 | `prep-guests` item | Declaration |
 | --- | --- |
@@ -119,8 +119,9 @@ A leaked password affects one guest.
 The marker file is removed. State is the record of each item, and a plan with
 no changes is the proof that a guest matches its declaration.
 
-`configsctl deploy` runs a plan for the target guest before a service deploy
-and refuses to deploy when the plan reports a change or an error.
+`configsctl deploy` runs a plan of the `guest` workspace for the target guest
+before a service deploy and refuses to deploy when the plan reports a change
+or an error.
 
 During migration an enrolled guest declares the marker as an ordinary file
 that depends on every other item in the module. The Ansible check passes for
@@ -132,6 +133,31 @@ last guest is enrolled.
 Read fails for a stopped container and for a VM without a running guest agent.
 The error message includes the guest. `-exclude` on that guest module instance
 allows a plan for the others.
+
+### 10. Workspaces
+
+A workspace is one directory of OpenTofu files with its own state file, as in
+HCP Terraform. A plan in one workspace reads and contacts only the systems
+that workspace declares.
+
+`configsctl.yml` sets one directory that contains the workspaces. Each
+directory under it with a `backend` block is a workspace, and the directory
+name is the workspace name. `configsctl tofu <workspace> <arguments>` runs
+OpenTofu in that directory. configsctl has no list of workspace names and no
+setting per workspace.
+
+Each workspace sets its own state key in its `backend` block. Every state file
+is in the same R2 bucket and uses the same encryption passphrase. The secret
+rules apply per workspace: configsctl exports a vault key to a workspace only
+when that workspace declares a variable with the same name.
+
+Guest base state is the workspace `guest`. A plan for DNS or for a hypervisor
+opens no session to a guest, and a stopped guest fails only a `guest` plan.
+
+A workspace reads shared facts from the Ansible service mapping. No workspace
+reads the state of another workspace.
+
+The existing OpenTofu files become one workspace without a state change.
 
 ## Boundaries
 
@@ -150,7 +176,10 @@ allows a plan for the others.
   the MWAN deploy owner. The guest agent is unavailable for about 30 seconds
   after a gateway reboot or a snapshot restore, and Read fails during that
   time.
-- A plan needs root SSH to each hypervisor with an enrolled guest.
+- A plan of the `guest` workspace needs root SSH to each hypervisor with an
+  enrolled guest.
+- A split of the existing workspace into DNS and one workspace per hypervisor
+  is separate work. Each split moves resources between state files.
 - Guests marked `inventory: false` are enrolled like any other guest. The
   transport needs no inventory address.
 
@@ -180,7 +209,8 @@ allows a plan for the others.
 
 ## Migration order
 
-1. Build `pveguest_file` and `pveguest_systemd_unit`. Enroll `clyde_suburban`
+1. Add workspace selection to configsctl and create the `guest` workspace.
+   Build `pveguest_file` and `pveguest_systemd_unit`. Enroll `clyde_suburban`
    with the SSH files and the static files. It runs no gated service.
 2. Add `pveguest_apt_packages` and `pveguest_link`. Add the remaining items on
    the same guest.
@@ -195,6 +225,4 @@ allows a plan for the others.
 
 | Decision | Options |
 | --- | --- |
-| Where the guest state is planned | A: the existing root module, with the enrolled set as the limit. B: a second root module with its own state file. A DNS change then opens no SSH session. `configsctl` needs a second module setting. |
-| Mail delivery | A: one SMTP2GO user per guest, as in section 7. B: one internal relay guest and no secret on any other guest. |
 | Scheduled drift report | A: none; drift appears at the next plan. B: a timer runs the plan daily and sends mail on a change. |
