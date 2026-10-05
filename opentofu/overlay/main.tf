@@ -26,6 +26,21 @@ variable "node_name" {
   type        = string
 }
 
+variable "commit" {
+  description = "Commit of agoodkind/proxmox-overlays that the hypervisor installs."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.commit))
+    error_message = "commit must be a full 40-character commit hash."
+  }
+}
+
+variable "guest_api" {
+  description = "Grant the guest exec and file privileges. The commit must include the guest API."
+  type        = bool
+}
+
 variable "automation_user" {
   description = "Proxmox user that receives the scoped roles."
   type        = string
@@ -42,10 +57,9 @@ variable "acme_plugin" {
 }
 
 locals {
-  # A change of this commit changes the content of remote_file.files, and
+  # A change of var.commit changes the content of remote_file.files, and
   # terraform_data.apply then reruns `pve-overlay apply`.
-  commit = "bb4324db0f2bf3caef9cd5569e1b3b0afb411aea"
-  source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${local.commit}"
+  source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${var.commit}"
   script = "/usr/local/sbin/pve-overlay"
 
   # Key: the file path in agoodkind/proxmox-overlays. Debian creates
@@ -82,7 +96,18 @@ locals {
   # replaces every role granted to the user on /, including VM.Audit, and the
   # inventory plugin then lists no guest. The guest and node roles are granted
   # on / with the user's other roles.
-  roles = {
+  guest_api_roles = var.guest_api ? {
+    ScopedGuestExec = {
+      path = "/"
+      privileges = [
+        "VM.Guest.Exec",
+        "VM.Guest.FileRead",
+        "VM.Guest.FileWrite",
+      ]
+    }
+  } : {}
+
+  roles = merge(local.guest_api_roles, {
     ScopedContainerFeatures = {
       path = "/"
       privileges = [
@@ -127,7 +152,7 @@ locals {
         "Sys.ACME.Config.Domain.Remove",
       ]
     }
-  }
+  })
 
   # `pveum role add` fails for an existing role, and `pveum role modify` fails
   # for a missing role.
@@ -158,7 +183,7 @@ data "http" "files" {
   lifecycle {
     postcondition {
       condition     = self.status_code == 200
-      error_message = "GitHub returned ${self.status_code} for ${each.key} at ${local.commit}."
+      error_message = "GitHub returned ${self.status_code} for ${each.key} at ${var.commit}."
     }
   }
 }
