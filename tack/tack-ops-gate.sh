@@ -23,11 +23,10 @@ refuse() {
 if [[ -z "$install_dir" ]]; then
     refuse "the forced command does not specify an installation directory"
 fi
-if [[ -z "$original_command" ]]; then
+read -r -a words <<< "$original_command"
+if [[ "${#words[@]}" -eq 0 ]]; then
     refuse "an interactive shell"
 fi
-
-read -r -a words <<< "$original_command"
 for word in "${words[@]}"; do
     if [[ ! "$word" =~ $SAFE_WORD ]]; then
         refuse "a word with a quote or a shell operator"

@@ -38,12 +38,14 @@ RSpec.describe 'tack/tack-ops-gate.sh' do
     end
   end
 
-  it 'rejects a session that does not specify a command', :aggregate_failures do
-    Dir.mktmpdir('tack-ops-gate') do |install_dir|
-      result = run_gate(gate, nil, install_dir)
+  [nil, '   '].each do |command|
+    it "rejects a session that does not specify a command (#{command.inspect})", :aggregate_failures do
+      Dir.mktmpdir('tack-ops-gate') do |install_dir|
+        result = run_gate(gate, command, install_dir)
 
-      expect(result.exit_status.exitstatus).to eq(refused_status)
-      expect(result.output).to include('an interactive shell')
+        expect(result.exit_status.exitstatus).to eq(refused_status)
+        expect(result.output).to include('an interactive shell')
+      end
     end
   end
 
@@ -58,7 +60,7 @@ RSpec.describe 'tack/tack-ops-gate.sh' do
 
         expect(result.exit_status.exitstatus).not_to eq(refused_status)
         expect(result.output).not_to include('tack-ops-gate: refused')
-        expect(result.output).to match(/no configuration file provided|compose/i)
+        expect(result.output).to include('no configuration file provided')
       end
     end
   end
