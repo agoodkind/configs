@@ -223,7 +223,7 @@ mwan_enabled_services:
   - wpa-authenticated.path
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "f8:9b:6e:f8:86:11"
-# x710-vf-setup.service on the hypervisor sets this MAC on the AT&T VF.
+# Change this MAC when x710-vf-setup.service on the hypervisor sets a different MAC on the AT&T VF.
 mwan_att_vf_host_mac: "d0:fc:d0:7c:85:30"
 
 # The deploy writes the 802.1X certificates to /etc/wpa_supplicant/ from vault
