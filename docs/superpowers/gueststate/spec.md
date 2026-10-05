@@ -1,17 +1,14 @@
 # Guest base state in OpenTofu
 
-OpenTofu declares the base state of every Proxmox guest: files, apt packages,
-and systemd units. A plan reads each item from the guest and compares it with
-the declaration. This design replaces the `prep-guests` playbook.
+OpenTofu declares guest files, installed packages, and systemd units. The
+provider reads each declared resource from the guest during planning. This
+design replaces the `prep-guests` playbook.
 
 ## Defect this replaces
 
-`prep-guests` is a procedure. Four properties of a procedure cause the defects
-below.
-
 | Property | Defect |
 | --- | --- |
-| A run leaves no per-item record | The marker `/var/lib/configs/guest-prep-revision` records that the procedure finished once. A package removed later, or a changed file, is invisible to every deploy. |
+| The preparation playbook does not record each resource's state. | The marker `/var/lib/configs/guest-prep-revision` records that the procedure finished once. A package removed later, or a changed file, is invisible to every deploy. |
 | A run repeats every step | Each run creates a new SMTP2GO password for the guest and rewrites `/etc/msmtprc`. Tack mounts that file into a container, and the mount goes stale. |
 | The in-guest play needs guest SSH | A guest with broken SSH needs a second code path through `pct push`. The sshd files are written twice, once by each path. |
 | A half-finished run needs a guard | The play deletes the marker first and writes it last. Six service deploys read it. |
@@ -22,10 +19,12 @@ below.
 
 The provider opens SSH to the hypervisor as root through the SSH agent. It runs
 each command inside a container with `pct exec <vmid> --` and inside a VM with
-`qm guest exec <vmid> --`. File content goes in on stdin.
+`qm guest exec <vmid> --`. The provider writes file content to the guest
+command's standard input.
 
-The guest needs no sshd, no authorized key, and no network path from the
-controller. One transport serves a healthy guest and a guest with broken SSH.
+The provider does not require guest SSH, an authorized key in the guest, or a
+controller network route to the guest. One transport serves a healthy guest
+and a guest with broken SSH.
 
 A test on 2026-10-04 passed 256 KiB of random bytes through `pct exec` on the
 suburban hypervisor in both directions without change. A failing command
@@ -35,8 +34,8 @@ returned its own exit status.
 
 A new provider, `pveguest`, is built on `terraform-plugin-framework` with
 protocol 6 in its own repository, `agoodkind/terraform-provider-pveguest`.
-OpenTofu installs it from a filesystem mirror. No registry publication is
-required.
+OpenTofu installs the provider from a filesystem mirror. The installation does
+not require registry publication.
 
 Each resource identifies its guest with three arguments: `node`, `vmid`, and
 `kind` (`lxc` or `qemu`). The provider block lists the hypervisors and their
@@ -62,7 +61,7 @@ the guest is removed from state, and the plan proposes to create it. A changed
 file hash, a removed package, a disabled unit, and a stopped unit each produce
 a plan change.
 
-Read runs no command that changes the guest.
+Read does not modify the guest.
 
 ### 4. Restart on change
 
@@ -140,22 +139,21 @@ A workspace is one directory of OpenTofu files with its own state file, as in
 HCP Terraform. A plan in one workspace reads and contacts only the systems
 that workspace declares.
 
-`configsctl.yml` sets one directory that contains the workspaces. Each
-directory under it with a `backend` block is a workspace, and the directory
-name is the workspace name. `configsctl tofu <workspace> <arguments>` runs
-OpenTofu in that directory. configsctl has no list of workspace names and no
-setting per workspace.
+`configsctl.yml` specifies the workspace directory. Each child directory with a
+`backend` block defines a workspace. `configsctl tofu <workspace> <arguments>`
+runs OpenTofu in that directory. configsctl does not maintain a separate
+workspace-name list.
 
 Each workspace sets its own state key in its `backend` block. Every state file
 is in the same R2 bucket and uses the same encryption passphrase. The secret
 rules apply per workspace: configsctl exports a vault key to a workspace only
 when that workspace declares a variable with the same name.
 
-Guest base state is the workspace `guest`. A plan for DNS or for a hypervisor
-opens no session to a guest, and a stopped guest fails only a `guest` plan.
+Guest base state is the workspace `guest`. DNS and hypervisor plans do not
+open guest sessions. A stopped guest affects the guest workspace plan.
 
-A workspace reads shared facts from the Ansible service mapping. No workspace
-reads the state of another workspace.
+Each workspace reads the Ansible service mapping. It does not read another
+workspace's state.
 
 The existing OpenTofu files become one workspace without a state change.
 
@@ -169,8 +167,8 @@ The existing OpenTofu files become one workspace without a state change.
 - A VM file larger than 1 MiB exceeds the stdin limit of `qm guest exec`.
 - The guest module declares base state only. On the MWAN gateway the daemon
   owns `/etc/systemd/network/10-mwan-*.link` and the `20-<interface>.*` files,
-  and the MWAN deploy owns `/etc/mwan/`. The module declares no file under
-  those paths.
+  and the MWAN deploy owns `/etc/mwan/`. The guest module does not declare
+  files under those paths.
 - The MWAN deploy and the hypervisor watchdog also use the guest agent of the
   gateway VM. An apply for an MWAN guest runs only in a window agreed with
   the MWAN deploy owner. The guest agent is unavailable for about 30 seconds
@@ -181,7 +179,7 @@ The existing OpenTofu files become one workspace without a state change.
 - A split of the existing workspace into DNS and one workspace per hypervisor
   is separate work. Each split moves resources between state files.
 - Guests marked `inventory: false` are enrolled like any other guest. The
-  transport needs no inventory address.
+  transport does not require an inventory address.
 
 ## Acceptance criteria
 
@@ -199,7 +197,7 @@ The existing OpenTofu files become one workspace without a state change.
   file is unchanged.
 - AC7: Two applies in a row do not change the SMTP2GO password or
   `/etc/msmtprc`. A higher version number changes both.
-- AC8: The state file and the plan output contain no mail password.
+- AC8: Exclude mail passwords from state files and plan output.
 - AC9: `configsctl deploy` refuses a service deploy for a guest with a pending
   plan change and proceeds for a guest with none.
 - AC10: A plan with one stopped guest fails with an error that includes the
@@ -211,7 +209,8 @@ The existing OpenTofu files become one workspace without a state change.
 
 1. Add workspace selection to configsctl and create the `guest` workspace.
    Build `pveguest_file` and `pveguest_systemd_unit`. Enroll `clyde_suburban`
-   with the SSH files and the static files. It runs no gated service.
+   with the SSH files and the static files. clyde_suburban does not run a
+   service subject to the readiness gate.
 2. Add `pveguest_apt_packages` and `pveguest_link`. Add the remaining items on
    the same guest.
 3. Add the mail credential on the same guest.
