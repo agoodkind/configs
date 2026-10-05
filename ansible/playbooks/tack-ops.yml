@@ -17,15 +17,9 @@
 #     --extra-var tack_server_digest=<CI index digest of tack-server> \
 #     --extra-var tack_audit_consumer_digest=<CI index digest of tack-audit-consumer>
 #
-# Each run first runs ops deploy verify with the two CI index digests of the
-# reviewed build. The command compares each digest exactly with the index
-# descriptor digest of the image that tack-app-1 and tack-audit-consumer-1
-# run on the guest's containerd image store, and a mismatch stops the run.
-# The audit row of the command records tack_commit as the deploy commit. The
-# command line and the result line record both digests, and the QA reset and
-# production run evidence save both lines. The run then prints the dry run of
-# the command, and with tack_ops_execute true runs it with --execute. A run
-# with --check runs the verification and the dry run only.
+# The playbook runs ops deploy verify before the requested command.
+# Verification rejects image digests that differ from the supplied values.
+# In check mode, the playbook runs verification and the command dry run.
 #
 # Extra vars override every play and group variable. The allowed commands,
 # the service of each command, and the command lines are literals in the
@@ -118,8 +112,11 @@
           {{ counts.dry_run | bool
              and counts.result.node_types.missing == 0
              and counts.result.property_definitions.missing == 0 }}
+      # A dry run prints two operator lines before the JSON envelope, and the
+      # envelope spans several lines.
       vars:
-        counts: "{{ (tack_metadata_name_index_read.stdout_lines | last | from_json).result }}"
+        output: "{{ tack_metadata_name_index_read.stdout }}"
+        counts: "{{ (output[output.index('{'):] | from_json).result }}"
       when: *tack_ops_index_build
 
     - name: Refuse a search index build without a complete metadata name index

@@ -13,7 +13,8 @@ terraform {
       version = ">= 5.0.0"
     }
   }
-  # proxmox_acme_dns_plugin uses a write-only argument, which needs OpenTofu 1.11.
+  # The data_wo argument of proxmox_acme_dns_plugin is write-only. Write-only
+  # arguments require OpenTofu 1.11.
   required_version = ">= 1.11"
 }
 
@@ -26,8 +27,6 @@ provider "cloudflare" {
 }
 
 locals {
-  # Both hypervisors issue the automation token under the principal that the
-  # shared Ansible variables define.
   proxmox_token_principal = "${local.shared_vars.proxmox_api_user}!${local.shared_vars.proxmox_token_id}"
 }
 
@@ -38,11 +37,10 @@ provider "proxmox" {
 }
 
 provider "proxmox" {
-  alias    = "poweredge_root"
-  endpoint = var.poweredge_proxmox_endpoint
-  username = "root@pam"
-  password = var.vault_poweredge_proxmox_root_password
-  insecure = true
+  alias     = "poweredge"
+  endpoint  = var.poweredge_proxmox_endpoint
+  api_token = "${local.proxmox_token_principal}=${var.vault_poweredge_pve_token_secret}"
+  insecure  = true
 }
 
 provider "proxmox" {

@@ -10,15 +10,16 @@ mock_provider "proxmox" {
 }
 
 mock_provider "proxmox" {
-  alias = "poweredge_root"
+  alias = "poweredge"
 }
 
 variables {
   vault_proxmox_token_secret              = "test"
+  vault_proxmox_acme_cloudflare_token     = "test"
   vault_suburban_testbed_pve_token_secret = "test"
   vault_suburban_proxmox_root_password    = "test"
   vault_suburban_acme_cloudflare_token    = "test"
-  vault_poweredge_proxmox_root_password   = "test"
+  vault_poweredge_pve_token_secret        = "test"
   vault_poweredge_acme_cloudflare_token   = "test"
   vault_tofu_state_passphrase             = "test-fixture-phrase-0123456789"
 }
@@ -29,6 +30,10 @@ override_module {
 
 override_module {
   target = module.vault
+}
+
+override_module {
+  target = module.overlay
 }
 
 run "accepts_github_ssh_keys" {

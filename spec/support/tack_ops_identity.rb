@@ -101,17 +101,16 @@ module TackOpsIdentityFlags
     "--operator-service #{service} --operator-session #{session} #{identity} --deploy-commit #{COMMIT}"
   end
 
-  # The two ledger bootstrap guards run before the identity check and read
-  # tack_ledger_bootstrap and tack_ledger_audit_bootstrap, which this
-  # inventory does not set. The temporary inventory loads no group vars, so
-  # the run passes the identity variables tack_all.yml would render.
+  # The temporary inventory loads no group vars. The guards that run before the
+  # identity check read the three bootstrap and backfill flags.
   def identity(service:, session:, overrides: {})
     email = operator_email(service)
     { 'tack_ops_agent_service' => service, 'tack_ops_agent_session' => session,
       'tack_ops_accountable_email' => (service.empty? ? '' : ACCOUNTABLE_EMAIL),
       'deploy_operator_email' => email, 'deploy_operator_id' => operator_id(email), 'tack_commit' => COMMIT,
       'tack_ops_identity_flags' => rendered_flags(service: service, session: session),
-      'tack_ledger_bootstrap' => false, 'tack_ledger_audit_bootstrap' => false }.merge(overrides)
+      'tack_ledger_bootstrap' => false, 'tack_ledger_audit_bootstrap' => false,
+      'tack_audit_partition_names_backfill' => false }.merge(overrides)
   end
 
   # Evaluates the guard with the agent shell marker set or removed in this

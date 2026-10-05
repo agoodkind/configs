@@ -9,7 +9,8 @@
 service_hostname: "{{ service_mapping.mwan.hostname }}"
 mwan_environment: "prod"
 mwan_bootstrap_guest: false
-mwan_controller_artifact_root: "/Volumes/Chaos Storage/Codex/mwan305/configs-integration/controller"
+# Under the repository root, where .gitignore already excludes .make.
+mwan_controller_artifact_root: "{{ playbook_dir | dirname | dirname }}/.make/mwan-controller/{{ mwan_environment }}"
 mwan_operation_armed: false
 mwan_operation_duration_seconds: 7200
 mwan_operation_poll_seconds: 5

@@ -63,8 +63,8 @@ tack_ops_identity_flags: >-
 tack_ops_command: ""
 tack_ops_args: []
 tack_ops_execute: false
-# The CI multi-platform index digests of the reviewed build, sha256: and 64
-# lowercase hex. A run passes both; the playbook refuses an empty value.
+# Image digests must use sha256: followed by 64 lowercase hexadecimal
+# characters. Supply the multi-platform index digest for each reviewed image.
 tack_server_digest: ""
 tack_audit_consumer_digest: ""
 
@@ -397,6 +397,7 @@ tack_ledger_bootstrap: false
 # --extra-var tack_ledger_audit_bootstrap=true, which runs
 # ops ledger audit-bootstrap on yb1 after it starts. Run B leaves it off.
 tack_ledger_audit_bootstrap: false
+tack_audit_partition_names_backfill: false
 tack_ledger_join_target: >-
   {{ ('' if (tack_ledger_bootstrap | bool and tack_ledger_node_name == 'yb1')
       else 'yugabyte' if tack_ledger_legacy_node_present

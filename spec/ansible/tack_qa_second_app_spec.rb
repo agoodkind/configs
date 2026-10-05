@@ -144,7 +144,7 @@ RSpec.describe TackQaSecondApp do
     expect(app.dig('environment', 'DATABASE_URL')).to start_with('postgres://tack_app:${TACK_APP_PASSWORD:?}@yb1:5433,yb2:5433,yb3:5433/')
     expect(described_class.pairs(render, TackQaSecondApp::QA_APP_GUEST, 'env')).to include(
       'AUDIT_KAFKA_BROKERS' => "[#{TackQaSecondApp::QA_OWNER_ADDRESS}]:#{TackQaSecondApp::EXTERNAL_PORT}",
-      'OPENSEARCH_PUBLIC_ENABLED' => 'false'
+      'OPENSEARCH_PUBLIC_ENABLED' => 'true'
     )
     expect(described_class.pairs(render, TackQaSecondApp::QA_OWNER, 'env')).to include(
       'AUDIT_KAFKA_BROKERS' => TackQaSecondApp::BRIDGE_BROKER

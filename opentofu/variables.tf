@@ -1,8 +1,13 @@
-# Each variable named vault_* takes its value from the Ansible vault key of the
-# same name. `configsctl tofu` exports a vault key only when a variable with
-# that name is declared here.
+# `./configsctl tofu` sets each variable named vault_* from the Ansible vault key
+# with the same name.
 variable "vault_proxmox_token_secret" {
   description = "Secret of the Proxmox API token for the production vault host"
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_proxmox_acme_cloudflare_token" {
+  description = "Cloudflare DNS token that the production vault host uses for ACME DNS challenges"
   type        = string
   sensitive   = true
 }
@@ -37,8 +42,8 @@ variable "suburban_proxmox_endpoint" {
   default     = "https://[3d06:bad:b01:200::1]:8006/"
 }
 
-variable "vault_poweredge_proxmox_root_password" {
-  description = "Root password of the poweredge host, for resources that Proxmox restricts to root@pam"
+variable "vault_poweredge_pve_token_secret" {
+  description = "Secret of the Proxmox API token for the poweredge host"
   type        = string
   sensitive   = true
 }
