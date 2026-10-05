@@ -223,7 +223,7 @@ mwan_enabled_services:
   - wpa-authenticated.path
 mwan_att_vlan_id: 3242
 mwan_att_eap_identity: "f8:9b:6e:f8:86:11"
-# MAC that x710-vf-setup.service on the hypervisor gives the AT&T VF.
+# x710-vf-setup.service on the hypervisor sets this MAC on the AT&T VF.
 mwan_att_vf_host_mac: "d0:fc:d0:7c:85:30"
 
 # The deploy writes the 802.1X certificates to /etc/wpa_supplicant/ from vault
@@ -240,7 +240,6 @@ mwan_att_vf_host_mac: "d0:fc:d0:7c:85:30"
 mwan_webpass_duid: "00:01:00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_webpass_duid_raw_data: "00:01:2f:aa:b6:c3:00:e2:69:66:8b:5a"
 mwan_webpass_mac: "00:e2:69:66:8b:5a" # MAC registered with Webpass
-# The NIC's real MAC.
 mwan_webpass_permanent_mac: "64:62:66:23:f9:84"
 # Do not change. The ISP gives the prefix only to the IAID networkd sent.
 mwan_webpass_iaid: 4009731696

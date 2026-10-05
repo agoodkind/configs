@@ -7,7 +7,7 @@
 # therefore we do not need an att network file, only the att vlan 3242 file
 
 # This file must match only the AT&T NIC and never a NIC that mwan controls.
-# The VF has the first MAC on its first boot and the second MAC after.
+# The VF has the first MAC on its first boot and the second MAC on later boots.
 [Match]
 Driver=iavf
 PermanentMACAddress={{ mwan_att_vf_host_mac | lower }} {{ mwan_att_eap_identity | lower }}
