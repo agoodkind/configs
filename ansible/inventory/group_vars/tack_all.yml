@@ -403,3 +403,7 @@ tack_ledger_join_target: >-
       else 'yugabyte' if tack_ledger_legacy_node_present
       else ('yb2' if tack_ledger_node_name == 'yb1' else 'yb1'))
      if tack_cluster_role == 'data' else '' }}
+
+tack_search_request_timeout: ""
+tack_search_worker_operation_timeout: ""
+tack_search_worker_lease: ""

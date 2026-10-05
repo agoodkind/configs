@@ -18,7 +18,8 @@ module TackSearchEnvironment
     OPENSEARCH_CA OPENSEARCH_ENDPOINT OPENSEARCH_PASSWORD OPENSEARCH_PUBLIC_ENABLED
     OPENSEARCH_REPLICAS OPENSEARCH_ROUTING_SHARDS OPENSEARCH_SHARDS OPENSEARCH_USERNAME
   ].freeze
-  PUBLIC_SETTING_NAMES = (SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY]).sort.freeze
+  TIMEOUT_SETTING_NAMES = %w[OPENSEARCH_REQUEST_TIMEOUT OPENSEARCH_WORKER_LEASE OPENSEARCH_WORKER_OPERATION_TIMEOUT].freeze
+  PUBLIC_SETTING_NAMES = (SETTING_NAMES + TIMEOUT_SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY]).sort.freeze
   # ENABLED turns on search. PUBLIC turns on search and public search results.
   ENABLED = { 'tack_search_enabled' => true }.freeze
   PUBLIC = ENABLED.merge('tack_search_public_enabled' => true).freeze
@@ -89,7 +90,10 @@ RSpec.describe TackSearchEnvironment do
       'OPENSEARCH_ROUTING_SHARDS' => '8',
       'OPENSEARCH_REPLICAS' => '0',
       'OPENSEARCH_PUBLIC_ENABLED' => 'true',
-      'OPENSEARCH_CURSOR_KEY' => 'render-only-vault_tack_qa_search_cursor_key'
+      'OPENSEARCH_CURSOR_KEY' => 'render-only-vault_tack_qa_search_cursor_key',
+      'OPENSEARCH_REQUEST_TIMEOUT' => '120s',
+      'OPENSEARCH_WORKER_OPERATION_TIMEOUT' => '120s',
+      'OPENSEARCH_WORKER_LEASE' => '180s'
     )
     expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::PUBLIC_SETTING_NAMES)
   end
