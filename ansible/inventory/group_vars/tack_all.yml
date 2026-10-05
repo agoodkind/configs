@@ -63,9 +63,8 @@ tack_ops_identity_flags: >-
 tack_ops_command: ""
 tack_ops_args: []
 tack_ops_execute: false
-# Each value is the CI multi-platform index digest of one image of the
-# reviewed build: sha256: followed by 64 lowercase hex characters.
-# tack-ops.yml refuses an empty value.
+# Image digests must use sha256: followed by 64 lowercase hexadecimal
+# characters. Supply the multi-platform index digest for each reviewed image.
 tack_server_digest: ""
 tack_audit_consumer_digest: ""
 

@@ -3,9 +3,8 @@
 require 'tmpdir'
 require_relative '../support/tack_ops_identity'
 
-# The run sets tack_install_dir to a directory that does not exist. A run that
-# passes the request check stops at the chdir of the verify task, before the
-# command module runs docker.
+# The test sets tack_install_dir to a directory that does not exist.
+# Ansible fails at chdir before executing the Docker command.
 module TackOpsDigests
   PLAYBOOK_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tack-ops.yml')
   INVENTORY = "[tack_qa_all]\ntack-qa-test ansible_connection=local\n[tack_prod_all]\n" \
