@@ -198,7 +198,7 @@ The existing OpenTofu files become one workspace without a state change.
   file is unchanged.
 - AC7: Two applies in a row do not change the SMTP2GO password or
   `/etc/msmtprc`. A higher version number changes both.
-- AC8: Exclude mail passwords from state files and plan output.
+- AC8: The state file and the plan output do not contain a mail password.
 - AC9: `configsctl deploy` rejects a guest with pending plan changes and
   permits a guest when its plan reports zero changes.
 - AC10: A plan with one stopped guest fails with an error that includes the
