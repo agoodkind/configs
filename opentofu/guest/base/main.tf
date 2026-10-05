@@ -28,26 +28,36 @@ variable "name" {
 }
 
 variable "public_keys" {
-  description = "SSH public keys that can log in as any local user of the guest."
+  description = "SSH public keys that can log in as any local user of the guest. Ignored when authorized_key_lines is set."
   type        = list(string)
-
-  # pveguest_file.sshd_dropin["global_authorized_keys"] sets one file as the
-  # only key file of sshd. A file without a valid key locks every user out at
-  # the next restart of ssh.service.
-  validation {
-    condition = length(var.public_keys) > 0 && alltrue([
-      for key in var.public_keys : can(regex(
-        "^(ssh-[A-Za-z0-9@._+-]+|ecdsa-[A-Za-z0-9@._+-]+|sk-[A-Za-z0-9@._+-]+) [A-Za-z0-9+/]+={0,3}( .*)?$",
-        key,
-      ))
-    ])
-    error_message = "public_keys needs at least one line, and each line must be an SSH public key."
-  }
 }
 
 variable "restricted_key_lines" {
-  description = "Further lines of the global authorized_keys file, such as a key with a from= restriction."
+  description = "Further lines of the global authorized_keys file, such as a key with a from= restriction. Ignored when authorized_key_lines is set."
   type        = list(string)
+}
+
+variable "authorized_key_lines" {
+  description = "Lines that replace the whole authorized_keys file of the guest. A line can start with key options such as command=\"...\",restrict. Null selects public_keys and restricted_key_lines."
+  type        = list(string)
+  default     = null
+
+  # pveguest_file.sshd_dropin["global_authorized_keys"] sets one file as the
+  # only key file of sshd. A file without a valid key locks every user out at
+  # the next restart of ssh.service. The check covers the lines that the guest
+  # receives: authorized_key_lines when set, otherwise public_keys.
+  validation {
+    condition = (
+      length(var.authorized_key_lines == null ? var.public_keys : var.authorized_key_lines) > 0 &&
+      alltrue([
+        for key in(var.authorized_key_lines == null ? var.public_keys : var.authorized_key_lines) : can(regex(
+          "^(([^ \"]|\"[^\"]*\")+ )?(ssh-[A-Za-z0-9@._+-]+|ecdsa-[A-Za-z0-9@._+-]+|sk-[A-Za-z0-9@._+-]+) [A-Za-z0-9+/]+={0,3}( .*)?$",
+          key,
+        ))
+      ])
+    )
+    error_message = "The key file needs at least one line, and each line must be an SSH public key with optional key options."
+  }
 }
 
 variable "packages" {
@@ -118,8 +128,12 @@ resource "pveguest_file" "authorized_keys" {
   vmid = var.vmid
   kind = var.kind
 
-  path    = local.authorized_keys_path
-  content = "${join("\n", sort(distinct(concat(var.public_keys, var.restricted_key_lines))))}\n"
+  path = local.authorized_keys_path
+  content = "${join("\n", (
+    var.authorized_key_lines == null
+    ? sort(distinct(concat(var.public_keys, var.restricted_key_lines)))
+    : var.authorized_key_lines
+  ))}\n"
 }
 
 resource "pveguest_file" "sshd_dropin" {

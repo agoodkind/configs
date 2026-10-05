@@ -9,21 +9,51 @@ locals {
 
   enrolled = toset(["clyde_suburban"])
 
-  # The node key is the second label of the guest hostname, for example
-  # "suburban" in clyde.suburban.goodkind.io.
+  proxmox_token_principal = "${local.shared_vars.proxmox_api_user}!${local.shared_vars.proxmox_token_id}"
+
+  # The site is the second label of the guest hostname, for example "suburban"
+  # in clyde.suburban.goodkind.io.
+  guest_sites = {
+    for name in local.enrolled : name => split(".", local.service_mapping[name].hostname)[1]
+  }
+
+  # The provider nodes map is keyed by site. The provider puts the key in the
+  # API path unless the entry sets node_name. The suburban node is named
+  # hypervisor, and the other nodes are named like their site.
+  proxmox_node_name_overrides = {
+    suburban = "hypervisor"
+  }
+
+  # A guest listed here receives exactly these lines as its authorized_keys
+  # file, without the GitHub keys and the sshpiper lines. The map key is the
+  # service mapping name of the guest.
+  authorized_key_lines_overrides = {}
+
+  proxmox_token_secrets = {
+    suburban  = var.vault_suburban_testbed_pve_token_secret
+    poweredge = var.vault_poweredge_pve_token_secret
+    vault     = var.vault_proxmox_token_secret
+  }
+
   guests = {
     for name in local.enrolled : name => {
-      vmid = local.service_mapping[name].vmid
-      kind = "lxc"
-      node = split(".", local.service_mapping[name].hostname)[1]
+      vmid                 = local.service_mapping[name].vmid
+      kind                 = "lxc"
+      node                 = local.guest_sites[name]
+      authorized_key_lines = try(local.authorized_key_lines_overrides[name], null)
     }
   }
 
-  # The service mapping stores the SSH address of a hypervisor under the key
-  # <node>_hypervisor.
+  # The service mapping stores the address of a hypervisor under the key
+  # <site>_hypervisor. The certificate of the API does not cover that address.
   nodes = {
-    for node in toset([for guest in local.guests : guest.node]) :
-    node => { host = local.service_mapping["${node}_hypervisor"].ipv6 }
+    for site in toset(values(local.guest_sites)) :
+    site => {
+      endpoint  = "https://[${local.service_mapping["${site}_hypervisor"].ipv6}]:8006"
+      api_token = "${local.proxmox_token_principal}=${local.proxmox_token_secrets[site]}"
+      insecure  = true
+      node_name = try(local.proxmox_node_name_overrides[site], null)
+    }
   }
 
   github_keys = [
@@ -60,8 +90,9 @@ module "base" {
   kind = each.value.kind
   name = each.key
 
-  public_keys          = local.github_keys
-  restricted_key_lines = local.sshpiper_lines
+  authorized_key_lines = each.value.authorized_key_lines
+  public_keys          = each.value.authorized_key_lines == null ? local.github_keys : []
+  restricted_key_lines = each.value.authorized_key_lines == null ? local.sshpiper_lines : []
   login_dir            = local.shared_vars.login_dir
   revision             = local.shared_vars.guest_prep_revision
   revision_file        = local.shared_vars.guest_prep_revision_file
