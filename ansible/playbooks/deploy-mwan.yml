@@ -298,8 +298,8 @@
         - not mwan_bootstrap_guest | bool
         - not ansible_check_mode
 
-    # Do not run `recover` in this rescue. The gateway has no change yet, and
-    # `recover` would restore the snapshot and reboot it.
+    # Do not run `recover` in this rescue. `recover` would restore the snapshot
+    # and reboot the gateway.
     - name: Arm preparation and activation observation before gateway writes
       when: not mwan_bootstrap_guest | bool
       block:
