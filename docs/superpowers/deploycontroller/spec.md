@@ -137,6 +137,113 @@ keys and record each one.
 - This design does not change the guest services, the playbooks, or the
   OpenTofu workspaces.
 
+## Dependencies
+
+LAB-64 tracks this design. The controllers depend on four parts of the guest
+base state transport, tracked in LAB-65:
+
+1. LAB-77: the `guestexec` overlay with the guest exec and file API, applied on
+   vault and suburban.
+2. LAB-74: the `pveguest` provider on that API with a token, instead of root
+   SSH and `pct exec`.
+3. LAB-75: the `pveguest_download` resource, which installs the pinned
+   `configsctl` binary.
+4. LAB-76: the per-guest `authorized_key_lines` input of the guest module. For
+   each controller, the key file contains only the forced-command lines and the
+   break-glass key.
+
+## Future plans
+
+The design above fits two hypervisors, one operator, and the current Ansible
+deploys. Each plan below is an alternative that was considered and not chosen
+under those constraints. A plan is not scheduled work until its condition is
+met and the operator approves it. The guest base state specification records
+the future plans for the guest API and the provider transport.
+
+| Plan | Ticket |
+| --- | --- |
+| Pull deploys from each guest | LAB-73 |
+| Self-hosted CI runner | LAB-81 |
+| Approval for production requests | LAB-82 |
+| One controller per environment | LAB-83 |
+| HTTP request interface | LAB-84 |
+| Vault password from 1Password | LAB-86 |
+| Lock owner check | LAB-87 |
+
+### Pull deploys from each guest
+
+- Current choice: a controller pushes each deploy over root SSH.
+- Constraint: `deploy-tack` orders work across hosts, such as ledger nodes one
+  at a time and `run_once` tasks. A pull run on each guest cannot order work
+  across guests. A pull run also needs the vault secrets on every guest.
+- Alternative: each guest runs `ansible-pull` for a signed Configs commit. A
+  guest key accepts only `deploy <commit>`, and no root key for the guest exists
+  outside the guest.
+- Condition: service deploys no longer need order across hosts, or OpenTofu
+  declares the service state of each guest.
+
+### Self-hosted CI runner
+
+- Current choice: agents send requests to the controllers over SSH.
+- Constraint: GitHub-hosted runners cannot connect to the management network.
+  A self-hosted runner adds a GitHub dependency and a workflow approval path.
+- Alternative: each controller also runs a CI runner. A deploy starts from a
+  workflow after an approval in the forge.
+- Condition: deploys start from merges with an approval record in the forge,
+  or a self-hosted forge provides its own runner.
+
+### Approval for production requests
+
+- Current choice: the controllers accept production requests from agent keys
+  and record them. The production pause is a rule for agent sessions.
+- Constraint: an approval step for each production request needs the operator
+  for every production deploy.
+- Alternative: the production controller refuses agent keys, or it waits for an
+  approval in the 1Password app before each production request.
+- Condition: agent sessions run production deploys after the pause ends, or a
+  production request runs without an authorization.
+
+### One controller per environment
+
+- Current choice: either controller deploys every guest, and both store the
+  production secrets.
+- Constraint: with two hypervisors, an outage of one host stops all deploys
+  that only its controller can run.
+- Alternative: the vault controller deploys production, and the suburban
+  controller deploys the testbed. Each controller stores only the secrets of its
+  environment.
+- Condition: a third hypervisor can run a second production controller, or the
+  testbed runs workloads that the operator does not trust.
+
+### HTTP request interface
+
+- Current choice: requests use an SSH forced command.
+- Constraint: an HTTP service needs a new port, TLS, and its own login.
+- Alternative: a small HTTP service accepts the same JSON requests and returns
+  job status.
+- Condition: a web page or another program needs to start and watch runs.
+
+### Vault password from 1Password
+
+- Current choice: the operator copies the vault password file to each
+  controller once.
+- Constraint: a fetch for each run needs a 1Password service account token on
+  the controller, and deploys fail when 1Password does not answer.
+- Alternative: the controller fetches the vault password from 1Password for each
+  run and does not store it on disk.
+- Condition: the vault password rotates on a schedule, or controllers are
+  rebuilt often.
+
+### Lock owner check
+
+- Current choice: a lock expires 5 minutes after its last renewal.
+- Constraint: an owner check needs each controller to answer the other
+  controller about its runs.
+- Alternative: a run that finds a lock asks the owning controller whether that
+  run is still active, and the lock does not expire.
+- Condition: a live run loses its lock to another run after a network outage
+  longer than 5 minutes.
+
 ## Acceptance criteria
 
 - AC1: Reject an agent-key login if the command is absent or differs from
@@ -160,13 +267,15 @@ keys and record each one.
 
 ## Migration order
 
-1. Add `configsctl gate` and the host locks to configsctl, release it, and pin
-   it in Configs.
-2. Declare both controllers in OpenTofu, create them, and install their files.
-3. Add each controller public key to every guest and hypervisor.
-4. Move the Tack deploys to the controllers and prove AC3 through AC7 on QA.
+1. LAB-66: add `configsctl gate` and the host locks to configsctl, release it,
+   and pin it in Configs.
+2. LAB-67: declare both controllers in OpenTofu, create them, and install
+   their files.
+3. LAB-68: add each controller public key to every guest and hypervisor.
+4. LAB-68: move the Tack deploys to the controllers and prove AC3 through AC7
+   on QA.
 5. Execute each remaining lane's deploys and OpenTofu commands on the
-   controllers. Migrate one lane at a time.
-6. Move the operator's break-glass key into the 1Password SSH agent. Remove the
-   shared key from the Mac, from the GitHub key list that guests read, and
-   from every guest and hypervisor.
+   controllers. Migrate one lane at a time. MWAN-558 tracks the MWAN lane.
+6. LAB-69: move the operator's break-glass key into the 1Password SSH agent.
+   Remove the shared key from the Mac, from the GitHub key list that guests
+   read, and from every guest and hypervisor.
