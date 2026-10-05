@@ -159,7 +159,6 @@ mwan_internal_iface: "enmwanbr0"
 # Monkeybrains fallback WAN (virtio)
 mwan_monkeybrains_iface: "enmbrains0"
 
-# Do not set `dhcp: false` under ipv6 here. mwan rejects it on a link it owns.
 mwan_non_provider_connections:
   - name: "{{ mwan_internal_iface }}"
     connection_id: enmwanbr0
