@@ -17,18 +17,22 @@ design replaces the `prep-guests` playbook.
 
 ### 1. Transport
 
-The provider opens SSH to the hypervisor as root through the SSH agent. It runs
-each command inside a container with `pct exec <vmid> --` and inside a VM with
-`qm guest exec <vmid> --`. The provider writes file content to the guest
-command's standard input.
+The provider calls the Proxmox API of each hypervisor with an API token. For a
+container it uses the overlay methods `exec`, `exec-status`, `file-read`, and
+`file-write` under `/nodes/{node}/lxc/{vmid}/`, which require the privileges
+`VM.Guest.Exec`, `VM.Guest.FileRead`, and `VM.Guest.FileWrite` on
+`/vms/{vmid}`. For a VM it uses the guest agent methods `agent/exec` and
+`agent/exec-status`. `exec` returns at once, and the provider reads the result
+with `exec-status` after the command exits. The provider writes file content
+to the guest command's standard input in chunks.
 
-The provider does not require guest SSH, an authorized key in the guest, or a
-controller network route to the guest. One transport serves a healthy guest
-and a guest with broken SSH.
+The provider does not require guest SSH, an authorized key in the guest, a
+controller network route to the guest, or root access to the hypervisor. One
+transport serves a healthy guest and a guest with broken SSH.
 
-A test on 2026-10-04 passed 256 KiB of random bytes through `pct exec` on the
-suburban hypervisor in both directions without change. A failing command
-returned its own exit status.
+The provider acceptance tests passed on poweredge container 9004 on
+2026-10-04 through these methods with a token that has only the three guest
+privileges.
 
 ### 2. Provider
 
@@ -175,8 +179,8 @@ The existing OpenTofu files become one workspace without a state change.
   the MWAN deploy owner. The guest agent is unavailable for about 30 seconds
   after a gateway reboot or a snapshot restore, and Read fails during that
   time.
-- A plan of the `guest` workspace needs root SSH to each hypervisor with an
-  enrolled guest.
+- A plan of the `guest` workspace requires the overlay guest methods and an API
+  token on each hypervisor with an enrolled guest.
 - A split of the existing workspace into DNS and one workspace per hypervisor
   is separate work. Each split moves resources between state files.
 - Guests marked `inventory: false` are enrolled like any other guest. The
@@ -220,3 +224,21 @@ The existing OpenTofu files become one workspace without a state change.
 6. Enroll the poweredge guests, then the vault guests one group at a time. The
    proxy guest is last.
 7. Delete `prep-guests`, `deploy-ssh-keys`, the marker tasks, and their specs.
+
+Tack epic LAB-65 tracks this work. LAB-71, LAB-72, LAB-74, and LAB-77 track
+the guest API transport.
+
+## Future plans
+
+The selected design uses overlay API methods and an API token. The options
+below are recorded for reconsideration. None of them is selected or scheduled.
+
+| Option | Current constraint | Tradeoff | Reconsider when |
+| --- | --- | --- | --- |
+| Root SSH to the hypervisor with `pct exec` and `qm guest exec` | The owner rejects root SSH as a design. | The option requires no overlay and works on stock Proxmox. It grants root on every hypervisor to the machine that runs OpenTofu. | The owner changes the root SSH rule. |
+| SSH into each guest | A guest with broken SSH requires a second repair path. | The option requires no hypervisor privilege. Each guest needs sshd and an authorized key before OpenTofu manages it. | The overlay guest methods stop applying to a Proxmox release and a patch is not feasible. |
+| Upstream the guest methods to Proxmox | The overlay patches each Proxmox release. | Upstream methods remove the overlay maintenance. Acceptance and timing depend on the Proxmox maintainers. | The overlay methods run on all three hypervisors without a change for one Proxmox minor release. |
+| A Debian package for the overlay | `pve-overlay` installs Perl modules and AppArmor profiles from patch files. | A package can install binaries and units and uses dpkg triggers. It needs a build pipeline and a package source. | The overlay needs a compiled helper, or it installs more than ten host files. |
+| An overlay privilege for VM command execution | The stock `agent/exec` method requires `VM.GuestAgent.Unrestricted`. | A narrow privilege limits a VM token to command execution. It adds one more overlay method. | The first VM guest is enrolled (AC11). |
+| A liveness check for exec workers | A pvedaemon restart during a command leaves its result missing, and `exec-status` reports a running command for up to two hours. | A check of the worker process detects the loss at once. It adds a process identity record per command. | A guest workspace apply fails or waits on a lost worker. |
+| A controller download with chunked `file-write` | `pveguest_download` runs `curl` in the guest and requires guest network access and `curl`. | A controller download serves a guest without egress. It sends the whole file through the API in 96 KiB chunks. | A guest without egress needs a pinned binary. |
