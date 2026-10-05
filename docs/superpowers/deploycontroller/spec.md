@@ -73,8 +73,8 @@ the object has an unknown field, or when a field fails its rule.
 
 | `kind` | Fields | Rule |
 | --- | --- | --- |
-| `deploy` | `playbook`, `commit`, `limit`, `extra_vars`, `session` | `playbook` is the name of a file in `ansible/playbooks`. `commit` is a 40-character commit reachable from `origin/main`. `extra_vars` is a JSON object. |
-| `tofu` | `workspace`, `action`, `commit`, `targets`, `session` | `action` is `plan` or `apply`. `workspace` is the name of a workspace directory. |
+| `deploy` | `playbook`, `commit`, `limit`, `extra_vars`, `session` | `playbook` is the name of a file in `ansible/playbooks`. `commit` is a 40-character commit reachable from `origin/main`. `limit` is optional and contains only letters, digits, and `_ . : , ! & * -`. `extra_vars` is an optional JSON object. `session` is required and contains 1 to 128 letters, digits, and `. _ : -`. |
+| `tofu` | `workspace`, `action`, `commit`, `targets`, `session` | `workspace` is the name of a workspace directory. `action` is `plan` or `apply`. `commit` and `session` follow the `deploy` rules. `targets` is an optional list of OpenTofu resource addresses. |
 | `status` | `run` | `run` is the id of an existing run. |
 | `logs` | `run`, `follow` | `run` identifies an existing run. |
 | `unlock` | `host`, `run`, `reason` | `run` matches the lock on `host`. `reason` is required. |
