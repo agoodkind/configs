@@ -9,9 +9,9 @@ design replaces the `prep-guests` playbook.
 | Property | Defect |
 | --- | --- |
 | The preparation playbook does not record each resource's state. | The marker `/var/lib/configs/guest-prep-revision` records that the procedure finished once. A package removed later, or a changed file, is invisible to every deploy. |
-| A run repeats every step | Each run creates a new SMTP2GO password for the guest and rewrites `/etc/msmtprc`. Tack mounts that file into a container, and the mount goes stale. |
-| The in-guest play needs guest SSH | A guest with broken SSH needs a second code path through `pct push`. The sshd files are written twice, once by each path. |
-| A half-finished run needs a guard | The play deletes the marker first and writes it last. Six service deploys read it. |
+| The preparation playbook repeats every step. | Each run creates a new SMTP2GO password for the guest and rewrites `/etc/msmtprc`. Tack mounts that file into a container, and the mount goes stale. |
+| The preparation playbook requires guest SSH. | A guest with broken SSH needs a second code path through `pct push`. The sshd files are written twice, once by each path. |
+| The preparation playbook uses a completion marker. | The play deletes the marker first and writes it last. Six service deploys read it. |
 
 ## Contract
 
@@ -54,9 +54,8 @@ guests works on the resources.
 | `pveguest_systemd_unit` | Enabled state, active state, and restart triggers | `systemctl is-enabled` and `systemctl is-active` |
 
 The apt and systemd command logic follows `neuspaces/system` (MPL-2.0) as a
-reference. Its known defects are fixed in the new code: a missing unit is a
-normal Read result, a missing file is a normal Read result, and
-`apt-get update` runs only before an install and reports its own error.
+reference. Read treats missing files and units as absent resources.
+`apt-get update` runs only before installation and reports its own error.
 
 ### 3. Drift
 
@@ -86,10 +85,9 @@ hash recorded at the last apply.
 
 ### 6. Guest module
 
-One shared module declares the base state of one guest. The `guest` workspace
-(section 10) instantiates it with `for_each` over guests from the Ansible
-service mapping, in the same shape as the overlay module. A guest joins
-through an explicit enrolled set.
+One shared module declares the base state of one guest. The guest workspace
+creates one module instance for each enrolled guest from the Ansible service
+mapping. A guest joins through an explicit enrolled set.
 
 | `prep-guests` item | Declaration |
 | --- | --- |
@@ -105,8 +103,8 @@ through an explicit enrolled set.
 | Mail relay file | `pveguest_file` with `content_wo` |
 | Hostname | Already declared by the Proxmox provider for containers |
 
-The timezone is one declared value. It no longer follows the clock of the
-machine that runs the play.
+The guest module uses the declared timezone instead of the deployment
+machine's timezone.
 
 ### 7. Mail credential
 
@@ -116,12 +114,10 @@ number creates a new password, updates the SMTP2GO user, and rewrites the
 file. A `check` block reads the SMTP2GO user and warns when it is missing or
 blocked.
 
-A leaked password affects one guest.
-
 ### 8. Readiness gate
 
-The marker file is removed. State is the record of each item, and a plan with
-no changes is the proof that a guest matches its declaration.
+The marker file is removed. OpenTofu records each declared resource in state.
+The readiness gate requires a plan with zero changes.
 
 `configsctl deploy` runs a plan of the `guest` workspace for the target guest
 before a service deploy and refuses to deploy when the plan reports a change
@@ -203,8 +199,8 @@ The existing OpenTofu files become one workspace without a state change.
 - AC7: Two applies in a row do not change the SMTP2GO password or
   `/etc/msmtprc`. A higher version number changes both.
 - AC8: Exclude mail passwords from state files and plan output.
-- AC9: `configsctl deploy` refuses a service deploy for a guest with a pending
-  plan change and proceeds for a guest with none.
+- AC9: `configsctl deploy` rejects a guest with pending plan changes and
+  permits a guest when its plan reports zero changes.
 - AC10: A plan with one stopped guest fails with an error that includes the
   guest, and the same plan with `-exclude` for that guest succeeds.
 - AC11: The MWAN VM on suburban passes AC1 through AC4 through the guest
