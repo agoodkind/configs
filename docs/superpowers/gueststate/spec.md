@@ -66,8 +66,9 @@ Read does not modify the guest.
 ### 4. Restart on change
 
 `pveguest_systemd_unit` has a `restart_on` map. A changed value in the map
-restarts the unit during apply. The map values are file hashes. This replaces
-Ansible handlers.
+restarts the unit during apply. The map values are the `write_id` of each file
+that the unit reads. `pveguest_file` changes `write_id` at every write. This
+replaces Ansible handlers.
 
 `pveguest_file` writes a temporary file, sets mode and owner, and renames it.
 An optional `validate` command runs on the temporary file before the rename.
