@@ -1,0 +1,9 @@
+# Managed by OpenTofu (opentofu/guest/base).
+export PREP_CTS_SERVICE="${service}"
+export PREP_CTS_LOGIN_DIR="${login_dir}"
+
+if [ -n "$${PS1-}" ] && [ -n "$${PREP_CTS_LOGIN_DIR-}" ]; then
+  if [ -d "$${PREP_CTS_LOGIN_DIR}" ] && [ "$${PWD-}" != "$${PREP_CTS_LOGIN_DIR}" ]; then
+    cd "$${PREP_CTS_LOGIN_DIR}"
+  fi
+fi
