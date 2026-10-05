@@ -1,6 +1,8 @@
 # Hardware-switched link between router containers
 
-This design connects an MWAN gateway container and a router container through the Broadcom network card on poweredge. The router runs Kea, Unbound, and nftables. The design does not use a Linux bridge between the containers.
+This design connects an MWAN gateway container and a router container through
+the Broadcom network card on poweredge. The router runs Kea, Unbound, and
+nftables. The design does not use a Linux bridge between the containers.
 
 ## Terms
 
@@ -21,26 +23,39 @@ port. The card switches frames between the VFs of one port.
 | `nic1` | Link between the containers | VF 0 to container 1, VF 1 to container 2 |
 | `nic3`, `ens1f1` | Unused | Host |
 
-The host must not assign addresses to nic0 through nic3 or add these ports to a bridge.
+The host must not assign addresses to `nic0` through `nic3` or add these ports
+to a bridge.
 
 ### The link between the containers
 
-Configure two virtual functions on nic1. Assign each virtual function a fixed MAC address and force its link state up. The physical port does not have a cable. The card must switch Ethernet frames between the virtual functions.
+Configure two virtual functions on `nic1`. Assign each virtual function a
+fixed MAC address and force its link state up. The physical port does not have
+a cable. The card must switch Ethernet frames between the virtual functions.
 
-The containers share the host kernel. Each container has a separate network namespace for routing and filtering.
+Set the fixed MAC address before the virtual function driver binds. The
+driver reads the permanent MAC address when it binds.
+
+The containers share the host kernel. Each container has a separate network
+namespace for routing and filtering.
 
 ### How a container gets its devices
 
-Proxmox assigns the existing port and virtual function to the container network namespace at startup. Proxmox returns both devices to the host when the container stops. These interfaces do not use veth pairs.
+Proxmox assigns the existing port and virtual function to the container
+network namespace at startup. Proxmox returns both devices to the host when
+the container stops. These interfaces do not use `veth` pairs.
 
 ### Container 1: MWAN
 
 - Container 1 is unprivileged.
 - Container 1 has two devices: `wan` (port `nic2`) and `mwanbr` (VF 0).
-- Container 1 does not have a management interface. The host executes container commands with pct.
-- MWAN finds each device by name. The container config sets the names `wan`
-  and `mwanbr`. MWAN does not look up a MAC address and does not rename a
-  device in a container.
+- Container 1 does not have a management interface. The host executes
+  container commands with `pct`.
+- The container config sets the device names `wan` and `mwanbr`. MWAN does
+  not rename a device in a container.
+- The stock `nftables.service` in container 1 is masked. MWAN owns the
+  `inet filter` table.
+- The sysrepo packages from the MWAN release are installed before
+  `mwan install` runs.
 - MWAN loads eBPF programs. An unprivileged container needs a BPF token for
   the load. Proxmox mounts a BPF filesystem with delegation in container 1 at
   each start.
@@ -56,7 +71,8 @@ Proxmox assigns the existing port and virtual function to the container network 
 
 ### Permissions
 
-The completed implementation must use the automation token and scoped overlay privileges for Proxmox operations. It must not require a root login.
+The completed implementation must use the automation token and scoped overlay
+privileges for Proxmox operations. It must not require a root login.
 
 | Step | Overlay privilege |
 | --- | --- |
@@ -65,7 +81,8 @@ The completed implementation must use the automation token and scoped overlay pr
 | Mount the BPF filesystem with delegation | `VM.Config.BPFDelegate` |
 | Run commands and write files in a container | `VM.Guest.Exec`, `VM.Guest.FileRead`, `VM.Guest.FileWrite` |
 
-The recorded tests used root commands. Operation through the automation token remains an acceptance requirement.
+The recorded tests used root commands. Operation through the automation token
+remains an acceptance requirement.
 
 ## Test results
 
@@ -78,6 +95,9 @@ Poweredge, 2026-10-04, card firmware 236.1.173.0, kernel 7.0.14-20-pve.
 | VFs per port after SR-IOV is switched on | 8 |
 | Create VFs on a port that is set down | Rejected by the driver |
 | Create 2 VFs on `nic1` (no cable), force link up | Both links up |
+| Reboot poweredge | `nic1` has two VFs with the fixed MAC addresses and enabled links |
+| `ethtool -P` on a VF after the reboot | Not set |
+| `ethtool -P` on a VF after an unbind and bind of the VF driver | The fixed MAC address |
 | Each SFP port is in its own IOMMU group | Yes |
 
 ### Link
@@ -111,6 +131,27 @@ The test mount permitted the following BPF operations.
 | Program types | `sched_cls`, `socket_filter` |
 | Attach types | `tcx_ingress`, `tcx_egress`, `cgroup_inet_ingress` |
 
+### MWAN gateway in an unprivileged container
+
+Release `ab73e2c`, role `wan`, one provider on `wan`, internal link on
+`mwanbr`. The BPF mount came from a root helper with every operation
+delegated.
+
+| Test | Result |
+| --- | --- |
+| `mwan install --role wan --apply` without the sysrepo packages | Crash (MWAN-557) |
+| `mwan install --role wan --apply` with the sysrepo packages | Pass |
+| First start with the stock `nftables.service` enabled | Fail: the firewall baseline rejects the existing `inet filter` table |
+| Start after `nftables.service` is masked | `mwan-ifmgr@wan.service` active, 0 restarts |
+| `mwan-agent.service` with no vsock | Active, TCP port 50052 |
+| nftables tables | `inet filter` with input policy drop, `inet mwan_steer`, `ip6 nat`, `ip nat`, `inet mangle` |
+| NPTv6 filters on `wan` and `mwanbr`, ingress and egress | Attached |
+| Devices found by name, owner `networkd`, link files hand-authored | Pass |
+| DHCPv4 on `wan` from the uplink | Address and default gateway received |
+| Provider health | Unhealthy: no IPv4 reply arrives on `wan`, and the uplink offers no IPv6 default route |
+| Uplink ping with MWAN stopped and nftables rules removed | The capture recorded requests and did not record replies. |
+| Policy rules and provider default route | The daemon did not install them while the provider was unhealthy. |
+
 ### Speed of rollback
 
 | Step | Time |
@@ -121,11 +162,12 @@ The test mount permitted the following BPF operations.
 
 ## Not tested yet
 
-- The VFs after a reboot of poweredge.
-- MWAN in a container with devices found by name. The production VM runs
-  MWAN in that mode. No container has run it.
-- The full `mwan` program in the container. The test loaded only the NPT
-  eBPF programs.
+- The VF setup applied through OpenTofu. The recorded tests used a
+  hand-edited host network file.
+- A healthy provider verdict in the container, with policy rules and the
+  provider default route installed.
+- The gateway with the narrow BPF delegation and with the mount made by
+  Proxmox at container start.
 - The MWAN deploy for a container. The deploy supports only a VM.
 
 ## Limits
@@ -135,13 +177,21 @@ The test mount permitted the following BPF operations.
 - `ens1f0` and `ens1f1` are in one IOMMU group. Both stay on the host.
 - A change of the SR-IOV setting needs a reboot of poweredge.
 
-## Done when
+## Acceptance criteria
 
-1. After a host reboot, nic1 has two virtual functions with the configured MAC addresses and enabled links.
-2. Container 1 has nic2 and virtual function 0. Container 2 has nic0 and virtual function 1.
-3. The containers exchange ping replies without a host bridge.
-4. The nic1 host receive counter does not increase for those ping frames.
-5. A stopped container returns its devices, and a start takes them again.
-6. The host management address remains configured on ens1f0 throughout the test.
-7. MWAN runs in the unprivileged gateway container with NPTv6 loaded.
-8. The completed automation executes all Proxmox operations through the scoped token privileges.
+- AC1: After a reboot of poweredge, `nic1` has two virtual functions with the
+  configured MAC addresses and enabled links.
+- AC2: With both containers running, container 1 has `nic2` and virtual
+  function 0. Container 2 has `nic0` and virtual function 1. The host does not
+  have any of those four devices in its network namespace.
+- AC3: The containers exchange ping replies without a host bridge.
+- AC4: The `nic1` receive counter on the host does not increase for those
+  ping frames.
+- AC5: Proxmox returns assigned devices to the host after the container
+  stops. Proxmox assigns those devices to the container network namespace at
+  its next start.
+- AC6: The host management address is on `ens1f0` before and after each of
+  AC1 through AC5.
+- AC7: MWAN runs in the unprivileged gateway container with NPTv6 loaded.
+- AC8: The automation token performs every Proxmox operation in AC1 through
+  AC7 with scoped overlay privileges.
