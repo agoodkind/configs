@@ -45,7 +45,7 @@
           - tack_audit_consumer_digest is match('sha256:[0-9a-f]{64}\Z')
           - >-
             tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
-            'audit signers',
+            'audit signers', 'audit query',
             'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
             'ops backfill once-search-projections',
             'ops search provision', 'ops search reindex', 'ops search verify']
@@ -132,8 +132,13 @@
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }}
         chdir: "{{ tack_install_dir }}"
+      register: tack_ops_dry_run
       changed_when: false
       check_mode: false
+
+    - name: Show the output of the dry run
+      ansible.builtin.debug:
+        msg: "{{ tack_ops_dry_run.stdout_lines }}"
 
     - name: Run the Tack ops command with --execute
       ansible.builtin.command:
@@ -143,5 +148,11 @@
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }} --execute
         chdir: "{{ tack_install_dir }}"
+      register: tack_ops_execute_run
       changed_when: true
       when: tack_ops_execute | bool
+
+    - name: Show the output of the --execute run
+      ansible.builtin.debug:
+        msg: "{{ tack_ops_execute_run.stdout_lines }}"
+      when: tack_ops_execute_run is not skipped
