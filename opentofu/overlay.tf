@@ -3,14 +3,14 @@ locals {
     file("${path.module}/../ansible/inventory/group_vars/all/service_mapping.yml")
   ).service_mapping.suburban_hypervisor
 
-  # The guest exec and file API is at dafd0319. Vault installs it after the
-  # MWAN cutover.
+  # The guest exec and file API is at dafd0319. Suburban installs it after
+  # poweredge passes acceptance, and vault after the MWAN cutover.
   overlay_hosts = {
     suburban = {
       ssh_host  = local.suburban_hypervisor.ipv6
       node_name = "hypervisor"
-      commit    = "dafd0319fda87ee71694d371213531d151ba9249"
-      guest_api = true
+      commit    = "bb4324db0f2bf3caef9cd5569e1b3b0afb411aea"
+      guest_api = false
     }
     poweredge = {
       ssh_host  = "poweredge.home.goodkind.io"
