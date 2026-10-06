@@ -16,6 +16,7 @@ module TackOpsPlaybook
   VERIFY_TASK = 'Verify that the guest runs the Tack images for tack_commit'
   DRY_RUN_TASK = 'Print the dry run of the Tack ops command'
   EXECUTE_TASK = 'Run the Tack ops command with --execute'
+  EXECUTE_OUTPUT_TASK = 'Show the output of the --execute run'
   QA_HOSTS = %w[tack-qa tack-data1-suburban tack-data2-suburban tack-data3-suburban].freeze
   PRODUCTION_HOSTS = %w[tack tack-data1 tack-data2 tack-data3].freeze
   GROUPS = { 'tack_qa_all' => QA_HOSTS, 'tack_prod_all' => PRODUCTION_HOSTS }.freeze
@@ -55,6 +56,19 @@ module TackOpsPlaybook
     rendered = TaskExpressions.render_task({}, 'cmd' => task(plays[1], name).dig('ansible.builtin.command', 'cmd'))
     variables = request('tack_ops_command' => command, 'tack_ops_args' => args).merge('tack_ops_identity_flags' => AGENT_FLAGS)
     TaskExpressions.evaluate(variables: variables, facts: [], renders: [rendered])['renders'][0]['cmd'].split
+  end
+
+  # Whether the --execute output task runs for a registered --execute result,
+  # and the message it prints when it runs.
+  def execute_output(registered)
+    output_task = task(plays[1], EXECUTE_OUTPUT_TASK)
+    conditions = { 'runs' => TaskExpressions.condition_list(output_task['when']) }
+    variables = { 'tack_ops_execute_run' => registered }
+    runs = TaskExpressions.evaluate(variables: variables, facts: [], conditions: conditions).dig('conditions', 'runs')
+    return [runs, nil] unless runs
+
+    rendered = TaskExpressions.render_task({}, 'msg' => output_task.dig('ansible.builtin.debug', 'msg'))
+    [runs, TaskExpressions.evaluate(variables: variables, facts: [], renders: [rendered])['renders'][0]['msg']]
   end
 
   REFUSED_REQUESTS = {
@@ -120,5 +134,22 @@ RSpec.describe TackOpsPlaybook do
     expect(described_class.request_passes('tack_ops_command' => command)).to be(true)
     expect(dry_run).to eq(%w[docker compose run --rm tack-ops ops audit prove-schema-guard] + flags)
     expect(execute).to eq(%w[docker compose run --rm tack-ops ops audit prove-schema-guard] + flags + ['--execute'])
+  end
+
+  it 'accepts audit query with a verb and an RFC3339 window and runs it in the app service', :aggregate_failures do
+    args = ['--org=0190a3c4-7d2e-7c1a-9f3b-2b6e8d4c1a5f', '--action=ops.audit_schema_guard_proof',
+            '--oldest=2026-10-06T10:00:00Z', '--latest=2026-10-06T11:00:00Z']
+    execute = described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: 'audit query', args: args)
+
+    expect(described_class.request_passes('tack_ops_command' => 'audit query', 'tack_ops_args' => args)).to be(true)
+    expect(execute).to eq(%w[docker compose run --rm app audit query] + args + TackOpsPlaybook::AGENT_FLAGS.split + ['--execute'])
+  end
+
+  it 'prints the --execute output only after the --execute task ran', :aggregate_failures do
+    report = '{"command":"ops.audit_schema_guard_proof"}'
+    ran = TaskExpressions.command_result(0, report, '').merge('stdout_lines' => [report])
+
+    expect(described_class.execute_output(ran)).to eq([true, [report]])
+    expect(described_class.execute_output({ 'changed' => false, 'skipped' => true })).to eq([false, nil])
   end
 end
