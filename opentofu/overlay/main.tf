@@ -46,6 +46,23 @@ variable "automation_user" {
   type        = string
 }
 
+variable "kernel_modules" {
+  description = "A null value disables kernel module API access for the automation user by removing the ScopedKernelModules role and its ACL. An object grants ScopedKernelModules on /. The API accepts only entries in allow. An empty allow list permits no modules. The selected overlay commit must provide the kernel module API."
+  type = object({
+    allow = list(string)
+  })
+  default = null
+
+  validation {
+    condition = (
+      var.kernel_modules == null
+      ? true
+      : alltrue([for name in var.kernel_modules.allow : can(regex("^[a-z0-9_]+$", name))])
+    )
+    error_message = "Each kernel module name must contain at least one character and use only lowercase letters (a-z), digits (0-9), or underscores."
+  }
+}
+
 variable "acme_account" {
   description = "Name of the ACME account that the automation user manages."
   type        = string
@@ -105,7 +122,19 @@ locals {
     }
   } : {}
 
-  roles = merge(local.guest_api_roles, {
+  kernel_modules_allow = var.kernel_modules == null ? [] : var.kernel_modules.allow
+
+  kernel_modules_roles = var.kernel_modules != null ? {
+    ScopedKernelModules = {
+      path = "/"
+      privileges = [
+        "Sys.KernelModules.Audit",
+        "Sys.KernelModules.Modify",
+      ]
+    }
+  } : {}
+
+  roles = merge(local.guest_api_roles, local.kernel_modules_roles, {
     ScopedContainerFeatures = {
       path = "/"
       privileges = [
@@ -175,10 +204,20 @@ locals {
     ]),
   ]
 
+  kernel_modules_revoke_commands = var.kernel_modules != null ? [] : [
+    join(" ", [
+      "if pveum role list --output-format json | grep -q '\"roleid\":\"ScopedKernelModules\"';",
+      "then pveum acl delete / --users ${var.automation_user} --roles ScopedKernelModules;",
+      "pveum role delete ScopedKernelModules; fi",
+    ]),
+  ]
+
   revoke_commands = concat([
     "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
     "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
-  ], local.guest_api_revoke_commands)
+  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands)
+
+  allowlist_path = "/etc/pve-overlay/kernel-modules.allow"
 }
 
 data "http" "files" {
@@ -246,4 +285,36 @@ resource "terraform_data" "grant" {
   provisioner "remote-exec" {
     inline = concat(["set -eu"], local.grant_commands, local.revoke_commands)
   }
+}
+
+resource "terraform_data" "allowlist_directory" {
+  count = length(local.kernel_modules_allow) > 0 ? 1 : 0
+
+  connection {
+    type  = "ssh"
+    host  = var.ssh_host
+    user  = "root"
+    agent = true
+  }
+
+  provisioner "remote-exec" {
+    inline = ["install -d -m 0755 -o root -g root ${dirname(local.allowlist_path)}"]
+  }
+}
+
+# The API treats a missing allowlist file as an empty allowlist.
+resource "remote_file" "kernel_modules_allow" {
+  count = length(local.kernel_modules_allow) > 0 ? 1 : 0
+
+  conn {
+    host  = local.remote_host
+    user  = "root"
+    agent = true
+  }
+
+  path        = local.allowlist_path
+  content     = "${join("\n", local.kernel_modules_allow)}\n"
+  permissions = "0644"
+
+  depends_on = [terraform_data.allowlist_directory]
 }
