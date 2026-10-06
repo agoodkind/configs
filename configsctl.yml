@@ -7,3 +7,8 @@ tofu:
   # `./configsctl tofu` exports a vault key <env_key_prefix><NAME> as the
   # environment variable <NAME>.
   env_key_prefix: vault_tofu_env_
+deploy:
+  # For non-check deploys, `./configsctl deploy` reads each declared variable
+  # on each play host and locks the named inventory host with the play hosts.
+  lock_host_variables:
+    deploy-mwan: [mwan_proxmox_delegate]

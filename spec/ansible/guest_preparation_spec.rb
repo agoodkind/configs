@@ -28,6 +28,7 @@ module GuestPreparation
       FileUtils.mkdir_p(playbook_directory)
       FileUtils.cp_r(File.join(REPOSITORY_ROOT, 'ansible', 'playbooks', '.'), playbook_directory)
       FileUtils.cp(File.join(REPOSITORY_ROOT, 'configsctl'), File.join(directory, 'configsctl'))
+      FileUtils.cp(File.join(REPOSITORY_ROOT, 'configsctl.yml'), File.join(directory, 'configsctl.yml'))
       FileUtils.cp(FIXTURE_PLAYBOOK, File.join(playbook_directory, 'guest-preparation.yml'))
       FileUtils.cp(GROUP_FIXTURE_PLAYBOOK, File.join(playbook_directory, 'guest-preparation-group.yml'))
       File.write(File.join(ansible_directory, 'inventory.ini'), "localhost ansible_connection=local\n")
