@@ -354,3 +354,4 @@ testbed_isp_lxcs:
 
 # Testbed-only: testbed failover LXC id used by deploy-testbed.yml
 failover_lxc_id: "{{ service_mapping.mwan_failover_suburban.vmid }}"
+failover_agent_tcp_addr: "[{{ service_mapping.mwan_failover_suburban.ipv6 }}]:50052"

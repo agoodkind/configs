@@ -61,6 +61,7 @@ rollback_lock_file = "{{ mwan_watchdog_lock_file }}"
 
 [failover]
 lxc_id = "{{ failover_lxc_id }}"
+agent_tcp_addr = "{{ failover_agent_tcp_addr }}"
 
 [opnsense.host]
 upstream = "{{ mwan_opnsense_host_upstream }}"
