@@ -13,7 +13,7 @@ locals {
     poweredge = {
       ssh_host  = "poweredge.home.goodkind.io"
       node_name = "poweredge"
-      commit    = "dafd0319fda87ee71694d371213531d151ba9249"
+      commit    = "64ca5c25c1ec6536ee6444a0f02a3e2cf8d23bbc"
       guest_api = true
     }
     vault = {
