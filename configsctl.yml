@@ -7,6 +7,30 @@ tofu:
   # `./configsctl tofu` exports a vault key <env_key_prefix><NAME> as the
   # environment variable <NAME>.
   env_key_prefix: vault_tofu_env_
+  # Keys are workspace paths relative to the repository root.
+  # An apply of a saved plan locks the hosts declared for its changes.
+  # A change with no declaration locks every host in proxmox_servers and
+  # tofu_lock_hosts.
+  lock_targets:
+    opentofu:
+      module_hosts:
+        module.vault: vault
+        module.suburban: suburban
+      module_key_hosts:
+        module.overlay:
+          suburban: suburban
+          poweredge: poweredge
+          vault: vault
+    opentofu/guest:
+      # Keys are pveguest_* resource node values. The node is the second label
+      # of the guest hostname, not a Proxmox node name.
+      node_hosts:
+        suburban: suburban
+        poweredge: poweredge
+      # Keys use "<node>/<vmid>". Each value is the guest's inventory host
+      # from the service_mapping inventory.
+      guest_hosts:
+        suburban/224: clyde.suburban.goodkind.io
 deploy:
   # For non-check deploys, `./configsctl deploy` reads each declared variable
   # on each play host and locks the named inventory host with the play hosts.
