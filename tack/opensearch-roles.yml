@@ -33,6 +33,7 @@ tack_search:
     - cluster:admin/opensearch/ml/deploy_model_on_nodes
     - cluster:admin/opensearch/ml/models/get
     - cluster:admin/opensearch/ml/tasks/get
+    - cluster:admin/opensearch/ml/tasks/search
     - cluster:admin/opensearch/ml/profile/nodes
     - cluster:admin/opensearch/ml/predict
     # Under the least_load dispatch policy, a predict request reads ML node
