@@ -167,10 +167,18 @@ locals {
 
   # Earlier grants put these roles on /vms and /nodes/<node>. `pveum acl
   # delete` succeeds when the entry is absent.
-  revoke_commands = [
+  guest_api_revoke_commands = var.guest_api ? [] : [
+    join(" ", [
+      "if pveum role list --output-format json | grep -q '\"roleid\":\"ScopedGuestExec\"';",
+      "then pveum acl delete / --users ${var.automation_user} --roles ScopedGuestExec;",
+      "pveum role delete ScopedGuestExec; fi",
+    ]),
+  ]
+
+  revoke_commands = concat([
     "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
     "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
-  ]
+  ], local.guest_api_revoke_commands)
 }
 
 data "http" "files" {
