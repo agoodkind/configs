@@ -111,6 +111,8 @@ mwan_gate_collect_addresses:
   - "{{ service_mapping.vault_hypervisor.ipv6_oob }}"
 mwan_deploy_gate_families: "ipv4,ipv6"
 mwan_deploy_gate_consecutive_rounds: "3"
+mwan_links_state_file: "/var/lib/mwan/owned-links.json"
+mwan_autoconfiguration_state_file: "/var/lib/mwan/owned-kernel.json"
 mwan_deploy_probe:
   opnsense_vmid: "{{ service_mapping.opnsense.vmid }}"
   ipv4_source: "{{ mwan_opnsense_internal_v4 }}"
