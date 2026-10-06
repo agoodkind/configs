@@ -7,8 +7,8 @@ locals {
     suburban = {
       ssh_host  = local.suburban_hypervisor.ipv6
       node_name = "hypervisor"
-      commit    = "bb4324db0f2bf3caef9cd5569e1b3b0afb411aea"
-      guest_api = false
+      commit    = "dafd0319fda87ee71694d371213531d151ba9249"
+      guest_api = true
     }
     poweredge = {
       ssh_host  = "poweredge.home.goodkind.io"
