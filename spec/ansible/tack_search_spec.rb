@@ -10,13 +10,17 @@ module TackSearchEnvironment
   GROUP_VARS_DIRECTORY = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars')
   PRODUCTION_ENDPOINT = 'https://[3d06:bad:b01::254]:9200'
   QA_ENDPOINT = 'https://[3d06:bad:b01:210::5]:9200'
-  # Tack reads these settings without a compiled default, and the deployment
-  # plan requires the public search switch. PUBLIC_SETTING_NAMES adds
-  # OPENSEARCH_CURSOR_KEY. Tack reads that key and the env file renders it only
+  # The spec requires the env file to render every setting in SETTING_NAMES.
+  # Most settings lack compiled defaults in Tack. The deployment plan requires
+  # OPENSEARCH_PUBLIC_ENABLED. Configs renders OPENSEARCH_MODEL_REPAIR_ENABLED
+  # explicitly for each environment despite Tack's compiled default of false.
+  # PUBLIC_SETTING_NAMES adds OPENSEARCH_CURSOR_KEY. Tack reads the key only
+  # while public search is on. The env file renders OPENSEARCH_CURSOR_KEY only
   # while public search is on.
   SETTING_NAMES = %w[
-    OPENSEARCH_CA OPENSEARCH_ENDPOINT OPENSEARCH_PASSWORD OPENSEARCH_PUBLIC_ENABLED
-    OPENSEARCH_REPLICAS OPENSEARCH_ROUTING_SHARDS OPENSEARCH_SHARDS OPENSEARCH_USERNAME
+    OPENSEARCH_CA OPENSEARCH_ENDPOINT OPENSEARCH_MODEL_REPAIR_ENABLED OPENSEARCH_PASSWORD
+    OPENSEARCH_PUBLIC_ENABLED OPENSEARCH_REPLICAS OPENSEARCH_ROUTING_SHARDS OPENSEARCH_SHARDS
+    OPENSEARCH_USERNAME
   ].freeze
   PUBLIC_SETTING_NAMES = (SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY]).sort.freeze
   # ENABLED turns on search. PUBLIC turns on search and public search results.
@@ -89,6 +93,7 @@ RSpec.describe TackSearchEnvironment do
       'OPENSEARCH_ROUTING_SHARDS' => '8',
       'OPENSEARCH_REPLICAS' => '0',
       'OPENSEARCH_PUBLIC_ENABLED' => 'true',
+      'OPENSEARCH_MODEL_REPAIR_ENABLED' => 'true',
       'OPENSEARCH_CURSOR_KEY' => 'render-only-vault_tack_qa_search_cursor_key'
     )
     expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::PUBLIC_SETTING_NAMES)
@@ -98,7 +103,7 @@ RSpec.describe TackSearchEnvironment do
     expect(described_class.search_settings(TackSearchInventory.rendered(:production))).to be_empty
   end
 
-  %i[production qa].each do |environment|
+  { production: 'false', qa: 'true' }.each do |environment, model_repair|
     it "renders the #{environment} cursor key from the vault when public search is on" do
       rendered = TackSearchInventory.rendered(environment, overrides: TackSearchEnvironment::PUBLIC)
       prefix = environment == :qa ? 'vault_tack_qa' : 'vault_tack'
@@ -106,6 +111,7 @@ RSpec.describe TackSearchEnvironment do
 
       expect(settings).to include(
         'OPENSEARCH_PUBLIC_ENABLED' => 'true',
+        'OPENSEARCH_MODEL_REPAIR_ENABLED' => model_repair,
         'OPENSEARCH_CURSOR_KEY' => "render-only-#{prefix}_search_cursor_key"
       )
       expect(settings.keys.sort).to eq(TackSearchEnvironment::PUBLIC_SETTING_NAMES)
