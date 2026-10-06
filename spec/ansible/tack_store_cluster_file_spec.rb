@@ -69,7 +69,8 @@ module TackStoreClusterFile
     'tack_search_shards' => 1,
     'tack_search_routing_shards' => 1,
     'tack_search_replicas' => 0,
-    'tack_search_public_enabled' => false
+    'tack_search_public_enabled' => false,
+    'tack_search_model_repair_enabled' => false
   }.freeze
 
   module_function
