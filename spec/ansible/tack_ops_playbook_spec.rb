@@ -110,4 +110,15 @@ RSpec.describe TackOpsPlaybook do
     expect(dry_run).to eq(%w[docker compose run --rm app ops qa datagen seed --scale=small] + flags)
     expect(execute).to eq(%w[docker compose run --rm tack-ops ops deploy verify] + flags + ['--execute'])
   end
+
+  it 'accepts ops audit prove-schema-guard and runs it in the tack-ops service', :aggregate_failures do
+    flags = TackOpsPlaybook::AGENT_FLAGS.split
+    command = 'ops audit prove-schema-guard'
+    dry_run = described_class.command_line(TackOpsPlaybook::DRY_RUN_TASK, command: command)
+    execute = described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: command)
+
+    expect(described_class.request_passes('tack_ops_command' => command)).to be(true)
+    expect(dry_run).to eq(%w[docker compose run --rm tack-ops ops audit prove-schema-guard] + flags)
+    expect(execute).to eq(%w[docker compose run --rm tack-ops ops audit prove-schema-guard] + flags + ['--execute'])
+  end
 end

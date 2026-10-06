@@ -44,7 +44,8 @@
           - tack_server_digest is match('sha256:[0-9a-f]{64}\Z')
           - tack_audit_consumer_digest is match('sha256:[0-9a-f]{64}\Z')
           - >-
-            tack_ops_command in ['ops deploy verify', 'audit signers',
+            tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
+            'audit signers',
             'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
             'ops backfill once-search-projections',
             'ops search provision', 'ops search reindex', 'ops search verify']
@@ -127,7 +128,7 @@
       ansible.builtin.command:
         cmd: >-
           docker compose run --rm
-          {{ 'tack-ops' if tack_ops_command == 'ops deploy verify' else 'app' }}
+          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard'] else 'app' }}
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }}
         chdir: "{{ tack_install_dir }}"
@@ -138,7 +139,7 @@
       ansible.builtin.command:
         cmd: >-
           docker compose run --rm
-          {{ 'tack-ops' if tack_ops_command == 'ops deploy verify' else 'app' }}
+          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard'] else 'app' }}
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }} --execute
         chdir: "{{ tack_install_dir }}"
