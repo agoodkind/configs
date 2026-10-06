@@ -3,8 +3,6 @@ locals {
     file("${path.module}/../ansible/inventory/group_vars/all/service_mapping.yml")
   ).service_mapping.suburban_hypervisor
 
-  # The guest exec and file API is at dafd0319. Suburban installs it after
-  # poweredge passes acceptance, and vault after the MWAN cutover.
   overlay_hosts = {
     suburban = {
       ssh_host  = local.suburban_hypervisor.ipv6

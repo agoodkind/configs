@@ -27,17 +27,17 @@ variable "node_name" {
 }
 
 variable "commit" {
-  description = "Commit of agoodkind/proxmox-overlays that the hypervisor installs."
+  description = "The hypervisor installs this commit from agoodkind/proxmox-overlays."
   type        = string
 
   validation {
     condition     = can(regex("^[0-9a-f]{40}$", var.commit))
-    error_message = "commit must be a full 40-character commit hash."
+    error_message = "commit must contain exactly 40 lowercase hexadecimal characters."
   }
 }
 
 variable "guest_api" {
-  description = "Grant the guest exec and file privileges. The commit must include the guest API."
+  description = "The automation user can execute guest commands and read and write guest files when this option is true. The selected commit must provide the guest API."
   type        = bool
 }
 
@@ -57,8 +57,6 @@ variable "acme_plugin" {
 }
 
 locals {
-  # A change of var.commit changes the content of remote_file.files, and
-  # terraform_data.apply then reruns `pve-overlay apply`.
   source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${var.commit}"
   script = "/usr/local/sbin/pve-overlay"
 
