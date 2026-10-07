@@ -80,9 +80,8 @@ tack_docker_held_packages:
   - docker-compose-plugin
   - docker-ce-rootless-extras
 
-# The engine's superuser, used by the ops sidecar for migrations, role
-# seeding, and backups, and by the engine's own first boot. The application
-# no longer connects as it: its DATABASE_URL uses tack_app (TACK-180).
+# Bootstrap of an empty ledger requires yugabyte before role seeding creates
+# tack_migrator and the other roles.
 tack_yugabyte_user: yugabyte
 tack_yugabyte_db: tack
 
@@ -190,7 +189,24 @@ tack_ledger_ssl_keywords: >-
 # addresses and the driver fails over across them, in keyword form because
 # the URL form rejects a comma list of bracketed IPv6 hosts (invalid
 # IP-literal). Legacy environments dial the guest that serves the store.
+#
+# Set tack_ops_migrator_login to true only after the environment's ledger has
+# migrations 018 and 019.
+tack_ops_migrator_login: false
+tack_ops_use_migrator: "{{ tack_ops_migrator_login | bool and not (tack_ledger_bootstrap | bool) }}"
+tack_ops_database_login: "{{ 'tack_migrator' if tack_ops_use_migrator | bool else tack_yugabyte_user }}"
+tack_ops_database_password: "{{ tack_migrator_password if tack_ops_use_migrator | bool else tack_yugabyte_password }}"
 tack_ops_database_url: >-
+  {{ ('host=' + tack_ledger_node_addresses.yb1 + ',' + tack_ledger_node_addresses.yb2 + ','
+      + tack_ledger_node_addresses.yb3 + ' port=5433 user=' + tack_ops_database_login
+      + ' password=' + tack_ops_database_password + ' dbname=' + tack_yugabyte_db
+      + ' ' + tack_ledger_ssl_keywords + ' connect_timeout='
+      + (tack_database_connect_timeout_seconds | string))
+     if tack_ledger_consumers_repointed
+     else ('postgres://' + tack_ops_database_login + ':' + tack_ops_database_password
+           + '@[' + tack_store_host + ']:5433/' + tack_yugabyte_db
+           + '?' + tack_ledger_ssl_query) }}
+tack_ledger_superuser_database_url: >-
   {{ ('host=' + tack_ledger_node_addresses.yb1 + ',' + tack_ledger_node_addresses.yb2 + ','
       + tack_ledger_node_addresses.yb3 + ' port=5433 user=' + tack_yugabyte_user
       + ' password=' + tack_yugabyte_password + ' dbname=' + tack_yugabyte_db
@@ -200,6 +216,11 @@ tack_ops_database_url: >-
      else ('postgres://' + tack_yugabyte_user + ':' + tack_yugabyte_password
            + '@[' + tack_store_host + ']:5433/' + tack_yugabyte_db
            + '?' + tack_ledger_ssl_query) }}
+
+tack_ledger_bootstrap_environment:
+  YUGABYTE_USER: "{{ tack_yugabyte_user }}"
+  YUGABYTE_PASSWORD: "{{ tack_yugabyte_password }}"
+  TACK_OPS_DATABASE_URL: "{{ tack_ledger_superuser_database_url }}"
 
 tack_log_level: debug
 tack_log_max_backups: 0
