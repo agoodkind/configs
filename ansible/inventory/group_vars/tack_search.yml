@@ -13,8 +13,7 @@ tack_ledger_node_name: ""
 # artifacts.opensearch.org that ML Commons downloads the pinned model from.
 #
 # The ML Commons memory breaker rejects predictions when used heap is at or
-# above 85 percent. G1PeriodicGCInterval=5000 enables periodic garbage
-# collection.
+# above 85 percent.
 tack_search_image: "opensearchproject/opensearch:3.8.0"
 tack_search_java_opts: "-Xms3g -Xmx3g -XX:G1PeriodicGCInterval=5000 -Djava.net.preferIPv6Addresses=true"
 tack_search_role_set: >-
