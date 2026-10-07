@@ -158,6 +158,44 @@ workspace's state.
 
 The existing OpenTofu files become one workspace without a state change.
 
+### 11. Host and guest dependencies
+
+A guest that needs a host capability declares that capability as a dependency
+of its guest module. OpenTofu applies the host side first.
+
+OpenTofu applies these dependencies in order for the PowerEdge MWAN gateway
+container (vmid 313, `mwan-poweredge`) and LAN container (vmid 314,
+`lan-poweredge`).
+
+1. `pveguest_host_kernel_modules` declares the 18 poweredge host kernel
+   modules. The resource uses the overlay methods
+   `GET /nodes/{node}/kernel-modules` and `PUT /nodes/{node}/kernel-modules`.
+2. The containers declare `bpfdelegate`, nesting, and `hostnicN` for WAN port
+   `nic2` and inter-container virtual functions `nic1v0` and `nic1v1`.
+3. OpenTofu installs the mwan binary and package bundle.
+4. OpenTofu installs the YANG files and sysrepo modules and data.
+5. `pveguest_file` writes `/etc/mwan/network.json` and the firewall files.
+   `validate` runs `mwan deploy-gate check-network` and
+   `mwan deploy-gate check-firewall`.
+6. OpenTofu applies the units with `restart_on` from those file writes.
+
+A plan fails before apply when a guest configuration requires a host or peer
+setting that the declared host configuration lacks. In MWAN-564, the
+hypervisor configuration omitted `[bgp]`. The watchdog never started a
+failover because it required `BGP.Enabled`.
+
+The mwan [network plan specification](https://github.com/agoodkind/mwan/pull/202)
+defines the network document and route plan semantics, schema authority, and
+validation boundary.
+
+For PowerEdge with the LAN dormant, a `lifecycle` precondition fails the plan
+when the gateway network document declares an interface outside the
+provider, parent, internal, and management roles, or a route on such an
+interface. A precondition on the container fails the plan when any gateway
+interface binds to `nic0`, `nic3`, or `ens1f1`, or to a bridge with one of
+those LAN ports. LAN client traffic, LAN forwarding, and LAN-facing services
+stay disabled until a separate user instruction.
+
 ## Boundaries
 
 - Service deploys remain in Ansible.
@@ -166,10 +204,12 @@ The existing OpenTofu files become one workspace without a state change.
 - The first version covers apt and systemd on Debian. Alpine guests are out of
   scope.
 - A VM file larger than 1 MiB exceeds the stdin limit of `qm guest exec`.
-- The guest module declares base state only. On the MWAN gateway the daemon
-  owns `/etc/systemd/network/10-mwan-*.link` and the `20-<interface>.*` files,
-  and the MWAN deploy owns `/etc/mwan/`. The guest module does not declare
-  files under those paths.
+- For the PowerEdge gateway, OpenTofu writes `/etc/mwan/network.json` and
+  the firewall file. The first apply requires deletion of the gateway's
+  Ansible `network.json` render and install task. The daemon owns
+  `/etc/systemd/network/10-mwan-*.link` and the `20-<interface>.*` files.
+  A configuration change restarts the unit through `restart_on`. Live reload
+  is deferred and is not part of this design.
 - The MWAN deploy and the hypervisor watchdog also use the guest agent of the
   gateway VM. An apply for an MWAN guest runs only in a window agreed with
   the MWAN deploy owner. The guest agent is unavailable for about 30 seconds
@@ -205,6 +245,30 @@ The existing OpenTofu files become one workspace without a state change.
   guest, and the same plan with `-exclude` for that guest succeeds.
 - AC11: The MWAN VM on suburban passes AC1 through AC4 through the guest
   agent.
+- AC12: A gateway plan fails before apply when the hypervisor configuration
+  lacks a setting required by the gateway configuration (MWAN-564). The
+  error states the missing setting.
+- AC13: A failover drill on the suburban testbed moves the BGP announcement
+  from the primary gateway to the failover container. The check reads the
+  failover container's announce state and the primary gateway's withdrawn
+  state instead of the watchdog log. The regression case is
+  `mwan watchdog failover` sending both withdraw and announce to the primary
+  agent without sending a request to container 216.
+- AC14: On PowerEdge with the LAN dormant, the preflight passes checks of
+  LAN forward drop counters, LAN forwarding sysctls of 0 in both containers,
+  absent DHCP, DNS, and router advertisement listeners on LAN, and a packet
+  capture on a LAN port. `mwan` starts with a ruleset equal to the rendered
+  configuration. BGP between the gateway and LAN container adds, replaces,
+  and withdraws `198.51.100.0/24` and `2001:db8:5::/48`.
+  `ip route show proto bgp table all` checks both documentation prefixes
+  after each operation. One WAN link down and up replaces and deletes the
+  provider-table default route. A firewall rule change restarts the unit
+  with the new ruleset and unchanged routes. The postflight equals the
+  preflight.
+- AC15: Before the gateway container starts, a plan reports the 18 poweredge
+  modules as loaded. `PUT /nodes/{node}/kernel-modules` rejects a token with
+  only `Sys.KernelModules.Audit` with HTTP 403. The HTTP 403 check passed on
+  poweredge on 2026-10-06 in pveguest pull request 7.
 
 ## Migration order
 
@@ -219,7 +283,10 @@ The existing OpenTofu files become one workspace without a state change.
 5. Add the plan gate to `configsctl deploy`.
 6. Enroll the poweredge guests, then the vault guests one group at a time. The
    proxy guest is last.
-7. Delete `prep-guests`, `deploy-ssh-keys`, the marker tasks, and their specs.
+7. Enroll the PowerEdge gateway and LAN containers after the mwan release
+   with the `guest-type` change, the `terraform-provider-mwan` release with
+   pull request 202, and the overlay release with the `hostnic` option.
+8. Delete `prep-guests`, `deploy-ssh-keys`, the marker tasks, and their specs.
 
 Tack epic LAB-65 tracks this work. LAB-71, LAB-72, LAB-74, and LAB-77 track
 the guest API transport.
