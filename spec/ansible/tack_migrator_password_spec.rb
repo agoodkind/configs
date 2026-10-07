@@ -5,9 +5,9 @@ require_relative '../support/tack_search_inventory'
 # `ops audit seed-roles` refuses an empty TACK_MIGRATOR_PASSWORD (TACK-554).
 RSpec.describe 'the tack_migrator password in the Tack environment file' do
   {
-    qa: %w[render-only-vault_tack_qa_migrator_password render-only-vault_tack_qa_yugabyte_password],
-    production: %w[render-only-vault_tack_migrator_password render-only-vault_tack_yugabyte_password]
-  }.each do |environment, (migrator_value, _superuser_value)|
+    qa: 'render-only-vault_tack_qa_migrator_password',
+    production: 'render-only-vault_tack_migrator_password'
+  }.each do |environment, migrator_value|
     it "renders the #{environment} vault key on the owner guest" do
       rendered = TackSearchInventory.rendered(environment)
 
@@ -42,8 +42,8 @@ RSpec.describe 'the tack_migrator password in the Tack environment file' do
                                 'YUGABYTE_PASSWORD' => 'render-only-vault_tack_yugabyte_password')
   end
 
-  # Provision on a from-empty rebuild reads TACK_OPS_DATABASE_URL from the
-  # .env before any run has created tack_migrator.
+  # The deploy-tack provision task reads TACK_OPS_DATABASE_URL from the rendered
+  # .env on a ledger bootstrap run before role seeding creates tack_migrator.
   it 'renders the QA ops sidecar URL with the superuser on a ledger bootstrap run', :aggregate_failures do
     rendered = TackSearchInventory.rendered(:qa, overrides: { 'tack_ledger_bootstrap' => true })
     url = rendered.settings(rendered.owner).fetch('TACK_OPS_DATABASE_URL')
