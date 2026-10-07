@@ -193,9 +193,12 @@ tack_ledger_ssl_keywords: >-
 # Set tack_ops_migrator_login to true only after the environment's ledger has
 # migrations 018 and 019.
 tack_ops_migrator_login: false
-tack_ops_database_login: "{{ 'tack_migrator' if tack_ops_migrator_login | bool else tack_yugabyte_user }}"
+tack_ops_database_login: >-
+  {{ 'tack_migrator' if tack_ops_migrator_login | bool and not (tack_ledger_bootstrap | bool)
+     else tack_yugabyte_user }}
 tack_ops_database_password: >-
-  {{ tack_migrator_password if tack_ops_migrator_login | bool else tack_yugabyte_password }}
+  {{ tack_migrator_password if tack_ops_migrator_login | bool and not (tack_ledger_bootstrap | bool)
+     else tack_yugabyte_password }}
 tack_ops_database_url: >-
   {{ ('host=' + tack_ledger_node_addresses.yb1 + ',' + tack_ledger_node_addresses.yb2 + ','
       + tack_ledger_node_addresses.yb3 + ' port=5433 user=' + tack_ops_database_login

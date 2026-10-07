@@ -15,7 +15,7 @@ RSpec.describe 'the tack_migrator password in the Tack environment file' do
     end
   end
 
-  it 'connects the qa ops sidecar as tack_migrator', :aggregate_failures do
+  it 'renders the QA ops sidecar URL with tack_migrator', :aggregate_failures do
     rendered = TackSearchInventory.rendered(:qa)
     url = rendered.settings(rendered.owner).fetch('TACK_OPS_DATABASE_URL')
 
@@ -32,12 +32,22 @@ RSpec.describe 'the tack_migrator password in the Tack environment file' do
     end
   end
 
-  it 'connects the production ops sidecar as the superuser until production has migration 019',
-     :aggregate_failures do
+  it 'renders the production ops sidecar URL with the superuser', :aggregate_failures do
     rendered = TackSearchInventory.rendered(:production)
     settings = rendered.settings(rendered.owner)
 
-    expect(settings.fetch('TACK_OPS_DATABASE_URL')).to include('password=render-only-vault_tack_yugabyte_password')
-    expect(settings).to include('YUGABYTE_PASSWORD' => 'render-only-vault_tack_yugabyte_password')
+    expect(settings.fetch('TACK_OPS_DATABASE_URL'))
+      .to include('user=yugabyte', 'password=render-only-vault_tack_yugabyte_password')
+    expect(settings).to include('YUGABYTE_USER' => 'yugabyte',
+                                'YUGABYTE_PASSWORD' => 'render-only-vault_tack_yugabyte_password')
+  end
+
+  # Provision on a from-empty rebuild reads TACK_OPS_DATABASE_URL from the
+  # .env before any run has created tack_migrator.
+  it 'renders the QA ops sidecar URL with the superuser on a ledger bootstrap run', :aggregate_failures do
+    rendered = TackSearchInventory.rendered(:qa, overrides: { 'tack_ledger_bootstrap' => true })
+    url = rendered.settings(rendered.owner).fetch('TACK_OPS_DATABASE_URL')
+
+    expect(url).to include('user=yugabyte', 'password=render-only-vault_tack_qa_yugabyte_password')
   end
 end
