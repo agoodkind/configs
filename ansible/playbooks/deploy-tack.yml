@@ -934,6 +934,9 @@
               {% endif %}
             chdir: "{{ tack_install_dir }}"
             executable: /bin/bash
+          # Docker Compose gives task environment values precedence over the rendered
+          # .env file.
+          environment: "{{ tack_ledger_bootstrap_environment if tack_ledger_bootstrap | bool else {} }}"
           changed_when: true
           throttle: 1
           any_errors_fatal: true
