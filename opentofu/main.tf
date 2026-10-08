@@ -97,5 +97,6 @@ module "cloudflare" {
     { address = "10.250.0.0/16", description = "home-v4" },
     { address = "10.240.0.0/16", description = "suburban-v4" },
     { host = "*.cloudflareaccess.com" },
+    { address = "10.230.0.0/24", description = "berylax-v4" },
   ]
 }
