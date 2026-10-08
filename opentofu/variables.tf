@@ -67,13 +67,13 @@ variable "vault_tofu_state_passphrase" {
 }
 
 variable "vault_cloudflare_zero_trust_api_token" {
-  description = "Cloudflare Zero Trust API token supplied by the Ansible vault"
+  description = "The Ansible vault supplies the Cloudflare Zero Trust API token."
   type        = string
   sensitive   = true
 }
 
 variable "vault_cloudflare_tunnel_routes_api_token" {
-  description = "Cloudflare private routes API token supplied by the Ansible vault"
+  description = "The Ansible vault supplies the Cloudflare private routes API token."
   type        = string
   sensitive   = true
 }
