@@ -13,6 +13,9 @@ tofu:
   # tofu_lock_hosts.
   lock_targets:
     opentofu:
+      lock_free_types:
+        - cloudflare_zero_trust_device_custom_profile
+        - cloudflare_zero_trust_tunnel_cloudflared_route
       module_hosts:
         module.vault: vault
         module.suburban: suburban
