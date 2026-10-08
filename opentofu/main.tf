@@ -50,7 +50,8 @@ module "cloudflare" {
   source = "./cloudflare"
 
   providers = {
-    cloudflare = cloudflare
+    cloudflare        = cloudflare.zero_trust
+    cloudflare.routes = cloudflare.tunnel_routes
   }
 
   account_id  = var.cloudflare_account_id

@@ -66,6 +66,18 @@ variable "vault_tofu_state_passphrase" {
   sensitive   = true
 }
 
+variable "vault_cloudflare_zero_trust_api_token" {
+  description = "Cloudflare Zero Trust API token supplied by the Ansible vault"
+  type        = string
+  sensitive   = true
+}
+
+variable "vault_cloudflare_tunnel_routes_api_token" {
+  description = "Cloudflare private routes API token supplied by the Ansible vault"
+  type        = string
+  sensitive   = true
+}
+
 variable "cloudflare_account_id" {
   description = "Cloudflare account that owns the Zero Trust objects. Stable and not a secret."
   type        = string
