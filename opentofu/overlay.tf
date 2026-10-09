@@ -42,8 +42,8 @@ locals {
     vault = {
       ssh_host       = "hypervisor.home.goodkind.io"
       node_name      = "vault"
-      commit         = "bb4324db0f2bf3caef9cd5569e1b3b0afb411aea"
-      guest_api      = false
+      commit         = "d70783290018a21460f0607fc03b5c5128f840a0"
+      guest_api      = true
       kernel_modules = null
     }
   }
