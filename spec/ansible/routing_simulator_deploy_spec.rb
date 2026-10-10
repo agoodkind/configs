@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'tmpdir'
 require_relative '../support/routing_simulator_config'
 
 RSpec.describe 'routing simulator file deploy' do
@@ -35,14 +36,15 @@ RSpec.describe 'routing simulator file deploy' do
     ).fetch('conditions').fetch('push')
   end
 
-  # pushed maps a service group to the changed value of one push result.
-  def changed_groups(pushed, removed_unit:)
-    record = task('Record the service groups with a changed file', 'deploy-routing-simulator-files.yml')
-    results = pushed.map { |group, changed| { 'changed' => changed, 'item' => [['name', '/path', '0644', group]] } }
-    TaskExpressions.evaluate(
-      variables: { 'rsim_push' => { 'results' => results }, 'rsim_removed_units' => { 'changed' => removed_unit } },
-      facts: [TaskExpressions.fact_task(record)]
-    ).fetch('facts').fetch('rsim_changed_groups')
+  def converge(directory, run_name, before_apply_command)
+    password_file = File.join(AnsibleRender::FIXTURE_DIRECTORY, 'unused-vault-password.txt')
+    extra_vars = { 'work_directory' => directory, 'run_name' => run_name, 'before_apply_command' => before_apply_command }
+    AnsibleRender.run_playbook(password_file, 'localhost,', 'routing_simulator_converge.yml', extra_vars,
+                               AnsibleRender::PLAYBOOK_TIMEOUT_SECONDS)
+  end
+
+  def applied(directory)
+    Dir.children(File.join(directory, 'applied')).sort
   end
 
   it 'lists the FRR and tracker files only for a node that needs them', :aggregate_failures do
@@ -76,11 +78,28 @@ RSpec.describe 'routing simulator file deploy' do
     expect(pushes?('abc123', '')).to be(true)
   end
 
-  it 'reports only the service groups of pushed files and removed units', :aggregate_failures do
-    pushed = { 'nftables' => true, 'frr' => false, 'network' => false, 'tracker' => true }
+  it 'applies a pushed file on the run after a failed run and only a changed group after that', :aggregate_failures do
+    Dir.mktmpdir('routing-converge') do |directory|
+      %w[staged guest applied].each { |name| Dir.mkdir(File.join(directory, name)) }
+      %w[first second].each { |name| File.write(File.join(directory, 'staged', "#{name}.conf"), "#{name}\n") }
 
-    expect(changed_groups(pushed, removed_unit: false)).to contain_exactly('nftables', 'tracker')
-    expect(changed_groups(pushed, removed_unit: true)).to contain_exactly('nftables', 'tracker', 'network')
-    expect(changed_groups(pushed.transform_values { false }, removed_unit: false)).to eq([])
+      failed = converge(directory, 'failed', 'false')
+      expect(failed.exit_status).not_to be_success, failed.output
+      expect(File.read(File.join(directory, 'guest', 'first.conf'))).to eq("first\n")
+      expect(applied(directory)).to eq([])
+
+      repeated = converge(directory, 'repeated', 'true')
+      expect(repeated.exit_status).to be_success, repeated.output
+      expect(applied(directory)).to eq(%w[repeated-first repeated-second])
+
+      unchanged = converge(directory, 'unchanged', 'true')
+      expect(unchanged.exit_status).to be_success, unchanged.output
+      expect(applied(directory)).to eq(%w[repeated-first repeated-second])
+
+      File.write(File.join(directory, 'staged', 'second.conf'), "changed\n")
+      changed = converge(directory, 'changed', 'true')
+      expect(changed.exit_status).to be_success, changed.output
+      expect(applied(directory)).to eq(%w[changed-second repeated-first repeated-second])
+    end
   end
 end

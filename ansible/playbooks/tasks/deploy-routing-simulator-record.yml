@@ -1,0 +1,10 @@
+---
+- name: Write the applied record in the guest
+  ansible.builtin.command:
+    argv: "{{ rsim.guest_command + ['sh', '-c', rsim_record_script, 'sh'] + rsim_applied_record }}"
+  vars:
+    rsim_record_script: >-
+      mkdir -p {{ testbed_routing_applied_record | dirname | quote }}
+      && printf '%s\n' "$@" > {{ testbed_routing_applied_record | quote }}
+  when: rsim_pending_groups != []
+  changed_when: true

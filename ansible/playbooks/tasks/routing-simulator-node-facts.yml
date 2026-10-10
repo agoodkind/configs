@@ -11,6 +11,7 @@
       scenario: "{{ rsim_node.scenario }}"
       kind: "{{ rsim_scenario.kind }}"
       vmid: "{{ rsim_service.vmid }}"
+      guest_command: "{{ ['pct', 'exec', rsim_service.vmid | string, '--'] }}"
       hostname: "{{ rsim_service.hostname }}"
       bgp: "{{ rsim_node.router_id != '' }}"
       forwarding: "{{ rsim_node.role in rsim_forwarding_roles }}"

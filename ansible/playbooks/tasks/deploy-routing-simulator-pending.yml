@@ -1,0 +1,23 @@
+---
+- name: Read the applied record in the guest
+  ansible.builtin.command:
+    argv: "{{ rsim.guest_command + ['cat', testbed_routing_applied_record] }}"
+  register: rsim_applied
+  changed_when: false
+  failed_when: rsim_applied.rc not in [0, 1]
+
+- name: Collect the service groups with a pending apply
+  ansible.builtin.set_fact:
+    rsim_applied_record: "{{ rsim_group_lines.split(';') }}"
+    rsim_pending_groups: >-
+      {{ rsim_group_lines.split(';') | difference(rsim_applied.stdout_lines)
+      | map('split', ' ') | map('first') | list }}
+  vars:
+    rsim_group_lines: >-
+      {%- set lines = [] -%}
+      {%- for group in rsim_files | map(attribute=3) | unique -%}
+      {%- set checksums = rsim_files | zip(rsim_staged.results) | selectattr('0.3', 'equalto', group)
+      | map(attribute='1.stat.checksum') | join(',') -%}
+      {%- set _ = lines.append(group ~ ' ' ~ (checksums | hash('sha256'))) -%}
+      {%- endfor -%}
+      {{ lines | join(';') }}

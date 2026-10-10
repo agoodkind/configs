@@ -4,5 +4,7 @@ testbed_routing_home_route_tracker:
   failure_threshold: 3
   route_metric: 100
 
+testbed_routing_applied_record: /var/lib/routing-simulator/applied
+
 testbed_routing_unreachable_metric: 65000
 testbed_routing_unreachable_rule_priority: 32800
