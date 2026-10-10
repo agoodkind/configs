@@ -100,7 +100,12 @@ locals {
 
   stack_debs = length(local.yang_modules) > 0 ? local.architecture.stack_debs : {}
 
-  mask_units = var.role == "wan" ? toset(["nftables.service"]) : toset([])
+  stack_mask_units = length(local.stack_debs) > 0 ? toset(["sysrepo-plugind.service"]) : toset([])
+
+  mask_units = setunion(
+    var.role == "wan" ? toset(["nftables.service"]) : toset([]),
+    local.stack_mask_units,
+  )
 
   owned_units = {
     for name, unit in local.units : name => anytrue([
@@ -222,6 +227,25 @@ resource "pveguest_link" "mask" {
 
   path   = "/etc/systemd/system/${each.key}"
   target = "/dev/null"
+
+  depends_on = [pveguest_deb_packages.stack]
+}
+
+resource "pveguest_systemd_unit" "stack_masked" {
+  for_each = local.stack_mask_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = each.key
+  enabled = false
+  active  = false
+
+  depends_on = [
+    pveguest_link.mask,
+    pveguest_deb_packages.stack,
+  ]
 }
 
 resource "pveguest_sysrepo_module" "ietf_yang_types" {
@@ -238,6 +262,7 @@ resource "pveguest_sysrepo_module" "ietf_yang_types" {
   depends_on = [
     pveguest_file.yang,
     pveguest_deb_packages.stack,
+    pveguest_systemd_unit.stack_masked,
   ]
 }
 
