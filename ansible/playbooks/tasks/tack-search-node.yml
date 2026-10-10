@@ -145,6 +145,10 @@
   no_log: true
   notify: Restart the OpenSearch member
 
+# The notified "Restart the OpenSearch member" handler must finish before "Start the OpenSearch member" runs.
+- name: Run notified handlers before starting the OpenSearch member
+  ansible.builtin.meta: flush_handlers
+
 - name: Start the OpenSearch member
   ansible.builtin.command:
     cmd: docker compose up -d opensearch
