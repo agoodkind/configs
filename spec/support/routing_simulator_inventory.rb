@@ -3,8 +3,8 @@
 require 'yaml'
 require_relative 'task_expressions'
 
-# The helper evaluates the validate-routing-simulators.yml assertions with
-# ansible-core against the repository inventory or a changed copy.
+# The helper evaluates assertions from validate-routing-simulators.yml with
+# TaskExpressions against the repository inventory or a changed copy.
 module RoutingSimulatorInventory
   GROUP_VARS_DIRECTORY = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars')
   ROUTING_DIRECTORY = File.join(GROUP_VARS_DIRECTORY, 'testbed_routing_all')
