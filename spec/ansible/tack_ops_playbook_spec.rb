@@ -76,6 +76,34 @@ module TackOpsPlaybook
     rendered['renders'][0].merge('cmd' => rendered['renders'][0]['cmd'].split)
   end
 
+  ENVIRONMENT_INVENTORY = "environment-test ansible_connection=local\n"
+  ENVIRONMENT_NAMES = '(TACK_IMAGE_TAG|DATABASE_URL)='
+
+  # One env task per command task, with the environment value of that command
+  # task, and one debug task that prints the two variables env reported.
+  def environment_tasks
+    [DRY_RUN_TASK, EXECUTE_TASK].flat_map do |name|
+      seen = "{{ tack_ops_environment_seen.stdout_lines | select('match', '#{ENVIRONMENT_NAMES}') | sort | join(' ') }}"
+      [{ 'ansible.builtin.command' => { 'cmd' => 'env' }, 'environment' => task(plays[1], name)['environment'],
+         'register' => 'tack_ops_environment_seen', 'changed_when' => false, 'check_mode' => false },
+       { 'ansible.builtin.debug' => { 'msg' => "#{name}: #{seen}" } }]
+    end
+  end
+
+  # Runs a play on the control machine with the environment of the second
+  # play and the environment of both command tasks, with env in place of
+  # docker, and returns the output.
+  def environment_run(variables)
+    Dir.mktmpdir('tack-ops-environment') do |directory|
+      playbook = File.join(directory, 'environment.yml')
+      play = { 'hosts' => 'all', 'gather_facts' => false, 'environment' => plays[1].fetch('environment'),
+               'tasks' => environment_tasks }
+      File.write(playbook, YAML.dump([play]))
+      TackOpsIdentityFlags.run_deploy(variables.merge('tack_commit' => COMMIT), agent: false, playbook: playbook,
+                                                                                 inventory_text: ENVIRONMENT_INVENTORY)
+    end
+  end
+
   # Whether the --execute output task runs for a registered --execute result,
   # and the message it prints when it runs.
   def execute_output(registered)
@@ -189,6 +217,21 @@ RSpec.describe TackOpsPlaybook do
         expect(rendered['cmd']).not_to include('-e', 'DATABASE_URL'), "#{name}: #{command}"
       end
     end
+  end
+
+  it 'gives both command tasks the play TACK_IMAGE_TAG together with the task DATABASE_URL', :aggregate_failures do
+    tag = "TACK_IMAGE_TAG=#{TackOpsPlaybook::COMMIT}"
+    killtest = described_class.environment_run('tack_ops_command' => TackOpsPlaybook::KILLTEST_COMMAND,
+                                               'tack_ledger_superuser_database_url' => TackOpsPlaybook::SUPERUSER_URL)
+    other = described_class.environment_run('tack_ops_command' => 'ops search verify')
+
+    expect(killtest.exit_status.success?).to be(true), killtest.output
+    expect(other.exit_status.success?).to be(true), other.output
+    [TackOpsPlaybook::DRY_RUN_TASK, TackOpsPlaybook::EXECUTE_TASK].each do |name|
+      expect(killtest.output).to include("#{name}: DATABASE_URL=#{TackOpsPlaybook::SUPERUSER_URL} #{tag}")
+      expect(other.output).to include("#{name}: #{tag}")
+    end
+    expect(other.output).not_to include('DATABASE_URL=')
   end
 
   it 'prints the --execute output only after the --execute task ran', :aggregate_failures do
