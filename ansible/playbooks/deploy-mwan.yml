@@ -625,6 +625,17 @@
           changed_when: true
           when: mwan_operation_armed | bool
 
+        - name: Wait for gateway SSH after coordinated recovery
+          vars:
+            ansible_pipelining: true
+          ansible.builtin.wait_for_connection:
+            connect_timeout: 5
+            sleep: 5
+            timeout: "{{ mwan_operation_recovery_timeout_seconds | int }}"
+          register: mwan_rescue_gateway_connection
+          ignore_errors: true
+          ignore_unreachable: true
+
         - name: Reject the failed deployment after coordinated recovery
           ansible.builtin.fail:
             msg: >-

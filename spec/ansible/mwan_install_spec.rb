@@ -366,6 +366,39 @@ RSpec.describe MwanInstall do
     expect(rescue_tasks[reject]).to have_key('ansible.builtin.fail')
   end
 
+  it 'places the gateway SSH wait between recovery and final deployment rejection' do
+    tasks = described_class.role_tasks(file: 'deploy-mwan.yml', play: 'Configure MWAN VM')
+    deployment = tasks.find { |task| task['name'] == 'Write the release and reboot the gateway' }
+    rescue_tasks = described_class.flatten(deployment.fetch('rescue'), MwanInstall::PLAYBOOK_DIRECTORY)
+    recover = rescue_tasks.index { |task| Array(described_class.command_argv(task)).include?('recover') }
+    wait = rescue_tasks.index { |task| task.key?('ansible.builtin.wait_for_connection') }
+    reject = rescue_tasks.index { |task| task['name'] == 'Reject the failed deployment after coordinated recovery' }
+
+    expect([recover, wait, reject]).to all(be_a(Integer))
+    expect(recover).to be < wait
+    expect(wait).to be < reject
+    expect(reject).to eq(rescue_tasks.size - 1)
+    wait_task = rescue_tasks[wait]
+    expect(wait_task).not_to have_key('delegate_to')
+    expect(wait_task).not_to have_key('when')
+    expect(wait_task['ignore_errors']).to be(true)
+    expect(wait_task['ignore_unreachable']).to be(true)
+    expect(wait_task.dig('vars', 'ansible_pipelining')).to be(true)
+
+    bound = described_class.module_field(wait_task, 'ansible.builtin.wait_for_connection', 'timeout')
+    expect(bound).to include('mwan_operation_recovery_timeout_seconds')
+    MwanInstall::GATEWAY_GROUP_FILES.each do |name|
+      group = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, name))
+      recovery_bound = group.fetch('mwan_operation_recovery_timeout_seconds')
+      render = TaskExpressions.render_task(wait_task, 'timeout' => bound)
+      rendered = TaskExpressions.evaluate(
+        variables: { 'mwan_operation_recovery_timeout_seconds' => recovery_bound }, facts: [], renders: [render]
+      )['renders'][0]['timeout']
+      expect(recovery_bound).to be_a(Integer).and(be_positive), name
+      expect(rendered).to eq(recovery_bound), name
+    end
+  end
+
   it 'accepts both gateway renders through the compatible mwan validators' do
     binary = ENV['MWAN_TRANSLATION_TEST_BINARY']
     skip 'Set MWAN_TRANSLATION_TEST_BINARY to a Linux mwan executable with network and firewall checks' unless binary
