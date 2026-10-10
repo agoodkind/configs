@@ -17,7 +17,7 @@ locals {
     poweredge = {
       ssh_host  = "poweredge.home.goodkind.io"
       node_name = "poweredge"
-      commit    = "d70783290018a21460f0607fc03b5c5128f840a0"
+      commit    = "662112b62488c8acab16cfe26c7297b6c8f95093"
       guest_api = true
       kernel_modules = {
         allow = [
