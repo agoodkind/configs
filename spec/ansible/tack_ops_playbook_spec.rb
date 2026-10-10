@@ -24,6 +24,14 @@ module TackOpsPlaybook
   SERVER_DIGEST = "sha256:#{'a' * 64}".freeze
   CONSUMER_DIGEST = "sha256:#{'b' * 64}".freeze
   AGENT_FLAGS = "--operator-service claude-luna --operator-session s1 --operator-id 0a6f --operator-email a@b.c --deploy-commit #{COMMIT}".freeze
+  # Remove these constants and examples when removing ops backfill
+  # once-drop-killtest-schema (TACK-560; command removal day 2026-12-06).
+  KILLTEST_COMMAND = 'ops backfill once-drop-killtest-schema'
+  SUPERUSER_URL = 'render-only-superuser-url'
+  OTHER_COMMANDS = ['ops deploy verify', 'ops audit prove-schema-guard', 'audit signers', 'audit query',
+                    'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
+                    'ops backfill once-search-projections',
+                    'ops search provision', 'ops search reindex', 'ops search verify'].freeze
 
   module_function
 
@@ -58,6 +66,16 @@ module TackOpsPlaybook
     TaskExpressions.evaluate(variables: variables, facts: [], renders: [rendered])['renders'][0]['cmd'].split
   end
 
+  # The helper returns the command line and task environment that a task in
+  # the second play renders for one command.
+  def command_and_environment(name, command:, variables: {})
+    found = task(plays[1], name)
+    templates = { 'cmd' => found.dig('ansible.builtin.command', 'cmd'), 'environment' => found['environment'] }
+    scope = request('tack_ops_command' => command).merge('tack_ops_identity_flags' => AGENT_FLAGS).merge(variables)
+    rendered = TaskExpressions.evaluate(variables: scope, facts: [], renders: [TaskExpressions.render_task({}, templates)])
+    rendered['renders'][0].merge('cmd' => rendered['renders'][0]['cmd'].split)
+  end
+
   # Whether the --execute output task runs for a registered --execute result,
   # and the message it prints when it runs.
   def execute_output(registered)
@@ -80,7 +98,8 @@ module TackOpsPlaybook
     'a production guest' => { 'ansible_play_hosts_all' => ['tack'] },
     'two guests' => { 'ansible_play_hosts_all' => %w[tack-qa tack-data1-suburban] },
     'a short commit' => { 'tack_commit' => '66ef50f' },
-    'an empty command' => { 'tack_ops_command' => '' }
+    'an empty command' => { 'tack_ops_command' => '' },
+    'an argument to the killtest schema backfill' => { 'tack_ops_command' => KILLTEST_COMMAND, 'tack_ops_args' => ['--output=json'] }
   }.freeze
 end
 
@@ -143,6 +162,33 @@ RSpec.describe TackOpsPlaybook do
 
     expect(described_class.request_passes('tack_ops_command' => 'audit query', 'tack_ops_args' => args)).to be(true)
     expect(execute).to eq(%w[docker compose run --rm app audit query] + args + TackOpsPlaybook::AGENT_FLAGS.split + ['--execute'])
+  end
+
+  it 'accepts the killtest schema backfill and passes it the superuser URL by variable name', :aggregate_failures do
+    flags = TackOpsPlaybook::AGENT_FLAGS.split
+    line = %w[docker compose run --rm -e DATABASE_URL tack-ops ops backfill once-drop-killtest-schema] + flags
+    variables = { 'tack_ledger_superuser_database_url' => TackOpsPlaybook::SUPERUSER_URL }
+    environment = { 'DATABASE_URL' => TackOpsPlaybook::SUPERUSER_URL }
+    command = TackOpsPlaybook::KILLTEST_COMMAND
+    dry_run = described_class.command_and_environment(TackOpsPlaybook::DRY_RUN_TASK, command: command, variables: variables)
+    execute = described_class.command_and_environment(TackOpsPlaybook::EXECUTE_TASK, command: command, variables: variables)
+
+    expect(described_class.request_passes('tack_ops_command' => command)).to be(true)
+    expect(dry_run).to eq('cmd' => line, 'environment' => environment)
+    expect(execute).to eq('cmd' => line + ['--execute'], 'environment' => environment)
+  end
+
+  # The request has no superuser URL variable. A task that read the variable
+  # for another command would fail to render.
+  it 'passes no DATABASE_URL to any other command', :aggregate_failures do
+    TackOpsPlaybook::OTHER_COMMANDS.each do |command|
+      [TackOpsPlaybook::DRY_RUN_TASK, TackOpsPlaybook::EXECUTE_TASK].each do |name|
+        rendered = described_class.command_and_environment(name, command: command)
+
+        expect(rendered['environment']).to eq({}), "#{name}: #{command}"
+        expect(rendered['cmd']).not_to include('-e', 'DATABASE_URL'), "#{name}: #{command}"
+      end
+    end
   end
 
   it 'prints the --execute output only after the --execute task ran', :aggregate_failures do
