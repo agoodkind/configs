@@ -3,7 +3,9 @@
 # service's group in rsim_changed_groups.
 - name: Apply the simulator sysctl values
   ansible.builtin.command:
-    argv: [pct, exec, "{{ rsim.vmid }}", --, sysctl, --system]
+    argv: >-
+      {{ ['pct', 'exec', rsim.vmid | string, '--', 'sysctl', '-p']
+      + (rsim_files | selectattr(3, 'equalto', 'sysctl') | map(attribute=1) | list) }}
   changed_when: false
 
 - name: Check the simulator firewall candidate
