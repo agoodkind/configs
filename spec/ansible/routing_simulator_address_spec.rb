@@ -49,6 +49,33 @@ RSpec.describe 'routing simulator addresses and identities' do
     expect(result.fetch(:valid)).to be(false)
   end
 
+  it 'rejects two interfaces with the same address and reports both owners' do
+    changed = RoutingSimulatorInventory.changed do |copy|
+      mapping = copy['service_mapping']
+      mapping['routing_tunnel_vps_client_suburban']['routing_interfaces']['remote']['ipv6'] =
+        mapping['routing_tunnel_vps_upstream_suburban']['routing_interfaces']['remote']['ipv6']
+    end
+
+    expect(RoutingSimulatorInventory.verdict(changed, RoutingSimulatorInventory::ADDRESS_OWNERS)).to eq(
+      valid: false,
+      message: 'The routing simulator inventory repeats an address: 2001:db8:580:1::1 belongs to ' \
+               'node tunnel_vps_upstream interface remote and to node tunnel_vps_client interface remote'
+    )
+  end
+
+  it 'rejects a tunnel inner address that an interface owns and reports both owners' do
+    changed = RoutingSimulatorInventory.changed_scenario('tunnel_vps') do |scenario, copy|
+      gateway = copy['service_mapping']['mwan_suburban']['routing_interfaces']['etheric']
+      scenario['tunnels'][0]['remote']['inner_ipv6'] = gateway['ipv6']
+    end
+
+    expect(RoutingSimulatorInventory.verdict(changed, RoutingSimulatorInventory::ADDRESS_OWNERS)).to eq(
+      valid: false,
+      message: 'The routing simulator inventory repeats an address: 2001:db8:2ff:20::2 belongs to ' \
+               'node mwan interface etheric and to tunnel tunnel_vps_sonic_1 remote.inner_ipv6'
+    )
+  end
+
   it 'rejects two tunnels with the same endpoint tuple' do
     changed = RoutingSimulatorInventory.changed_scenario('tunnel_vps') do |scenario, copy|
       static_vps = copy['service_mapping']['routing_tunnel_static_vps_suburban']

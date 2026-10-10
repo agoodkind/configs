@@ -22,7 +22,8 @@ RSpec.describe RoutingSimulatorInventory do
   end
 
   it 'accepts the repository inventory', :aggregate_failures do
-    [described_class::NODES, described_class::MANAGEMENT, described_class::NETWORKS].each do |task_name|
+    [described_class::NODES, described_class::MANAGEMENT, described_class::NETWORKS,
+     described_class::ADDRESS_OWNERS].each do |task_name|
       expect(described_class.valid?(inventory, task_name)).to be(true), "#{task_name} fails"
     end
     described_class.identity_names.each do |identity|

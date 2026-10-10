@@ -14,14 +14,14 @@
       {%- for node in item.value.nodes + routing_simulator_gateway_nodes -%}
       {%- for interface in service_mapping[testbed_routing_nodes[node].service].routing_interfaces.values() -%}
       {%- for address in [interface.ipv4, interface.ipv6] -%}
-      {%- if address != '' -%}
+      {%- if address != '' and address not in owners -%}
       {%- set _ = owners.update({address: {'node': node, 'link': interface.network}}) -%}
       {%- endif -%}
       {%- endfor -%}
       {%- endfor -%}
       {%- endfor -%}
       {%- for tunnel in item.value.tunnels -%}
-      {%- for side in [tunnel.local, tunnel.remote] -%}
+      {%- for side in [tunnel.local, tunnel.remote] if side.inner_ipv6 not in owners -%}
       {%- set _ = owners.update({side.inner_ipv6: {'node': side.node, 'link': 'tunnel ' ~ tunnel.id}}) -%}
       {%- endfor -%}
       {%- if tunnel.local.outer_ipv4 != testbed_routing_connections[tunnel.connection].mwan_ipv4 -%}

@@ -16,6 +16,7 @@ module RoutingSimulatorInventory
   NODES = 'Require supported routing simulator nodes and existing references'
   MANAGEMENT = 'Require management interfaces outside test forwarding'
   NETWORKS = 'Require declared routing simulator networks'
+  ADDRESS_OWNERS = 'Require one owner for each routing simulator address'
   IDENTITIES = 'Require unique routing simulator identities'
   SCENARIOS = 'Require each routing scenario to satisfy the contract of its kind'
   ADDRESSES = 'Require each tunnel and session address to match its node and link'
