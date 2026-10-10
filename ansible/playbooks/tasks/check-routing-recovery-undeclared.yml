@@ -86,66 +86,19 @@
       loop_control:
         label: "{{ item.cmd | last }}"
   always:
-    - name: Remove the undeclared network statement from each upstream router
-      ansible.builtin.command:
-        argv:
-          - pct
-          - exec
-          - "{{ routing_node_vmids[item.remote.node] }}"
-          - --
-          - vtysh
-          - -c
-          - configure terminal
-          - -c
-          - "router bgp {{ item.remote.asn }}"
-          - -c
-          - address-family ipv6 unicast
-          - -c
-          - "no network {{ routing_undeclared_prefix }}"
-      loop: "{{ routing_recovery.upstream_sessions }}"
-      loop_control:
-        label: "{{ item.id }}"
-      register: routing_undeclared_network_removal
-      changed_when: true
-      until: routing_undeclared_network_removal.rc == 0
-      retries: "{{ testbed_routing_checks.restore_retries }}"
-      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
-      ignore_errors: true
-
-    - name: Remove the undeclared kernel route from each upstream router
-      ansible.builtin.command:
-        argv:
-          - pct
-          - exec
-          - "{{ routing_node_vmids[item.remote.node] }}"
-          - --
-          - ip
-          - "-6"
-          - route
-          - del
-          - unreachable
-          - "{{ routing_undeclared_prefix }}"
-      loop: "{{ routing_recovery.upstream_sessions }}"
-      loop_control:
-        label: "{{ item.id }}"
-      register: routing_undeclared_route_removal
-      changed_when: true
-      until: routing_undeclared_route_removal.rc == 0
-      retries: "{{ testbed_routing_checks.restore_retries }}"
-      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
-      ignore_errors: true
-
-    - name: Require both restore steps on each upstream router
-      ansible.builtin.assert:
-        that:
-          - routing_undeclared_failed_restores == []
-        fail_msg: >-
-          Routing scenario {{ routing_recovery.name }}: failed restore commands
-          {{ routing_undeclared_failed_restores }}
+    - name: Remove the undeclared network statement and kernel route from each upstream router
+      ansible.builtin.import_tasks: run-routing-restore-commands.yml
       vars:
-        routing_undeclared_failed_restores: >-
-          {{ (routing_undeclared_network_removal.results + routing_undeclared_route_removal.results)
-          | rejectattr('rc', 'equalto', 0) | map(attribute='cmd') | map('join', ' ') | list }}
+        routing_restore_commands: "{{ routing_undeclared_restore_lines.split(';') }}"
+        routing_undeclared_restore_lines: >-
+          {%- set commands = [] -%}
+          {%- for session in routing_recovery.upstream_sessions -%}
+          {%- set guest = 'pct exec ' ~ routing_node_vmids[session.remote.node] ~ ' -- ' -%}
+          {%- set _ = commands.append(guest ~ "vtysh -c 'configure terminal' -c 'router bgp " ~ session.remote.asn
+          ~ "' -c 'address-family ipv6 unicast' -c 'no network " ~ routing_undeclared_prefix ~ "'") -%}
+          {%- set _ = commands.append(guest ~ 'ip -6 route del unreachable ' ~ routing_undeclared_prefix) -%}
+          {%- endfor -%}
+          {{ commands | join(';') }}
 
 - name: Record the undeclared prefix check
   ansible.builtin.set_fact:

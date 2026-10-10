@@ -4,102 +4,78 @@
     routing_tracker_fault_table: routing_tracker_fault
     routing_tracker_route_argv: [ip, -j, "-6", route, show, exact]
   block:
-    - name: Drop the gateway's echo replies on each tunnel interface
-      ansible.builtin.command:
-        argv:
-          - pct
-          - exec
-          - "{{ routing_node_vmids[item.0] }}"
-          - --
-          - sh
-          - -c
-          - >-
-            nft add table inet {{ routing_tracker_fault_table }}
-            && nft add chain inet {{ routing_tracker_fault_table }} input
-            '{ type filter hook input priority -10; }'
-            && nft add rule inet {{ routing_tracker_fault_table }} input
-            iifname {{ item.3 }} ip6 saddr {{ item.2 }} icmpv6 type echo-reply drop
-      loop: "{{ routing_recovery_tracked_routes }}"
-      when: routing_tracker_fault == 'probe loss'
-      changed_when: true
+    - name: Apply the tracker fault and restore the tracker
+      block:
+        - name: Drop the gateway's echo replies on each tunnel interface
+          ansible.builtin.command:
+            argv:
+              - pct
+              - exec
+              - "{{ routing_node_vmids[item.0] }}"
+              - --
+              - sh
+              - -c
+              - >-
+                nft add table inet {{ routing_tracker_fault_table }}
+                && nft add chain inet {{ routing_tracker_fault_table }} input
+                '{ type filter hook input priority -10; }'
+                && nft add rule inet {{ routing_tracker_fault_table }} input
+                iifname {{ item.3 }} ip6 saddr {{ item.2 }} icmpv6 type echo-reply drop
+          loop: "{{ routing_recovery_tracked_routes }}"
+          when: routing_tracker_fault == 'probe loss'
+          changed_when: true
 
-    - name: Stop each home route tracker unit
-      ansible.builtin.command:
-        argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, systemctl, stop, "{{ item.4 }}"]
-      loop: "{{ routing_recovery_tracked_routes }}"
-      when: routing_tracker_fault == 'unit stop'
-      changed_when: true
+        - name: Stop each home route tracker unit
+          ansible.builtin.command:
+            argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, systemctl, stop, "{{ item.4 }}"]
+          loop: "{{ routing_recovery_tracked_routes }}"
+          when: routing_tracker_fault == 'unit stop'
+          changed_when: true
 
-    - name: Wait until the kernel has no tracked home route
-      ansible.builtin.command:
-        argv: >-
-          {{ ['pct', 'exec', routing_node_vmids[item.0] | string, '--'] + routing_tracker_route_argv
-          + [item.1, 'via', item.2, 'dev', item.3] }}
-      loop: "{{ routing_recovery_tracked_routes }}"
-      register: routing_tracker_route_removed
-      changed_when: false
-      until: routing_tracker_route_removed.stdout | from_json == []
-      retries: "{{ routing_recovery.wait_retries }}"
-      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+        - name: Wait until the kernel has no tracked home route
+          ansible.builtin.command:
+            argv: >-
+              {{ ['pct', 'exec', routing_node_vmids[item.0] | string, '--'] + routing_tracker_route_argv
+              + [item.1, 'via', item.2, 'dev', item.3] }}
+          loop: "{{ routing_recovery_tracked_routes }}"
+          register: routing_tracker_route_removed
+          changed_when: false
+          until: routing_tracker_route_removed.stdout | from_json == []
+          retries: "{{ routing_recovery.wait_retries }}"
+          delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
 
-    - name: Wait until each upstream router has no BGP route to the home prefix
-      ansible.builtin.command:
-        argv: >-
-          {{ ['pct', 'exec', routing_node_vmids[item.0] | string, '--'] + routing_tracker_route_argv
-          + [item.1, 'proto', 'bgp'] }}
-      loop: "{{ routing_recovery.upstream_nodes | product(routing_recovery.scenario.home_prefixes) | list }}"
-      register: routing_tracker_withdrawal
-      changed_when: false
-      until: routing_tracker_withdrawal.stdout | from_json == []
-      retries: "{{ routing_recovery.wait_retries }}"
-      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
-  always:
-    - name: Accept the gateway's echo replies again
-      ansible.builtin.command:
-        argv:
-          - pct
-          - exec
-          - "{{ routing_node_vmids[item] }}"
-          - --
-          - nft
-          - delete
-          - table
-          - inet
-          - "{{ routing_tracker_fault_table }}"
-      loop: "{{ routing_recovery_tracked_routes | map(attribute=0) | unique | list }}"
-      when: routing_tracker_fault == 'probe loss'
-      register: routing_tracker_table_removal
-      changed_when: true
-      until: routing_tracker_table_removal.rc == 0
-      retries: "{{ testbed_routing_checks.restore_retries }}"
-      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
-      ignore_errors: true
+        - name: Wait until each upstream router has no BGP route to the home prefix
+          ansible.builtin.command:
+            argv: >-
+              {{ ['pct', 'exec', routing_node_vmids[item.0] | string, '--'] + routing_tracker_route_argv
+              + [item.1, 'proto', 'bgp'] }}
+          loop: "{{ routing_recovery.upstream_nodes | product(routing_recovery.scenario.home_prefixes) | list }}"
+          register: routing_tracker_withdrawal
+          changed_when: false
+          until: routing_tracker_withdrawal.stdout | from_json == []
+          retries: "{{ routing_recovery.wait_retries }}"
+          delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+      always:
+        - name: Remove the echo reply drop table or start each tracker unit
+          ansible.builtin.import_tasks: run-routing-restore-commands.yml
+          vars:
+            routing_restore_commands: "{{ routing_tracker_restore_lines.split(';') }}"
+            routing_tracker_restore_lines: >-
+              {%- set commands = [] -%}
+              {%- if routing_tracker_fault == 'probe loss' -%}
+              {%- for node in routing_recovery_tracked_routes | map(attribute=0) | unique -%}
+              {%- set _ = commands.append('pct exec ' ~ routing_node_vmids[node] ~ ' -- nft delete table inet '
+              ~ routing_tracker_fault_table) -%}
+              {%- endfor -%}
+              {%- else -%}
+              {%- for route in routing_recovery_tracked_routes -%}
+              {%- set _ = commands.append('pct exec ' ~ routing_node_vmids[route[0]] ~ ' -- systemctl start '
+              ~ route[4]) -%}
+              {%- endfor -%}
+              {%- endif -%}
+              {{ commands | join(';') }}
 
-    - name: Start each home route tracker unit
-      ansible.builtin.command:
-        argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, systemctl, start, "{{ item.4 }}"]
-      loop: "{{ routing_recovery_tracked_routes }}"
-      when: routing_tracker_fault == 'unit stop'
-      register: routing_tracker_unit_start
-      changed_when: true
-      until: routing_tracker_unit_start.rc == 0
-      retries: "{{ testbed_routing_checks.restore_retries }}"
-      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
-      ignore_errors: true
-
-    - name: Require each tracker restore step
-      ansible.builtin.assert:
-        that:
-          - routing_tracker_failed_restores == []
-        fail_msg: >-
-          Routing scenario {{ routing_recovery.name }}: failed restore commands
-          {{ routing_tracker_failed_restores }}
-      vars:
-        routing_tracker_failed_restores: >-
-          {{ (routing_tracker_table_removal.results + routing_tracker_unit_start.results)
-          | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0)
-          | map(attribute='cmd') | map('join', ' ') | list }}
-
+    # The route waits run only after every restore command succeeds.
     - name: Wait until the kernel has the tracked home route again
       ansible.builtin.command:
         argv: >-

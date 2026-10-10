@@ -60,43 +60,32 @@
         routing_scenario_mode: infrastructure
   always:
     - name: Set each scenario link up
-      ansible.builtin.command:
-        cmd: >-
-          pct exec {{ routing_node_vmids[item.0] }} -- sh -c
-          'ip link set dev {{ item.1 }} up && networkctl reconfigure {{ item.1 }}'
-      loop: "{{ routing_recovery_links }}"
-      register: routing_link_restore
-      changed_when: true
-      until: routing_link_restore.rc == 0
-      retries: "{{ testbed_routing_checks.restore_retries }}"
-      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
-      ignore_errors: true
-
-    - name: Require each scenario link up
-      ansible.builtin.assert:
-        that:
-          - routing_link_failed_restores == []
-        fail_msg: >-
-          Routing scenario {{ routing_recovery.name }}: the restore failed on links
-          {{ routing_link_failed_restores }}
+      ansible.builtin.import_tasks: run-routing-restore-commands.yml
       vars:
-        routing_link_failed_restores: >-
-          {{ routing_link_restore.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
+        routing_restore_commands: "{{ routing_link_restore_lines.split(';') }}"
+        routing_link_restore_lines: >-
+          {%- set commands = [] -%}
+          {%- for link in routing_recovery_links -%}
+          {%- set _ = commands.append('pct exec ' ~ routing_node_vmids[link[0]] ~ " -- sh -c 'ip link set dev "
+          ~ link[1] ~ ' up && networkctl reconfigure ' ~ link[1] ~ "'") -%}
+          {%- endfor -%}
+          {{ commands | join(';') }}
 
-    - name: Wait until packets routed by the scenario pass again
-      ansible.builtin.command:
-        argv: "{{ routing_recovery_probe }}"
-      register: routing_link_recovery_probe
-      changed_when: false
-      until: routing_link_recovery_probe.rc == 0
-      retries: "{{ routing_recovery.wait_retries }}"
-      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+# The recovery probe runs only after every restore command succeeds.
+- name: Wait until packets routed by the scenario pass again
+  ansible.builtin.command:
+    argv: "{{ routing_recovery_probe }}"
+  register: routing_link_recovery_probe
+  changed_when: false
+  until: routing_link_recovery_probe.rc == 0
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
 
-    - name: Read the clock after the link recovery
-      ansible.builtin.command:
-        argv: [date, +%s]
-      register: routing_link_loss_end
-      changed_when: false
+- name: Read the clock after the link recovery
+  ansible.builtin.command:
+    argv: [date, +%s]
+  register: routing_link_loss_end
+  changed_when: false
 
 - name: Record the link loss check
   ansible.builtin.set_fact:
