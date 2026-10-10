@@ -1,0 +1,10 @@
+auto lo
+iface lo inet loopback
+
+auto ${transit_interface}
+iface ${transit_interface} inet static
+	address ${transit_ipv4_address}
+
+iface ${transit_interface} inet6 static
+	pre-up /usr/sbin/sysctl -w net.ipv6.conf.${transit_interface}.accept_ra=0
+	address ${transit_ipv6_address}
