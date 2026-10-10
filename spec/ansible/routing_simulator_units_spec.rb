@@ -26,7 +26,7 @@ RSpec.describe 'routing simulator network units' do
     end
   end
 
-  it 'follows a changed tunnel MTU and outer TTL' do
+  it 'renders a changed tunnel MTU and outer TTL in the tunnel device' do
     changed = RoutingSimulatorInventory.changed_scenario('astound_static') do |scenario|
       scenario['tunnels'][0].merge!('mtu' => 1400, 'outer_ttl' => 32)
     end
@@ -41,7 +41,7 @@ RSpec.describe 'routing simulator network units' do
     expect(network).to match(/\[Route\]\nDestination=#{Regexp.escape(home_prefix)}\nGateway=2001:db8:1ff:1::1\n/)
   end
 
-  it 'leaves the tracked home route out of the tunnel unit and gives it to the tracker', :aggregate_failures do
+  it 'omits the tracked home route from the tunnel unit and configures it in the tracker service', :aggregate_failures do
     network = render('tunnel_static_vps', 'tunnel.network.j2', 'rsim_tunnel' => 'rsim.tunnels[0]')
     service = render('tunnel_static_vps', 'home-route-tracker.service.j2', 'rsim_route' => 'rsim.tracked_routes[0]')
     tracker = inventory.fetch('testbed_routing_home_route_tracker')
@@ -53,7 +53,7 @@ RSpec.describe 'routing simulator network units' do
     )
   end
 
-  it 'returns outer packets to the gateway through the transport simulator', :aggregate_failures do
+  it 'routes outer packets to the gateway using the transport simulator', :aggregate_failures do
     gateway_address = address('mwan_suburban', 'sonic_1', 'ipv4')
     transport_outer = address('isp_sonic_suburban', 'outer', 'ipv4')
     outer = render('tunnel_static_vps', 'interface.network.j2', 'rsim_interface' => 'rsim.interfaces[0]')

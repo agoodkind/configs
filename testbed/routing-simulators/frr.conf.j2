@@ -50,10 +50,8 @@ ipv6 prefix-list PL-TRACKED-{{ tracked.interface }} permit {{ tracked.prefix }}
 {% if bgp.default_origin %}
 ! zebra installs this route only while the service interface is up. bgpd
 ! announces the default network only while import-check finds this route.
-{% for prefix in bgp.networks %}
 {% for default_route in routing_simulator_default_routes %}
-ipv6 route {{ default_route }} {{ bgp.connected[prefix] }}
-{% endfor %}
+ipv6 route {{ default_route }} {{ rsim.service_interface }}
 {% endfor %}
 !
 {% endif %}

@@ -25,7 +25,8 @@ Gateway={{ route.gateway }}
 {% endfor %}
 {% if rsim_interface.name == rsim.interfaces[0].name %}
 {# zebra prefers a kernel route to a BGP route for the same prefix. An IPv6
-   rule after the main table rule leaves the BGP route usable. #}
+   routing policy rule after the main table rule allows the BGP route to be
+   selected. #}
 {% for prefix in testbed_routing_management_unreachable_prefixes %}
 {% if ':' in prefix %}
 

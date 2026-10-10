@@ -1,0 +1,38 @@
+---
+# Each tracked route includes a node, a destination, a gateway, a tunnel
+# interface, and a tracker unit.
+- name: Collect the tracked home routes
+  ansible.builtin.set_fact:
+    routing_recovery_tracked_routes: >-
+      {{ routing_recovery_tracked_lines.split(';') | reject('equalto', '') | map('split', '|') | list }}
+  vars:
+    routing_recovery_tracked_lines: >-
+      {%- set lines = [] -%}
+      {%- if routing_recovery.scenario.kind == 'tunnel_configured_home' -%}
+      {%- for node in routing_recovery.scenario.nodes if testbed_routing_nodes[node].role == 'vps' -%}
+      {%- for route in routing_recovery.scenario.routes | selectattr('node', 'equalto', node)
+      | selectattr('destination', 'in', routing_recovery.scenario.home_prefixes) -%}
+      {%- set unit = 'routing-home-route-' ~ loop.index0 ~ '.service' -%}
+      {%- for tunnel in routing_recovery.scenario.tunnels if tunnel.local.inner_ipv6 == route.gateway -%}
+      {%- set _ = lines.append([node, route.destination, route.gateway, tunnel.remote.interface, unit] | join('|')) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {{ lines | join(';') }}
+
+# The probe loss fault drops the gateway's echo replies while the tunnel
+# device is up. The unit stop fault stops the tracker.
+- name: Check each home route tracker fault
+  ansible.builtin.include_tasks:
+    file: check-routing-recovery-tracker-fault.yml
+  loop: [probe loss, unit stop]
+  loop_control:
+    loop_var: routing_tracker_fault
+  when: routing_recovery_tracked_routes != []
+
+- name: Record the home route tracker checks
+  ansible.builtin.set_fact:
+    routing_recovery_results: >-
+      {{ routing_recovery_results + [{'fault': 'tracker probe loss'}, {'fault': 'tracker unit stop'}] }}
+  when: routing_recovery_tracked_routes != []

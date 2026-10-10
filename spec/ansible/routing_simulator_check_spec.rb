@@ -51,6 +51,29 @@ RSpec.describe 'routing simulator checks' do
     )
   end
 
+  it 'derives the fault wait from the configured hold time', :aggregate_failures do
+    checks = inventory.fetch('testbed_routing_checks')
+    longer = RoutingSimulatorInventory.changed_scenario('tunnel_upstream') do |scenario|
+      scenario['sessions'][0].merge!('keepalive_seconds' => 60, 'hold_seconds' => 180)
+    end
+    delay = checks.fetch('retry_delay_seconds')
+    margin = checks.fetch('recovery_retries')
+
+    expect(RoutingSimulatorConfig.fault_wait_retries(inventory, 'tunnel_upstream')).to eq((9.0 / delay).ceil + margin)
+    expect(RoutingSimulatorConfig.fault_wait_retries(longer, 'tunnel_upstream')).to eq((180.0 / delay).ceil + margin)
+  end
+
+  it 'selects the tracker fault targets only for a configured home route', :aggregate_failures do
+    home_prefix = inventory.fetch('testbed_routing_home_prefix')
+    tracked = RoutingSimulatorConfig.fault_facts(inventory, 'tunnel_static').fetch('routing_recovery_tracked_routes')
+    learned = RoutingSimulatorConfig.fault_facts(inventory, 'tunnel_vps').fetch('routing_recovery_tracked_routes')
+
+    expect(tracked).to eq(
+      [['tunnel_static_vps', home_prefix, '2001:db8:3ff:1::1', 'sit-sonic1', 'routing-home-route-0.service']]
+    )
+    expect(learned).to eq([])
+  end
+
   it 'rejects an MWAN run with only the infrastructure results' do
     expect(required_checks_valid?('mwan', infrastructure_results)).to be(false)
   end

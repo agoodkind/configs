@@ -29,7 +29,7 @@
           - routing_link_loss_probe.rc != 0
         fail_msg: "Routing scenario {{ routing_recovery.name }}: packets still pass after the link loss"
 
-    - name: Wait until each upstream router loses the home route
+    - name: Wait until each upstream router has no BGP route to the home prefix
       ansible.builtin.command:
         argv:
           - pct
@@ -52,7 +52,7 @@
       retries: "{{ routing_recovery.wait_retries }}"
       delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
 
-    - name: Check that another scenario keeps its configuration and sessions
+    - name: Check the configuration and sessions of another scenario during the link loss
       ansible.builtin.include_tasks:
         file: check-routing-scenario.yml
       vars:

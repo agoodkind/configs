@@ -1,24 +1,4 @@
 ---
-- name: Read the checksum of each staged file
-  ansible.builtin.stat:
-    path: "{{ rsim_temp_dir }}/{{ item.0 }}"
-    checksum_algorithm: sha256
-  loop: "{{ rsim_files }}"
-  loop_control:
-    label: "{{ item.0 }}"
-  register: rsim_staged
-
-# sha256sum exits with status 1 when the guest has no file at the path.
-- name: Read the checksum of each file in the guest
-  ansible.builtin.command:
-    argv: [pct, exec, "{{ rsim.vmid }}", --, sha256sum, "{{ item.1 }}"]
-  loop: "{{ rsim_files }}"
-  loop_control:
-    label: "{{ item.1 }}"
-  register: rsim_installed
-  changed_when: false
-  failed_when: rsim_installed.rc not in [0, 1]
-
 - name: Create the networkd configuration directory
   ansible.builtin.command:
     argv: [pct, exec, "{{ rsim.vmid }}", --, mkdir, -p, /etc/systemd/networkd.conf.d]

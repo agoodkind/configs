@@ -18,7 +18,7 @@
       gateway_sessions: >-
         {{ routing_recovery_scenario.sessions | selectattr('local.node', 'in', routing_recovery_gateway_nodes)
         | list }}
-      # A peer removes a route by the time its hold timer expires.
+      # The router withdraws the peer's route when its hold timer expires.
       wait_retries: >-
         {{ (((routing_recovery_scenario.sessions | map(attribute='hold_seconds') | list + [0]) | max)
         / testbed_routing_checks.retry_delay_seconds) | round(0, 'ceil') | int

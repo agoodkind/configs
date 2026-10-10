@@ -1,0 +1,23 @@
+---
+- name: Require a declared service interface on each upstream router
+  ansible.builtin.assert:
+    that:
+      - routing_simulator_service_interface_problems == ''
+    fail_msg: "The routing simulator inventory has invalid service interfaces: {{ routing_simulator_service_interface_problems }}"
+  vars:
+    routing_simulator_service_interface_problems: >-
+      {%- set problems = [] -%}
+      {%- for name, node in testbed_routing_nodes.items() -%}
+      {%- if node.service_interface == '' -%}
+      {%- if node.role == 'upstream_router' -%}
+      {%- set _ = problems.append('node ' ~ name ~ ' is an upstream router without service_interface') -%}
+      {%- endif -%}
+      {%- elif node.service_interface not in service_mapping[node.service].routing_interfaces -%}
+      {%- set _ = problems.append('node ' ~ name ~ ' service_interface ' ~ node.service_interface
+      ~ ' is no routing_interfaces key of ' ~ node.service) -%}
+      {%- elif service_mapping[node.service].routing_interfaces[node.service_interface].ipv6 == '' -%}
+      {%- set _ = problems.append('node ' ~ name ~ ' service_interface ' ~ node.service_interface
+      ~ ' has no IPv6 address') -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ problems | join('; ') }}

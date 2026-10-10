@@ -2,7 +2,7 @@
 
 require_relative '../support/routing_simulator_config'
 
-RSpec.describe 'routing simulator deploy' do
+RSpec.describe 'routing simulator file deploy' do
   let(:inventory) { RoutingSimulatorConfig.inventory }
 
   def task(name, file)
@@ -10,7 +10,7 @@ RSpec.describe 'routing simulator deploy' do
   end
 
   def files(node)
-    collect = TaskExpressions.fact_task(task('Collect the simulator files', 'deploy-routing-simulator-files.yml'))
+    collect = TaskExpressions.fact_task(task('Collect the simulator files', 'routing-simulator-file-list.yml'))
     RoutingSimulatorConfig.evaluate_node(inventory, node, facts: [collect]).fetch('facts').fetch('rsim_files')
   end
 
@@ -23,23 +23,24 @@ RSpec.describe 'routing simulator deploy' do
     ).fetch('conditions').fetch('push')
   end
 
-  def wait_retries(scenario, source = inventory)
-    inputs = TaskExpressions.fact_task(task('Collect the fault inputs', 'check-routing-recovery-inputs.yml'))
+  # pushed maps a service group to the changed value of one push result.
+  def changed_groups(pushed, removed_unit:)
+    record = task('Record the service groups with a changed file', 'deploy-routing-simulator-files.yml')
+    results = pushed.map { |group, changed| { 'changed' => changed, 'item' => [['name', '/path', '0644', group]] } }
     TaskExpressions.evaluate(
-      variables: source.slice(*RoutingSimulatorConfig::LITERAL_VARIABLES).merge('routing_scenario_name' => scenario),
-      facts: RoutingSimulatorConfig.inventory_facts(source) + [inputs]
-    ).fetch('facts').fetch('routing_recovery').fetch('wait_retries')
+      variables: { 'rsim_push' => { 'results' => results }, 'rsim_removed_units' => { 'changed' => removed_unit } },
+      facts: [TaskExpressions.fact_task(record)]
+    ).fetch('facts').fetch('rsim_changed_groups')
   end
 
   it 'lists the FRR and tracker files only for a node that needs them', :aggregate_failures do
-    vps_groups = files('tunnel_static_vps').map(&:last).uniq
-    client_files = files('tunnel_static_client')
+    vps_files = files('tunnel_static_vps')
 
-    expect(vps_groups).to contain_exactly('nftables', 'sysctl', 'network', 'frr', 'tracker')
-    expect(files('tunnel_static_vps').map { |file| file[1] }).to include(
+    expect(vps_files.map(&:last).uniq).to contain_exactly('nftables', 'sysctl', 'network', 'frr', 'tracker')
+    expect(vps_files.map { |file| file[1] }).to include(
       '/etc/systemd/network/40-rsim-sit-sonic1.netdev', '/etc/systemd/system/routing-home-route-0.service'
     )
-    expect(client_files.map(&:last).uniq).to contain_exactly('nftables', 'sysctl', 'network')
+    expect(files('tunnel_static_client').map(&:last).uniq).to contain_exactly('nftables', 'sysctl', 'network')
   end
 
   it 'pushes a file only when the guest checksum differs', :aggregate_failures do
@@ -48,14 +49,11 @@ RSpec.describe 'routing simulator deploy' do
     expect(pushes?('abc123', '')).to be(true)
   end
 
-  it 'derives the fault wait from the configured hold time', :aggregate_failures do
-    checks = inventory.fetch('testbed_routing_checks')
-    longer = RoutingSimulatorInventory.changed_scenario('tunnel_upstream') do |scenario|
-      scenario['sessions'][0].merge!('keepalive_seconds' => 60, 'hold_seconds' => 180)
-    end
-    delay = checks.fetch('retry_delay_seconds')
+  it 'reports only the service groups of pushed files and removed units', :aggregate_failures do
+    pushed = { 'nftables' => true, 'frr' => false, 'network' => false, 'tracker' => true }
 
-    expect(wait_retries('tunnel_upstream')).to eq((9.0 / delay).ceil + checks.fetch('recovery_retries'))
-    expect(wait_retries('tunnel_upstream', longer)).to eq((180.0 / delay).ceil + checks.fetch('recovery_retries'))
+    expect(changed_groups(pushed, removed_unit: false)).to contain_exactly('nftables', 'tracker')
+    expect(changed_groups(pushed, removed_unit: true)).to contain_exactly('nftables', 'tracker', 'network')
+    expect(changed_groups(pushed.transform_values { false }, removed_unit: false)).to eq([])
   end
 end

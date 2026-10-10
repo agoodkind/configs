@@ -68,7 +68,33 @@ RSpec.describe 'routing simulator BGP configuration' do
     expect(frr('etheric_native_router').grep(/\A(network|redistribute)|default-originate/)).to be_empty
   end
 
-  it 'follows a changed session policy' do
+  it 'installs one static default route through the service interface with two exported interfaces' do
+    transit_net = RoutingSimulatorConfig.network(inventory, 'tunnel_vps_transit', 'ipv6')
+    changed = RoutingSimulatorInventory.changed_scenario('tunnel_vps') do |scenario|
+      scenario['sessions'][2]['policy']['import_prefixes'] << transit_net
+    end
+    lines = frr('tunnel_vps_upstream', changed)
+
+    expect(lines.grep(/\Anetwork/)).to include("network #{transit_net}")
+    expect(lines.grep(/\Aipv6 route/)).to eq(['ipv6 route ::/0 eth2'])
+  end
+
+  it 'rejects an upstream router without a service interface', :aggregate_failures do
+    assertion = RoutingSimulatorConfig.task('Require a declared service interface on each upstream router',
+                                            'tasks', 'validate-routing-service-interfaces.yml')
+    missing = RoutingSimulatorInventory.changed do |copy|
+      copy['testbed_routing_nodes']['tunnel_vps_upstream']['service_interface'] = ''
+    end
+    unknown = RoutingSimulatorInventory.changed do |copy|
+      copy['testbed_routing_nodes']['tunnel_vps_upstream']['service_interface'] = 'internet'
+    end
+
+    expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, {}, [])).to be(true)
+    expect(RoutingSimulatorConfig.assertion_valid?(missing, assertion, {}, [])).to be(false)
+    expect(RoutingSimulatorConfig.assertion_valid?(unknown, assertion, {}, [])).to be(false)
+  end
+
+  it 'omits the default route after a session policy removes the default prefix' do
     changed = RoutingSimulatorInventory.changed_scenario('etheric_native') do |scenario|
       scenario['sessions'][1]['policy']['import_prefixes'] = ['2001:db8:280:1::/64']
     end

@@ -79,7 +79,8 @@
   delay: 2
   failed_when: false
 
-# A scenario with several tunnels passes when one tunnel shows every packet.
+# A scenario with several tunnels passes when the captures on one tunnel
+# contain every packet.
 - name: Require every packet capture on one path
   ansible.builtin.assert:
     that:

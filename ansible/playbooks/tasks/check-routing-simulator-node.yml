@@ -52,6 +52,7 @@
       - rsim_link.linkinfo.info_kind == item.item.protocol
       - rsim_link.linkinfo.info_data.local == item.item.remote.outer_ipv4
       - rsim_link.linkinfo.info_data.remote == item.item.local.outer_ipv4
+      - rsim_link.linkinfo.info_data.ttl == item.item.outer_ttl
     fail_msg: "{{ rsim.name }}: tunnel {{ item.item.id }} differs from the inventory"
   vars:
     rsim_link: "{{ (item.stdout | from_json)[0] }}"
@@ -131,6 +132,9 @@
     fail_msg: "{{ rsim.name }}: forwarding, translation, or FRR state differs from the inventory"
   vars:
     rsim_masquerade_rules: "{{ rsim_state.results[1].stdout_lines | select('search', 'masquerade') | list }}"
+
+- name: Compare the guest files with the rendered inventory
+  ansible.builtin.import_tasks: check-routing-simulator-files.yml
 
 - name: Record the node check
   ansible.builtin.set_fact:

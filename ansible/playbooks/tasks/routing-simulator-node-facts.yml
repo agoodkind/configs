@@ -5,6 +5,9 @@
       name: "{{ rsim_name }}"
       role: "{{ rsim_node.role }}"
       router_id: "{{ rsim_node.router_id }}"
+      service_interface: >-
+        {{ rsim_service.routing_interfaces[rsim_node.service_interface].name
+        if rsim_node.service_interface != '' else '' }}
       scenario: "{{ rsim_node.scenario }}"
       kind: "{{ rsim_scenario.kind }}"
       vmid: "{{ rsim_service.vmid }}"

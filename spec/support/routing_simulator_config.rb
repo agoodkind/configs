@@ -100,6 +100,19 @@ module RoutingSimulatorConfig
     ).fetch('facts').fetch('routing_captures')
   end
 
+  def fault_facts(inventory, scenario)
+    inputs = task('Collect the fault inputs', 'tasks', 'check-routing-recovery-inputs.yml')
+    tracked = task('Collect the tracked home routes', 'tasks', 'check-routing-recovery-tracker.yml')
+    TaskExpressions.evaluate(
+      variables: inventory.slice(*LITERAL_VARIABLES).merge('routing_scenario_name' => scenario),
+      facts: inventory_facts(inventory) + [TaskExpressions.fact_task(inputs), TaskExpressions.fact_task(tracked)]
+    ).fetch('facts')
+  end
+
+  def fault_wait_retries(inventory, scenario)
+    fault_facts(inventory, scenario).fetch('routing_recovery').fetch('wait_retries')
+  end
+
   def request_valid?(inventory, scenario, mode)
     assertion = tasks('check-routing-simulators.yml').first.fetch('tasks').first
     variables = { 'routing_scenario' => scenario, 'routing_check_mode' => mode, 'mwan_environment' => 'testbed' }
