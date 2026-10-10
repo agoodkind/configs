@@ -3,8 +3,8 @@
 require 'yaml'
 require_relative 'task_expressions'
 
-# The helper evaluates the validate-routing-simulators.yml assertions with
-# ansible-core against the repository inventory or a changed copy.
+# The helper evaluates assertions from validate-routing-simulators.yml with
+# TaskExpressions against the repository inventory or a changed copy.
 module RoutingSimulatorInventory
   GROUP_VARS_DIRECTORY = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'inventory', 'group_vars')
   ROUTING_DIRECTORY = File.join(GROUP_VARS_DIRECTORY, 'testbed_routing_all')
@@ -16,6 +16,7 @@ module RoutingSimulatorInventory
   NODES = 'Require supported routing simulator nodes and existing references'
   MANAGEMENT = 'Require management interfaces outside test forwarding'
   NETWORKS = 'Require declared routing simulator networks'
+  ADDRESS_OWNERS = 'Require one owner for each routing simulator address'
   IDENTITIES = 'Require unique routing simulator identities'
   SCENARIOS = 'Require each routing scenario to satisfy the contract of its kind'
   ADDRESSES = 'Require each tunnel and session address to match its node and link'

@@ -47,9 +47,10 @@
             tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
             'audit signers', 'audit query',
             'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
-            'ops backfill once-search-projections',
+            'ops backfill once-search-projections', 'ops backfill once-drop-killtest-schema',
             'ops search provision', 'ops search reindex', 'ops search verify']
           - tack_ops_args is sequence and tack_ops_args is not string and tack_ops_args is not mapping
+          - tack_ops_command != 'ops backfill once-drop-killtest-schema' or tack_ops_args == []
           - tack_ops_args | reject('match', '--[a-z][a-z0-9-]*(=[A-Za-z0-9._/:@-]+)?\Z') | list == []
           - tack_ops_args | select('match', '--(execute|operator-|deploy-commit)') | list == []
           - ansible_play_hosts_all | difference(groups['tack_qa_all']) | list == []
@@ -62,7 +63,8 @@
           tack_audit_consumer_digest are the CI index digests of the reviewed
           build; each is sha256: followed by 64 lowercase hex characters. Each
           extra argument is one --flag or --flag=value token and never --execute, --operator-*, or
-          --deploy-commit. Command "{{ tack_ops_command }}", arguments
+          --deploy-commit. ops backfill once-drop-killtest-schema accepts no
+          extra argument. Command "{{ tack_ops_command }}", arguments
           {{ tack_ops_args }}, commit "{{ tack_commit }}", tack-server digest
           "{{ tack_server_digest }}", tack-audit-consumer digest
           "{{ tack_audit_consumer_digest }}", guests
@@ -128,10 +130,19 @@
       ansible.builtin.command:
         cmd: >-
           docker compose run --rm
-          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard'] else 'app' }}
+          {{ '-e DATABASE_URL' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
+          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
+                                                'ops backfill once-drop-killtest-schema'] else 'app' }}
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }}
         chdir: "{{ tack_install_dir }}"
+      # The command needs the engine superuser login to drop killtest.
+      # Remove this entry and the spec constants and examples when removing
+      # ops backfill once-drop-killtest-schema (TACK-560;
+      # command removal day 2026-12-06).
+      environment: &tack_ops_superuser_environment >-
+        {{ {'DATABASE_URL': tack_ledger_superuser_database_url}
+           if tack_ops_command == 'ops backfill once-drop-killtest-schema' else {} }}
       register: tack_ops_dry_run
       changed_when: false
       check_mode: false
@@ -144,10 +155,13 @@
       ansible.builtin.command:
         cmd: >-
           docker compose run --rm
-          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard'] else 'app' }}
+          {{ '-e DATABASE_URL' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
+          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
+                                                'ops backfill once-drop-killtest-schema'] else 'app' }}
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }} --execute
         chdir: "{{ tack_install_dir }}"
+      environment: *tack_ops_superuser_environment
       register: tack_ops_execute_run
       changed_when: true
       when: tack_ops_execute | bool

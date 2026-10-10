@@ -1,7 +1,6 @@
 terraform {
   required_providers {
-    # OpenTofu installs this provider from the implied local mirror in
-    # ~/.terraform.d/plugins.
+    # OpenTofu installs pveguest from this workspace's terraform.d/plugins.
     pveguest = {
       source  = "tofu.home.arpa/agoodkind/pveguest"
       version = "0.1.0"
