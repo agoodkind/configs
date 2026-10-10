@@ -23,7 +23,7 @@
 
 - name: Read the FRR version
   ansible.builtin.command:
-    argv: [pct, exec, "{{ rsim.vmid }}", --, vtysh, --version]
+    argv: [pct, exec, "{{ rsim.vmid }}", --, dpkg-query, --show, --showformat, "FRR ${Version}", frr]
   register: rsim_frr_version
   when: rsim.bgp | bool
   changed_when: false

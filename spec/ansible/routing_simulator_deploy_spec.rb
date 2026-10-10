@@ -14,11 +14,16 @@ RSpec.describe 'routing simulator file deploy' do
     RoutingSimulatorConfig.evaluate_node(inventory, node, facts: [collect]).fetch('facts').fetch('rsim_files')
   end
 
-  def sysctl_argv(node)
+  def service_argv(name, node)
     collect = TaskExpressions.fact_task(task('Collect the simulator files', 'routing-simulator-file-list.yml'))
-    apply = task('Apply the simulator sysctl values', 'deploy-routing-simulator-services.yml')
-    argv = RoutingSimulatorConfig.fact({ 'sysctl_argv' => apply.fetch('ansible.builtin.command').fetch('argv') })
-    RoutingSimulatorConfig.evaluate_node(inventory, node, facts: [collect, argv]).fetch('facts').fetch('sysctl_argv')
+    command = task(name, 'deploy-routing-simulator-services.yml')
+    argv = RoutingSimulatorConfig.fact({ 'argv' => command.fetch('ansible.builtin.command').fetch('argv') })
+    RoutingSimulatorConfig.evaluate_node(inventory, node, facts: [collect, argv]).fetch('facts').fetch('argv')
+  end
+
+  def vmid(node)
+    service = inventory.fetch('testbed_routing_nodes').fetch(node).fetch('service')
+    inventory.fetch('service_mapping').fetch(service).fetch('vmid').to_s
   end
 
   def pushes?(staged_checksum, guest_output)
@@ -51,11 +56,18 @@ RSpec.describe 'routing simulator file deploy' do
   end
 
   it 'loads only the pushed simulator sysctl file in the guest' do
-    vmid = inventory.fetch('service_mapping').fetch(inventory.fetch('testbed_routing_nodes')
-      .fetch('tunnel_static_vps').fetch('service')).fetch('vmid').to_s
-    sysctl_path = files('tunnel_static_vps').find { |file| file.last == 'sysctl' }[1]
+    node = 'tunnel_static_vps'
+    sysctl_path = files(node).find { |file| file.last == 'sysctl' }[1]
 
-    expect(sysctl_argv('tunnel_static_vps')).to eq(['pct', 'exec', vmid, '--', 'sysctl', '-p', sysctl_path])
+    expect(service_argv('Apply the simulator sysctl values', node))
+      .to eq(['pct', 'exec', vmid(node), '--', 'sysctl', '-p', sysctl_path])
+  end
+
+  it 'reads the FRR version from the package database in the guest' do
+    node = 'tunnel_static_vps'
+
+    expect(service_argv('Read the FRR version', node).map(&:to_s))
+      .to eq(['pct', 'exec', vmid(node), '--', 'dpkg-query', '--show', '--showformat', 'FRR ${Version}', 'frr'])
   end
 
   it 'pushes a file only when the guest checksum differs', :aggregate_failures do
