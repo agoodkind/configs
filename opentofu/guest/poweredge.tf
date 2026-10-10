@@ -284,4 +284,7 @@ module "poweredge_lan_router" {
 
   lan_ipv4_prefixes = ["10.230.1.0/24", "10.230.2.0/24"]
   lan_ipv6_prefixes = ["3d06:bad:b01:301::/64", "3d06:bad:b01:302::/64"]
+
+  acceptance_ipv4_prefixes = ["198.51.100.0/24"]
+  acceptance_ipv6_prefixes = ["2001:db8:5::/48"]
 }

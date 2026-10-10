@@ -82,6 +82,16 @@ variable "lan_ipv6_prefixes" {
   }
 }
 
+variable "acceptance_ipv4_prefixes" {
+  description = "The value lists IPv4 acceptance test prefixes the router advertises when a connected interface has them."
+  type        = list(string)
+}
+
+variable "acceptance_ipv6_prefixes" {
+  description = "The value lists IPv6 acceptance test prefixes the router advertises when a connected interface has them."
+  type        = list(string)
+}
+
 locals {
   kind    = "lxc"
   deb_dir = "/var/cache/lanrouter/debs"
@@ -192,6 +202,9 @@ resource "pveguest_file" "frr_conf" {
     peer_ipv6_address = var.peer_ipv6_address
     lan_ipv4_prefixes = var.lan_ipv4_prefixes
     lan_ipv6_prefixes = var.lan_ipv6_prefixes
+
+    acceptance_ipv4_prefixes = var.acceptance_ipv4_prefixes
+    acceptance_ipv6_prefixes = var.acceptance_ipv6_prefixes
   })
   mode  = local.frr_mode
   owner = local.frr_owner

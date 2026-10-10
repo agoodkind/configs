@@ -6,10 +6,16 @@ ip prefix-list DEFAULT-V4-IN seq 10 permit 0.0.0.0/0
 %{ for index, prefix in lan_ipv4_prefixes ~}
 ip prefix-list LAN-V4-OUT seq ${(index + 1) * 10} permit ${prefix}
 %{ endfor ~}
+%{ for index, prefix in acceptance_ipv4_prefixes ~}
+ip prefix-list LAN-V4-OUT seq ${(length(lan_ipv4_prefixes) + index + 1) * 10} permit ${prefix}
+%{ endfor ~}
 !
 ipv6 prefix-list DEFAULT-V6-IN seq 10 permit ::/0
 %{ for index, prefix in lan_ipv6_prefixes ~}
 ipv6 prefix-list LAN-V6-OUT seq ${(index + 1) * 10} permit ${prefix}
+%{ endfor ~}
+%{ for index, prefix in acceptance_ipv6_prefixes ~}
+ipv6 prefix-list LAN-V6-OUT seq ${(length(lan_ipv6_prefixes) + index + 1) * 10} permit ${prefix}
 %{ endfor ~}
 !
 route-map LAN-V4-CONNECTED permit 10
