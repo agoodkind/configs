@@ -14,6 +14,13 @@ RSpec.describe 'routing simulator file deploy' do
     RoutingSimulatorConfig.evaluate_node(inventory, node, facts: [collect]).fetch('facts').fetch('rsim_files')
   end
 
+  def sysctl_argv(node)
+    collect = TaskExpressions.fact_task(task('Collect the simulator files', 'routing-simulator-file-list.yml'))
+    apply = task('Apply the simulator sysctl values', 'deploy-routing-simulator-services.yml')
+    argv = RoutingSimulatorConfig.fact({ 'sysctl_argv' => apply.fetch('ansible.builtin.command').fetch('argv') })
+    RoutingSimulatorConfig.evaluate_node(inventory, node, facts: [collect, argv]).fetch('facts').fetch('sysctl_argv')
+  end
+
   def pushes?(staged_checksum, guest_output)
     push = task('Push each file with a changed checksum', 'deploy-routing-simulator-push.yml')
     item = [[], { 'stat' => { 'checksum' => staged_checksum } }, { 'stdout' => guest_output }]
@@ -41,6 +48,14 @@ RSpec.describe 'routing simulator file deploy' do
       '/etc/systemd/network/40-rsim-sit-sonic1.netdev', '/etc/systemd/system/routing-home-route-0.service'
     )
     expect(files('tunnel_static_client').map(&:last).uniq).to contain_exactly('nftables', 'sysctl', 'network')
+  end
+
+  it 'loads only the pushed simulator sysctl file in the guest' do
+    vmid = inventory.fetch('service_mapping').fetch(inventory.fetch('testbed_routing_nodes')
+      .fetch('tunnel_static_vps').fetch('service')).fetch('vmid').to_s
+    sysctl_path = files('tunnel_static_vps').find { |file| file.last == 'sysctl' }[1]
+
+    expect(sysctl_argv('tunnel_static_vps')).to eq(['pct', 'exec', vmid, '--', 'sysctl', '-p', sysctl_path])
   end
 
   it 'pushes a file only when the guest checksum differs', :aggregate_failures do
