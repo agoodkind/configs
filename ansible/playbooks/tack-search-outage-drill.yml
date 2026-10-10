@@ -33,6 +33,7 @@
     tack_search_outage_exit_retries: 30
     tack_search_outage_exit_delay_seconds: 2
     tack_search_outage_block_failed: false
+    tack_search_outage_failed_task: ""
   tasks:
     - name: Run the OpenSearch outage
       block:
@@ -68,6 +69,7 @@
         - name: Record the outage task failure
           ansible.builtin.set_fact:
             tack_search_outage_block_failed: true
+            tack_search_outage_failed_task: "{{ ansible_failed_task.name | default('unknown task') }}"
       always:
         - name: Wait for the OpenSearch container to exit
           ansible.builtin.command:
@@ -78,6 +80,7 @@
               - "{{ tack_search_outage_container }}"
           register: tack_search_outage_container_state
           changed_when: false
+          ignore_errors: true
           until:
             - tack_search_outage_container_state.rc == 0
             - not (tack_search_outage_container_state.stdout | from_json)[0].State.Running
@@ -130,6 +133,14 @@
     - name: Fail after recovery if an outage task failed
       ansible.builtin.fail:
         msg: >-
-          An outage task failed on {{ inventory_hostname }}. The play started the OpenSearch member
-          and waited for cluster health before failing.
+          Outage task {{ tack_search_outage_failed_task }} failed on {{ inventory_hostname }}. The play started
+          the OpenSearch member and waited for cluster health before reporting the task failure.
       when: tack_search_outage_block_failed | bool
+
+    - name: Fail after recovery if the container exit wait failed
+      ansible.builtin.fail:
+        msg: >-
+          The state read for container {{ tack_search_outage_container }} on {{ inventory_hostname }} failed
+          or the container still ran after retries. The play started the OpenSearch member and waited for
+          cluster health before reporting the exit wait failure.
+      when: tack_search_outage_container_state is failed
