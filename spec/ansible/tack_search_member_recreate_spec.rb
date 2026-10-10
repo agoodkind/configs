@@ -10,12 +10,12 @@ require_relative '../support/tack_search_outage_compose'
 module TackSearchMemberRecreate
   PLAYBOOKS_DIRECTORY = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks')
   PLAYBOOK_FILE = File.join(PLAYBOOKS_DIRECTORY, 'deploy-tack.yml')
-  TASKS_DIRECTORY = File.join(PLAYBOOKS_DIRECTORY, 'tasks')
-  NODE_TASKS_FILE = File.join(TASKS_DIRECTORY, 'tack-search-node.yml')
+  START_TASKS_FILE = File.join(PLAYBOOKS_DIRECTORY, 'tasks', 'tack-search-member-start.yml')
+  HANDLER = 'Restart the OpenSearch member'
   IMPORT_KEY = 'ansible.builtin.import_tasks'
-  FETCH_KEY = 'ansible.builtin.get_url'
   COPY_KEY = 'ansible.builtin.copy'
-  ORDER_KEYS = ['ansible.builtin.meta', 'ansible.builtin.command'].freeze
+  CHANGE_TASK = 'Copy the changed Compose definition'
+  IMPORT_TASK = 'Import the production OpenSearch member start tasks'
   HOST = 'search-member'
   INVENTORY_TEXT = "#{HOST} ansible_connection=local ansible_become=false\n".freeze
   CHANGED_COMPOSE_FILE = 'changed-compose.yaml'
@@ -27,28 +27,18 @@ module TackSearchMemberRecreate
 
   module_function
 
-  def ordered_tasks(file, changed_compose)
-    YAML.safe_load_file(file).flat_map do |task|
-      next ordered_tasks(File.join(TASKS_DIRECTORY, task.fetch(IMPORT_KEY)), changed_compose) if task.key?(IMPORT_KEY)
-      next [definition_change(task, changed_compose)] if task.key?(FETCH_KEY)
-      next [task] if ORDER_KEYS.any? { |key| task.key?(key) }
-
-      []
-    end
-  end
-
-  def definition_change(task, changed_compose)
+  def definition_change(changed_compose)
     destination = File.join('{{ tack_install_dir }}', TackSearchOutageCompose::COMPOSE_FILE)
-    task.slice('name', 'notify').merge(COPY_KEY => { 'src' => changed_compose, 'dest' => destination, 'mode' => '0644' })
+    copy = { 'src' => changed_compose, 'dest' => destination, 'mode' => '0644' }
+    { 'name' => CHANGE_TASK, COPY_KEY => copy, 'notify' => HANDLER }
   end
 
-  def handlers(tasks)
-    notified = tasks.flat_map { |task| Array(task['notify']) }.uniq
+  def handler
     declared = YAML.safe_load_file(PLAYBOOK_FILE).flat_map { |play| play['handlers'] || [] }
-    selected = declared.select { |handler| notified.include?(handler['name']) }
-    raise "#{PLAYBOOK_FILE} has no handler named #{notified.inspect}" if selected.empty?
+    found = declared.find { |candidate| candidate['name'] == HANDLER }
+    raise "#{PLAYBOOK_FILE} has no handler named #{HANDLER.inspect}" if found.nil?
 
-    selected
+    found
   end
 
   def play(directory, project)
@@ -56,8 +46,8 @@ module TackSearchMemberRecreate
     service = TackSearchOutageCompose.definition(project)
     service.fetch('services').fetch(TackSearchOutageCompose::SERVICE)['environment'] = CHANGED_ENVIRONMENT
     File.write(changed_compose, YAML.dump(service))
-    tasks = ordered_tasks(NODE_TASKS_FILE, changed_compose)
-    { 'hosts' => HOST, 'gather_facts' => false, 'tasks' => tasks, 'handlers' => handlers(tasks) }
+    tasks = [definition_change(changed_compose), { 'name' => IMPORT_TASK, IMPORT_KEY => START_TASKS_FILE }]
+    { 'hosts' => HOST, 'gather_facts' => false, 'tasks' => tasks, 'handlers' => [handler] }
   end
 
   def run_play(directory, play)
