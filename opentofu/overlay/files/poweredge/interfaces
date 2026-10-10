@@ -25,11 +25,7 @@ iface nic1 inet manual
 	post-up ip link set nic1 vf 1 state enable
 	pre-down echo 0 > /sys/class/net/nic1/device/sriov_numvfs
 
-auto nic2
-iface nic2 inet dhcp
-	metric 1000
-	accept-ra 1
-	autoconf 1
+iface nic2 inet manual
 
 iface nic3 inet manual
 
