@@ -29,6 +29,9 @@
   pre_tasks:
     - name: Require a merged controller checkout
       ansible.builtin.import_tasks: tasks/require-merged-checkout.yml
+    - name: Validate the routing simulator inventory
+      ansible.builtin.import_tasks: tasks/validate-routing-simulators.yml
+      tags: [never, routing-simulators]
   tasks:
     - name: Pull the pinned mwan release
       ansible.builtin.import_tasks: tasks/github-release.yml

@@ -212,6 +212,25 @@ service_mapping:
     # eth1 on the OPNsense transit link, where it peers BGP with the router.
     ipv4_transit: "10.240.240.3"
     ipv6_transit: "3d06:bad:b01:201::3"
+    # The Astound DHCP reservation and the gateway configuration read this
+    # address.
+    ipv4_astound: "10.240.207.2"
+    routing_interfaces:
+      sonic_1:
+        network: sonic_1
+        mac_address: "BC:24:11:52:00:01"
+        ipv4: "10.240.209.2"
+        ipv6: ""
+      sonic_2:
+        network: sonic_2
+        mac_address: "BC:24:11:52:00:02"
+        ipv4: "10.240.210.2"
+        ipv6: ""
+      etheric:
+        network: etheric
+        mac_address: "BC:24:11:52:00:03"
+        ipv4: "10.240.211.2"
+        ipv6: "2001:db8:2ff:20::2"
   mwan_failover_suburban:
     hostname: mwan-failover.suburban.goodkind.io
     vmid: 216
@@ -341,6 +360,13 @@ service_mapping:
     # ipv6_uplink, unlike the IPv6-capable ISP sims.
     ipv4: "10.240.207.1"
     ipv4_uplink: "10.240.200.94"
+    routing_interfaces:
+      outer:
+        name: eth2
+        network: outer
+        mac_address: "BC:24:11:A5:70:0B"
+        ipv4: "198.51.100.1"
+        ipv6: ""
   isp_routed_suburban:
     hostname: isp-routed.suburban.goodkind.io
     vmid: 904
@@ -369,6 +395,416 @@ service_mapping:
     ipv6_uplink: "3d06:bad:b01:200::93"
     # The prefix the simulator announces over BGP and holds on its loopback.
     announced_prefix_v6: "3d06:bad:b01:230::/64"
+
+  # These entries omit the top-level ipv6 key because the SSHPiper template
+  # creates a route for every entry with an ipv6 key. An absent address family
+  # uses an empty address value.
+  isp_sonic_suburban:
+    hostname: isp-sonic.suburban.goodkind.io
+    vmid: 906
+    inventory: false
+    routing_interfaces:
+      uplink:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:06:00"
+        ipv4: "10.240.200.60"
+        ipv6: "3d06:bad:b01:200::60"
+      outer:
+        name: eth1
+        network: outer
+        mac_address: "BC:24:11:52:06:01"
+        ipv4: "198.51.100.2"
+        ipv6: ""
+      sonic_1:
+        name: eth2
+        network: sonic_1
+        mac_address: "BC:24:11:52:06:02"
+        ipv4: "10.240.209.1"
+        ipv6: ""
+      sonic_2:
+        name: eth3
+        network: sonic_2
+        mac_address: "BC:24:11:52:06:03"
+        ipv4: "10.240.210.1"
+        ipv6: ""
+  routing_astound_static_endpoint_suburban:
+    hostname: routing-astound-static-endpoint.suburban.goodkind.io
+    vmid: 907
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:07:00"
+        ipv4: "10.240.200.61"
+        ipv6: "3d06:bad:b01:200::61"
+      outer:
+        name: eth1
+        network: outer
+        mac_address: "BC:24:11:52:07:01"
+        ipv4: "198.51.100.10"
+        ipv6: ""
+      remote:
+        name: eth2
+        network: astound_static_remote
+        mac_address: "BC:24:11:52:07:02"
+        ipv4: ""
+        ipv6: "2001:db8:180:1::1"
+  routing_astound_static_client_suburban:
+    hostname: routing-astound-static-client.suburban.goodkind.io
+    vmid: 908
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:08:00"
+        ipv4: "10.240.200.62"
+        ipv6: "3d06:bad:b01:200::62"
+      remote:
+        name: eth1
+        network: astound_static_remote
+        mac_address: "BC:24:11:52:08:01"
+        ipv4: ""
+        ipv6: "2001:db8:180:1::10"
+  routing_etheric_native_router_suburban:
+    hostname: routing-etheric-native-router.suburban.goodkind.io
+    vmid: 909
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:09:00"
+        ipv4: "10.240.200.63"
+        ipv6: "3d06:bad:b01:200::63"
+      provider:
+        name: eth1
+        network: etheric
+        mac_address: "BC:24:11:52:09:01"
+        ipv4: "10.240.211.1"
+        ipv6: "2001:db8:2ff:20::1"
+      transit:
+        name: eth2
+        network: etheric_native_transit
+        mac_address: "BC:24:11:52:09:02"
+        ipv4: ""
+        ipv6: "2001:db8:2ff:10::1"
+  routing_etheric_native_upstream_suburban:
+    hostname: routing-etheric-native-upstream.suburban.goodkind.io
+    vmid: 910
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:10:00"
+        ipv4: "10.240.200.64"
+        ipv6: "3d06:bad:b01:200::64"
+      transit:
+        name: eth1
+        network: etheric_native_transit
+        mac_address: "BC:24:11:52:10:01"
+        ipv4: ""
+        ipv6: "2001:db8:2ff:10::2"
+      remote:
+        name: eth2
+        network: etheric_native_remote
+        mac_address: "BC:24:11:52:10:02"
+        ipv4: ""
+        ipv6: "2001:db8:280:1::1"
+  routing_etheric_native_client_suburban:
+    hostname: routing-etheric-native-client.suburban.goodkind.io
+    vmid: 911
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:11:00"
+        ipv4: "10.240.200.65"
+        ipv6: "3d06:bad:b01:200::65"
+      remote:
+        name: eth1
+        network: etheric_native_remote
+        mac_address: "BC:24:11:52:11:01"
+        ipv4: ""
+        ipv6: "2001:db8:280:1::10"
+  routing_tunnel_static_vps_suburban:
+    hostname: routing-tunnel-static-vps.suburban.goodkind.io
+    vmid: 912
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:12:00"
+        ipv4: "10.240.200.66"
+        ipv6: "3d06:bad:b01:200::66"
+      outer:
+        name: eth1
+        network: outer
+        mac_address: "BC:24:11:52:12:01"
+        ipv4: "198.51.100.20"
+        ipv6: ""
+      transit:
+        name: eth2
+        network: tunnel_static_transit
+        mac_address: "BC:24:11:52:12:02"
+        ipv4: ""
+        ipv6: "2001:db8:3ff:10::1"
+  routing_tunnel_static_upstream_suburban:
+    hostname: routing-tunnel-static-upstream.suburban.goodkind.io
+    vmid: 913
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:13:00"
+        ipv4: "10.240.200.67"
+        ipv6: "3d06:bad:b01:200::67"
+      transit:
+        name: eth1
+        network: tunnel_static_transit
+        mac_address: "BC:24:11:52:13:01"
+        ipv4: ""
+        ipv6: "2001:db8:3ff:10::2"
+      remote:
+        name: eth2
+        network: tunnel_static_remote
+        mac_address: "BC:24:11:52:13:02"
+        ipv4: ""
+        ipv6: "2001:db8:380:1::1"
+  routing_tunnel_static_client_suburban:
+    hostname: routing-tunnel-static-client.suburban.goodkind.io
+    vmid: 914
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:14:00"
+        ipv4: "10.240.200.68"
+        ipv6: "3d06:bad:b01:200::68"
+      remote:
+        name: eth1
+        network: tunnel_static_remote
+        mac_address: "BC:24:11:52:14:01"
+        ipv4: ""
+        ipv6: "2001:db8:380:1::10"
+  routing_tunnel_upstream_vps_suburban:
+    hostname: routing-tunnel-upstream-vps.suburban.goodkind.io
+    vmid: 915
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:15:00"
+        ipv4: "10.240.200.69"
+        ipv6: "3d06:bad:b01:200::69"
+      outer:
+        name: eth1
+        network: outer
+        mac_address: "BC:24:11:52:15:01"
+        ipv4: "198.51.100.30"
+        ipv6: ""
+      transit:
+        name: eth2
+        network: tunnel_upstream_transit
+        mac_address: "BC:24:11:52:15:02"
+        ipv4: ""
+        ipv6: "2001:db8:4ff:10::1"
+  routing_tunnel_upstream_upstream_suburban:
+    hostname: routing-tunnel-upstream-upstream.suburban.goodkind.io
+    vmid: 916
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:16:00"
+        ipv4: "10.240.200.70"
+        ipv6: "3d06:bad:b01:200::70"
+      transit:
+        name: eth1
+        network: tunnel_upstream_transit
+        mac_address: "BC:24:11:52:16:01"
+        ipv4: ""
+        ipv6: "2001:db8:4ff:10::2"
+      remote:
+        name: eth2
+        network: tunnel_upstream_remote
+        mac_address: "BC:24:11:52:16:02"
+        ipv4: ""
+        ipv6: "2001:db8:480:1::1"
+  routing_tunnel_upstream_client_suburban:
+    hostname: routing-tunnel-upstream-client.suburban.goodkind.io
+    vmid: 917
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:17:00"
+        ipv4: "10.240.200.71"
+        ipv6: "3d06:bad:b01:200::71"
+      remote:
+        name: eth1
+        network: tunnel_upstream_remote
+        mac_address: "BC:24:11:52:17:01"
+        ipv4: ""
+        ipv6: "2001:db8:480:1::10"
+  routing_tunnel_vps_vps_suburban:
+    hostname: routing-tunnel-vps-vps.suburban.goodkind.io
+    vmid: 918
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:18:00"
+        ipv4: "10.240.200.72"
+        ipv6: "3d06:bad:b01:200::72"
+      outer:
+        name: eth1
+        network: outer
+        mac_address: "BC:24:11:52:18:01"
+        ipv4: "198.51.100.40"
+        ipv6: ""
+      transit:
+        name: eth2
+        network: tunnel_vps_transit
+        mac_address: "BC:24:11:52:18:02"
+        ipv4: ""
+        ipv6: "2001:db8:5ff:10::1"
+  routing_tunnel_vps_upstream_suburban:
+    hostname: routing-tunnel-vps-upstream.suburban.goodkind.io
+    vmid: 919
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:19:00"
+        ipv4: "10.240.200.73"
+        ipv6: "3d06:bad:b01:200::73"
+      transit:
+        name: eth1
+        network: tunnel_vps_transit
+        mac_address: "BC:24:11:52:19:01"
+        ipv4: ""
+        ipv6: "2001:db8:5ff:10::2"
+      remote:
+        name: eth2
+        network: tunnel_vps_remote
+        mac_address: "BC:24:11:52:19:02"
+        ipv4: ""
+        ipv6: "2001:db8:580:1::1"
+  routing_tunnel_vps_client_suburban:
+    hostname: routing-tunnel-vps-client.suburban.goodkind.io
+    vmid: 920
+    inventory: false
+    routing_interfaces:
+      management:
+        name: eth0
+        network: management
+        mac_address: "BC:24:11:52:20:00"
+        ipv4: "10.240.200.74"
+        ipv6: "3d06:bad:b01:200::74"
+      remote:
+        name: eth1
+        network: tunnel_vps_remote
+        mac_address: "BC:24:11:52:20:01"
+        ipv4: ""
+        ipv6: "2001:db8:580:1::10"
+
+# The management entry reuses the vmbr1 bridge. OpenTofu creates every other
+# bridge.
+testbed_routing_networks:
+  management:
+    bridge: vmbr1
+    ipv4_net: "10.240.200.0/24"
+    ipv6_net: "3d06:bad:b01:200::/64"
+  outer:
+    bridge: vmbr20
+    ipv4_net: "198.51.100.0/24"
+    ipv6_net: ""
+  sonic_1:
+    bridge: vmbr21
+    ipv4_net: "10.240.209.0/24"
+    ipv6_net: ""
+  sonic_2:
+    bridge: vmbr22
+    ipv4_net: "10.240.210.0/24"
+    ipv6_net: ""
+  etheric:
+    bridge: vmbr23
+    ipv4_net: "10.240.211.0/24"
+    ipv6_net: "2001:db8:2ff:20::/64"
+  astound_static_remote:
+    bridge: vmbr24
+    ipv4_net: ""
+    ipv6_net: "2001:db8:180:1::/64"
+  etheric_native_transit:
+    bridge: vmbr25
+    ipv4_net: ""
+    ipv6_net: "2001:db8:2ff:10::/64"
+  etheric_native_remote:
+    bridge: vmbr26
+    ipv4_net: ""
+    ipv6_net: "2001:db8:280:1::/64"
+  tunnel_static_transit:
+    bridge: vmbr27
+    ipv4_net: ""
+    ipv6_net: "2001:db8:3ff:10::/64"
+  tunnel_static_remote:
+    bridge: vmbr28
+    ipv4_net: ""
+    ipv6_net: "2001:db8:380:1::/64"
+  tunnel_upstream_transit:
+    bridge: vmbr29
+    ipv4_net: ""
+    ipv6_net: "2001:db8:4ff:10::/64"
+  tunnel_upstream_remote:
+    bridge: vmbr30
+    ipv4_net: ""
+    ipv6_net: "2001:db8:480:1::/64"
+  tunnel_vps_transit:
+    bridge: vmbr31
+    ipv4_net: ""
+    ipv6_net: "2001:db8:5ff:10::/64"
+  tunnel_vps_remote:
+    bridge: vmbr32
+    ipv4_net: ""
+    ipv6_net: "2001:db8:580:1::/64"
+
+# OpenTofu creates one LXC for each service_mapping key in this list.
+testbed_routing_guests:
+  - isp_sonic_suburban
+  - routing_astound_static_endpoint_suburban
+  - routing_astound_static_client_suburban
+  - routing_etheric_native_router_suburban
+  - routing_etheric_native_upstream_suburban
+  - routing_etheric_native_client_suburban
+  - routing_tunnel_static_vps_suburban
+  - routing_tunnel_static_upstream_suburban
+  - routing_tunnel_static_client_suburban
+  - routing_tunnel_upstream_vps_suburban
+  - routing_tunnel_upstream_upstream_suburban
+  - routing_tunnel_upstream_client_suburban
+  - routing_tunnel_vps_vps_suburban
+  - routing_tunnel_vps_upstream_suburban
+  - routing_tunnel_vps_client_suburban
+
+# A guest without an IPv6 default route has no route to the withdrawn home
+# prefix.
+testbed_routing_management:
+  forwarding: false
+  ipv4_default_route: true
+  ipv6_default_route: false
 
 group_children:
   tack_all:

@@ -1,0 +1,340 @@
+---
+- name: Require every routing scenario key
+  ansible.builtin.assert:
+    that:
+      - routing_scenario_missing_keys == ''
+    fail_msg: "Routing scenario {{ item.key }} lacks required keys: {{ routing_scenario_missing_keys }}"
+  loop: "{{ testbed_routing_scenarios | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    routing_scenario_required_keys:
+      scenario:
+        - kind
+        - connections
+        - nodes
+        - home_prefixes
+        - remote_prefixes
+        - tunnels
+        - routes
+        - sessions
+        - probe_targets
+      entries:
+        tunnels:
+          keys: [id, connection, protocol, mtu, inner_prefix_length, local, remote]
+          nested:
+            local: [node, interface, outer_ipv4, inner_ipv6]
+            remote: [node, interface, outer_ipv4, inner_ipv6]
+        sessions:
+          keys: [id, address_family, hops, multihop_ttl, local, remote, policy]
+          nested:
+            local: [node, asn, address]
+            remote: [node, asn, address]
+            policy: [import_prefixes, export_prefixes]
+        routes:
+          keys: [node, family, destination, gateway]
+          nested: {}
+        probe_targets:
+          keys: [id, address]
+          nested: {}
+    routing_scenario_missing_keys: >-
+      {%- set missing = [] -%}
+      {%- for key in routing_scenario_required_keys.scenario -%}
+      {%- if key not in item.value -%}
+      {%- set _ = missing.append('scenario key ' ~ key) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- for group, required in routing_scenario_required_keys.entries.items() -%}
+      {%- if group in item.value -%}
+      {%- for entry in item.value[group] -%}
+      {%- if 'id' in entry -%}
+      {%- set label = group ~ ' entry ' ~ entry.id -%}
+      {%- else -%}
+      {%- set label = group ~ ' entry ' ~ loop.index -%}
+      {%- endif -%}
+      {%- for key in required['keys'] -%}
+      {%- if key not in entry -%}
+      {%- set _ = missing.append(label ~ ' key ' ~ key) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- for parent, children in required.nested.items() -%}
+      {%- if parent in entry -%}
+      {%- for child in children -%}
+      {%- if child not in entry[parent] -%}
+      {%- set _ = missing.append(label ~ ' key ' ~ parent ~ '.' ~ child) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ missing | join('; ') }}
+
+- name: Collect the routing simulator declarations
+  ansible.builtin.set_fact:
+    routing_simulator_services: >-
+      {{ testbed_routing_nodes.values() | map(attribute='service') | list }}
+    routing_simulator_gateway_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'gateway')
+      | map(attribute='key') | list }}
+    routing_simulator_tunnels: >-
+      {{ testbed_routing_scenarios.values() | map(attribute='tunnels') | flatten(levels=1) }}
+    routing_simulator_sessions: >-
+      {{ testbed_routing_scenarios.values() | map(attribute='sessions') | flatten(levels=1) }}
+
+- name: Require supported routing simulator nodes and existing references
+  ansible.builtin.assert:
+    that:
+      - testbed_routing_nodes.values() | map(attribute='role') | difference(routing_simulator_roles) == []
+      - routing_simulator_services | difference(service_mapping.keys() | list) == []
+      - testbed_routing_guests | difference(routing_simulator_services) == []
+      - >-
+        testbed_routing_connections.values() | map(attribute='simulator')
+        | difference(testbed_routing_nodes.keys() | list) == []
+    fail_msg: >-
+      A routing simulator node has an unsupported role, or a node, guest, or
+      connection references an undeclared service or node.
+  vars:
+    routing_simulator_roles:
+      - gateway
+      - transport
+      - tunnel_endpoint
+      - provider_router
+      - vps
+      - upstream_router
+      - remote_client
+
+- name: Require management interfaces outside test forwarding
+  ansible.builtin.assert:
+    that:
+      - not testbed_routing_management.forwarding
+      - not testbed_routing_management.ipv6_default_route
+      - testbed_routing_home_prefix in testbed_routing_management_unreachable_prefixes
+    fail_msg: >-
+      A routing simulator management interface forwards test packets, has an
+      IPv6 default route, or lacks the unreachable route for the home prefix.
+
+- name: Collect the routing simulator interfaces
+  ansible.builtin.set_fact:
+    routing_simulator_interfaces: >-
+      {{ routing_simulator_services | map('extract', service_mapping)
+      | map(attribute='routing_interfaces') | map('dict2items') | flatten(levels=1)
+      | map(attribute='value') | list }}
+
+- name: Require declared routing simulator networks
+  ansible.builtin.assert:
+    that:
+      - >-
+        routing_simulator_interfaces | map(attribute='network')
+        | difference(testbed_routing_networks.keys() | list) == []
+    fail_msg: A routing simulator interface references an undeclared network.
+
+- name: Collect the routing simulator identities
+  ansible.builtin.set_fact:
+    routing_simulator_identities:
+      node_service: "{{ routing_simulator_services }}"
+      vmid: >-
+        {{ routing_simulator_services | map('extract', service_mapping) | map(attribute='vmid') | list }}
+      hostname: >-
+        {{ routing_simulator_services | map('extract', service_mapping) | map(attribute='hostname') | list }}
+      mac_address: >-
+        {{ routing_simulator_interfaces | map(attribute='mac_address') | map('upper') | list }}
+      interface_ipv4: >-
+        {{ routing_simulator_interfaces | map(attribute='ipv4') | reject('equalto', '') | list }}
+      interface_ipv6: >-
+        {{ routing_simulator_interfaces | map(attribute='ipv6') | reject('equalto', '') | list }}
+      bridge: >-
+        {{ testbed_routing_networks.values() | map(attribute='bridge') | list }}
+      connection_gateway_ipv4: >-
+        {{ testbed_routing_connections.values() | map(attribute='mwan_ipv4') | list }}
+      connection_simulator_link_ipv4: >-
+        {{ testbed_routing_connections.values() | map(attribute='simulator_link_ipv4') | list }}
+      router_id: >-
+        {{ testbed_routing_nodes.values() | map(attribute='router_id') | reject('equalto', '') | list }}
+      tunnel_id: >-
+        {{ routing_simulator_tunnels | map(attribute='id') | list }}
+      tunnel_endpoint_tuple: >-
+        {{ routing_simulator_tunnels | map(attribute='protocol')
+        | zip(routing_simulator_tunnels | map(attribute='local.outer_ipv4'),
+        routing_simulator_tunnels | map(attribute='remote.outer_ipv4'))
+        | map('join', '/') | list }}
+      tunnel_interface: >-
+        {{ (routing_simulator_tunnels | map(attribute='local.node')
+        | zip(routing_simulator_tunnels | map(attribute='local.interface'))
+        | map('join', '/') | list)
+        + (routing_simulator_tunnels | map(attribute='remote.node')
+        | zip(routing_simulator_tunnels | map(attribute='remote.interface'))
+        | map('join', '/') | list) }}
+      tunnel_inner_ipv6: >-
+        {{ (routing_simulator_tunnels | map(attribute='local.inner_ipv6') | list)
+        + (routing_simulator_tunnels | map(attribute='remote.inner_ipv6') | list) }}
+      session_id: >-
+        {{ routing_simulator_sessions | map(attribute='id') | list }}
+      session_address_pair: >-
+        {{ routing_simulator_sessions | map(attribute='local.address')
+        | zip(routing_simulator_sessions | map(attribute='remote.address'))
+        | map('join', '/') | list }}
+
+- name: Require unique routing simulator identities
+  ansible.builtin.assert:
+    that:
+      - (item.value | unique | list) == item.value
+    fail_msg: "The routing simulator inventory repeats a {{ item.key }} value."
+  loop: "{{ routing_simulator_identities | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Require each routing scenario to satisfy the contract of its kind
+  ansible.builtin.assert:
+    that:
+      - item.value.kind in routing_simulator_contracts
+      - item.value.nodes | difference(testbed_routing_nodes.keys() | list) == []
+      - >-
+        (item.value.nodes | map('extract', testbed_routing_nodes) | map(attribute='scenario')
+        | unique | list) == [item.key]
+      - >-
+        (item.value.nodes | map('extract', testbed_routing_nodes) | map(attribute='role') | sort)
+        == routing_simulator_contracts[item.value.kind].node_roles
+      - item.value.connections | difference(testbed_routing_connections.keys() | list) == []
+      - item.value.home_prefixes != []
+      - item.value.remote_prefixes != []
+      - item.value.probe_targets != []
+      - >-
+        item.value.routes | map(attribute='node')
+        | difference(item.value.nodes + routing_simulator_gateway_nodes) == []
+      - item.value.routes | map(attribute='family') | difference(routing_simulator_route_families) == []
+      - (item.value.tunnels != []) == routing_simulator_contracts[item.value.kind].tunneled
+      - item.value.tunnels | map(attribute='protocol') | difference(routing_simulator_tunnel_protocols) == []
+      - item.value.tunnels | map(attribute='connection') | difference(item.value.connections) == []
+      - >-
+        item.value.tunnels | map(attribute='connection') | map('extract', testbed_routing_connections)
+        | map(attribute='simulator_outer_ipv4') | select('equalto', '') | list == []
+      - item.value.tunnels | map(attribute='local.node') | difference(routing_simulator_gateway_nodes) == []
+      - item.value.tunnels | map(attribute='remote.node') | difference(item.value.nodes) == []
+      - (item.value.sessions != []) == routing_simulator_contracts[item.value.kind].bgp
+      - >-
+        item.value.sessions | map(attribute='local.node')
+        | difference(item.value.nodes + routing_simulator_gateway_nodes) == []
+      - item.value.sessions | map(attribute='remote.node') | difference(item.value.nodes) == []
+      - >-
+        (item.value.sessions | selectattr('local.node', 'in', routing_simulator_gateway_nodes)
+        | map(attribute='remote.node') | map('extract', testbed_routing_nodes) | map(attribute='role')
+        | unique | list) == routing_simulator_contracts[item.value.kind].gateway_peer_roles
+      - item.value.sessions | map(attribute='policy.import_prefixes') | select('equalto', []) | list == []
+      - item.value.sessions | map(attribute='policy.export_prefixes') | select('equalto', []) | list == []
+      - >-
+        ((item.value.sessions | map(attribute='policy.import_prefixes') | flatten)
+        + (item.value.sessions | map(attribute='policy.export_prefixes') | flatten))
+        | difference(item.value.home_prefixes + item.value.remote_prefixes) == []
+      - routing_scenario_asns | reject('ge', routing_simulator_private_asn_ranges[0].lowest) | list == []
+      - >-
+        routing_scenario_asns | select('gt', routing_simulator_private_asn_ranges[0].highest)
+        | reject('ge', routing_simulator_private_asn_ranges[1].lowest) | list == []
+      - routing_scenario_asns | select('gt', routing_simulator_private_asn_ranges[1].highest) | list == []
+    fail_msg: "Routing scenario {{ item.key }} violates the contract of its kind."
+  loop: "{{ testbed_routing_scenarios | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    routing_scenario_asns: >-
+      {{ (item.value.sessions | map(attribute='local.asn') | list)
+      + (item.value.sessions | map(attribute='remote.asn') | list) }}
+    routing_simulator_route_families:
+      - ipv4
+      - ipv6
+    routing_simulator_tunnel_protocols:
+      - sit
+    routing_simulator_private_asn_ranges:
+      - lowest: 64512
+        highest: 65534
+      - lowest: 4200000000
+        highest: 4294967294
+    routing_simulator_contracts:
+      tunnel_static_routes:
+        node_roles: [remote_client, tunnel_endpoint]
+        tunneled: true
+        bgp: false
+        gateway_peer_roles: []
+      native_bgp:
+        node_roles: [provider_router, remote_client, upstream_router]
+        tunneled: false
+        bgp: true
+        gateway_peer_roles: [provider_router]
+      tunnel_configured_home:
+        node_roles: [remote_client, upstream_router, vps]
+        tunneled: true
+        bgp: true
+        gateway_peer_roles: []
+      tunnel_upstream_peer:
+        node_roles: [remote_client, upstream_router, vps]
+        tunneled: true
+        bgp: true
+        gateway_peer_roles: [upstream_router]
+      tunnel_vps_peer:
+        node_roles: [remote_client, upstream_router, vps]
+        tunneled: true
+        bgp: true
+        gateway_peer_roles: [vps]
+
+- name: Require each tunnel and session address to match its node and link
+  ansible.builtin.assert:
+    that:
+      - routing_scenario_address_problems == ''
+    fail_msg: "Routing scenario {{ item.key }}: {{ routing_scenario_address_problems }}"
+  loop: "{{ testbed_routing_scenarios | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    routing_scenario_address_problems: >-
+      {%- set owners = {} -%}
+      {%- set problems = [] -%}
+      {%- for node in item.value.nodes + routing_simulator_gateway_nodes -%}
+      {%- for interface in service_mapping[testbed_routing_nodes[node].service].routing_interfaces.values() -%}
+      {%- for address in [interface.ipv4, interface.ipv6] -%}
+      {%- if address != '' -%}
+      {%- set _ = owners.update({address: {'node': node, 'link': interface.network}}) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- for tunnel in item.value.tunnels -%}
+      {%- for side in [tunnel.local, tunnel.remote] -%}
+      {%- set _ = owners.update({side.inner_ipv6: {'node': side.node, 'link': 'tunnel ' ~ tunnel.id}}) -%}
+      {%- endfor -%}
+      {%- if tunnel.local.outer_ipv4 != testbed_routing_connections[tunnel.connection].mwan_ipv4 -%}
+      {%- set _ = problems.append('tunnel ' ~ tunnel.id ~ ' local.outer_ipv4 differs from the mwan_ipv4 of connection '
+      ~ tunnel.connection) -%}
+      {%- endif -%}
+      {%- if tunnel.remote.outer_ipv4 not in owners -%}
+      {%- set _ = problems.append('tunnel ' ~ tunnel.id ~ ' remote.outer_ipv4 is no interface address') -%}
+      {%- elif owners[tunnel.remote.outer_ipv4].node != tunnel.remote.node -%}
+      {%- set _ = problems.append('tunnel ' ~ tunnel.id ~ ' remote.outer_ipv4 belongs to node '
+      ~ owners[tunnel.remote.outer_ipv4].node) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- for session in item.value.sessions -%}
+      {%- set links = [] -%}
+      {%- for side in [session.local, session.remote] -%}
+      {%- if side.address not in owners -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' address ' ~ side.address
+      ~ ' is no interface or tunnel address') -%}
+      {%- elif owners[side.address].node != side.node -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' address ' ~ side.address ~ ' belongs to node '
+      ~ owners[side.address].node) -%}
+      {%- else -%}
+      {%- set _ = links.append(owners[side.address].link) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- if links[1:] != [] -%}
+      {%- if links[0] == links[1] -%}
+      {%- if session.hops != 1 or session.multihop_ttl != 0 -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' is on one link and requires hops 1 and multihop_ttl 0') -%}
+      {%- endif -%}
+      {%- elif session.hops < 2 or session.multihop_ttl < session.hops -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' crosses several links and requires hops of at least 2'
+      ~ ' and multihop_ttl of at least hops') -%}
+      {%- endif -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ problems | join('; ') }}
