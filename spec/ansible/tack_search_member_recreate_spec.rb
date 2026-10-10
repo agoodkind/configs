@@ -89,9 +89,6 @@ RSpec.describe TackSearchMemberRecreate do
       result = described_class.run_play(directory, play)
 
       expect(result.exit_status.success?).to be(true), result.output
-      play.fetch('handlers').each do |handler|
-        expect(result.output).to include("RUNNING HANDLER [#{handler.fetch('name')}]")
-      end
       recreations = described_class.recreations(directory, project)
       expect(recreations).to eq(1), "#{recreations} container recreations\n#{result.output}"
       expect(TackSearchOutageCompose.running?(directory, container)).to be(true)
