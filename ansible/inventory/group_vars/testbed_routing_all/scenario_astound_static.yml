@@ -1,0 +1,54 @@
+---
+testbed_routing_scenario_astound_static:
+  kind: tunnel_static_routes
+  connections: [astound]
+  nodes: [astound_static_endpoint, astound_static_client]
+  home_prefixes: ["{{ testbed_routing_home_prefix }}"]
+  remote_prefixes: ["{{ testbed_routing_networks.astound_static_remote.ipv6_net }}"]
+  tunnels:
+    - id: astound_static_astound
+      connection: astound
+      protocol: sit
+      mtu: 1480
+      inner_prefix_length: 64
+      local:
+        node: mwan
+        interface: sit-astound
+        outer_ipv4: "{{ testbed_routing_connections.astound.mwan_ipv4 }}"
+        inner_ipv6: "2001:db8:1ff:1::1"
+      remote:
+        node: astound_static_endpoint
+        interface: sit-astound
+        outer_ipv4: >-
+          {{ service_mapping.routing_astound_static_endpoint_suburban.routing_interfaces.outer.ipv4 }}
+        inner_ipv6: "2001:db8:1ff:1::2"
+  routes:
+    - node: mwan
+      family: ipv4
+      destination: >-
+        {{ service_mapping.routing_astound_static_endpoint_suburban.routing_interfaces.outer.ipv4 }}/32
+      gateway: "{{ testbed_routing_connections.astound.simulator_link_ipv4 }}"
+    - node: astound_static_endpoint
+      family: ipv4
+      destination: "{{ testbed_routing_connections.astound.mwan_ipv4 }}/32"
+      gateway: "{{ testbed_routing_connections.astound.simulator_outer_ipv4 }}"
+    - node: mwan
+      family: ipv6
+      destination: "{{ testbed_routing_networks.astound_static_remote.ipv6_net }}"
+      gateway: "2001:db8:1ff:1::2"
+    - node: astound_static_endpoint
+      family: ipv6
+      destination: "{{ testbed_routing_home_prefix }}"
+      gateway: "2001:db8:1ff:1::1"
+    - node: astound_static_client
+      family: ipv6
+      destination: "{{ testbed_routing_home_prefix }}"
+      gateway: >-
+        {{ service_mapping.routing_astound_static_endpoint_suburban.routing_interfaces.remote.ipv6 }}
+  sessions: []
+  probe_targets:
+    - id: tunnel_remote
+      address: "2001:db8:1ff:1::2"
+    - id: remote_client
+      address: >-
+        {{ service_mapping.routing_astound_static_client_suburban.routing_interfaces.remote.ipv6 }}

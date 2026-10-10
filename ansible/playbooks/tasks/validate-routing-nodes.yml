@@ -1,0 +1,54 @@
+---
+- name: Collect the routing simulator declarations
+  ansible.builtin.set_fact:
+    routing_simulator_services: >-
+      {{ testbed_routing_nodes.values() | map(attribute='service') | list }}
+    routing_simulator_gateway_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'gateway')
+      | map(attribute='key') | list }}
+    routing_simulator_tunnels: >-
+      {{ testbed_routing_scenarios.values() | map(attribute='tunnels') | flatten(levels=1) }}
+    routing_simulator_sessions: >-
+      {{ testbed_routing_scenarios.values() | map(attribute='sessions') | flatten(levels=1) }}
+
+- name: Require supported routing simulator nodes and existing references
+  ansible.builtin.assert:
+    that:
+      - testbed_routing_nodes.values() | map(attribute='role') | difference(routing_simulator_roles) == []
+      - >-
+        ((routing_simulator_contracts.values() | map(attribute='node_roles') | flatten)
+        + (routing_simulator_contracts.values() | map(attribute='gateway_peer_roles') | flatten))
+        | difference(routing_simulator_roles) == []
+      - routing_simulator_services | difference(service_mapping.keys() | list) == []
+      - testbed_routing_guests | difference(routing_simulator_services) == []
+      - >-
+        testbed_routing_connections.values() | map(attribute='simulator')
+        | difference(testbed_routing_nodes.keys() | list) == []
+    fail_msg: >-
+      A routing simulator node or contract has an unsupported role, or a node,
+      guest, or connection references an undeclared service or node.
+
+- name: Require management interfaces outside test forwarding
+  ansible.builtin.assert:
+    that:
+      - not testbed_routing_management.forwarding
+      - not testbed_routing_management.ipv6_default_route
+      - testbed_routing_home_prefix in testbed_routing_management_unreachable_prefixes
+    fail_msg: >-
+      A routing simulator management interface forwards test packets, has an
+      IPv6 default route, or lacks the unreachable route for the home prefix.
+
+- name: Collect the routing simulator interfaces
+  ansible.builtin.set_fact:
+    routing_simulator_interfaces: >-
+      {{ routing_simulator_services | map('extract', service_mapping)
+      | map(attribute='routing_interfaces') | map('dict2items') | flatten(levels=1)
+      | map(attribute='value') | list }}
+
+- name: Require declared routing simulator networks
+  ansible.builtin.assert:
+    that:
+      - >-
+        routing_simulator_interfaces | map(attribute='network')
+        | difference(testbed_routing_networks.keys() | list) == []
+    fail_msg: A routing simulator interface references an undeclared network.

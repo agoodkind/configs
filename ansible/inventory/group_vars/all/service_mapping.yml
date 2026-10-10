@@ -337,65 +337,6 @@ service_mapping:
     ipv4_prefix: 29
     ipv4_uplink: "10.240.200.90"
     ipv6_uplink: "3d06:bad:b01:200::90"
-  isp_att_suburban:
-    hostname: isp-att.suburban.goodkind.io
-    vmid: 901
-    inventory: false
-    ipv4: "10.240.205.1"
-    ipv4_uplink: "10.240.200.91"
-    ipv6_uplink: "3d06:bad:b01:200::91"
-  isp_mbrains_suburban:
-    hostname: isp-mbrains.suburban.goodkind.io
-    vmid: 902
-    inventory: false
-    ipv6: "3d06:bad:b01:250::1"
-    ipv4: "10.240.206.1"
-    ipv4_uplink: "10.240.200.92"
-    ipv6_uplink: "3d06:bad:b01:200::92"
-  isp_astound_suburban:
-    hostname: isp-astound.suburban.goodkind.io
-    vmid: 903
-    inventory: false
-    # IPv4-only: the real Astound circuit carries no IPv6, so this sim has no
-    # ipv6_uplink, unlike the IPv6-capable ISP sims.
-    ipv4: "10.240.207.1"
-    ipv4_uplink: "10.240.200.94"
-    routing_interfaces:
-      outer:
-        name: eth2
-        network: outer
-        mac_address: "BC:24:11:A5:70:0B"
-        ipv4: "198.51.100.1"
-        ipv6: ""
-  isp_routed_suburban:
-    hostname: isp-routed.suburban.goodkind.io
-    vmid: 904
-    inventory: false
-    ipv4: "10.240.208.1"
-    ipv6: "3d06:bad:b01:260::1"
-    ipv4_uplink: "10.240.200.95"
-    ipv6_uplink: "3d06:bad:b01:200::95"
-
-  # Second-router simulator, testbed only. An FRR speaker on the transit link
-  # that peers with both MWAN speakers in the iBGP AS and announces the prefix
-  # it owns, proving router N+1 onboarding needs no MWAN change. Like the ISP
-  # sims it stays out of the SSH inventory; deploy-router2-sim.yml configures
-  # it through pct from the hypervisor.
-  router2_suburban:
-    hostname: router2.suburban.goodkind.io
-    vmid: 905
-    inventory: false
-    ipv4_transit: "10.240.240.5"
-    ipv6_transit: "3d06:bad:b01:201::5"
-    # Uplink on the management bridge, matching the ISP sims and continuing
-    # their host-suffix run. The transit link is the router's WAN side, so it
-    # reaches neither the guest segment nor the internet; package installs
-    # need this second path.
-    ipv4_uplink: "10.240.200.93"
-    ipv6_uplink: "3d06:bad:b01:200::93"
-    # The prefix the simulator announces over BGP and holds on its loopback.
-    announced_prefix_v6: "3d06:bad:b01:230::/64"
-
   # These entries omit the top-level ipv6 key because the SSHPiper template
   # creates a route for every entry with an ipv6 key. An absent address family
   # uses an empty address value.
@@ -468,6 +409,13 @@ service_mapping:
         mac_address: "BC:24:11:52:08:01"
         ipv4: ""
         ipv6: "2001:db8:180:1::10"
+  isp_att_suburban:
+    hostname: isp-att.suburban.goodkind.io
+    vmid: 901
+    inventory: false
+    ipv4: "10.240.205.1"
+    ipv4_uplink: "10.240.200.91"
+    ipv6_uplink: "3d06:bad:b01:200::91"
   routing_etheric_native_router_suburban:
     hostname: routing-etheric-native-router.suburban.goodkind.io
     vmid: 909
@@ -531,6 +479,14 @@ service_mapping:
         mac_address: "BC:24:11:52:11:01"
         ipv4: ""
         ipv6: "2001:db8:280:1::10"
+  isp_mbrains_suburban:
+    hostname: isp-mbrains.suburban.goodkind.io
+    vmid: 902
+    inventory: false
+    ipv6: "3d06:bad:b01:250::1"
+    ipv4: "10.240.206.1"
+    ipv4_uplink: "10.240.200.92"
+    ipv6_uplink: "3d06:bad:b01:200::92"
   routing_tunnel_static_vps_suburban:
     hostname: routing-tunnel-static-vps.suburban.goodkind.io
     vmid: 912
@@ -594,6 +550,29 @@ service_mapping:
         mac_address: "BC:24:11:52:14:01"
         ipv4: ""
         ipv6: "2001:db8:380:1::10"
+  isp_astound_suburban:
+    hostname: isp-astound.suburban.goodkind.io
+    vmid: 903
+    inventory: false
+    # IPv4-only: the real Astound circuit carries no IPv6, so this sim has no
+    # ipv6_uplink, unlike the IPv6-capable ISP sims.
+    ipv4: "10.240.207.1"
+    ipv4_uplink: "10.240.200.94"
+    routing_interfaces:
+      outer:
+        name: eth2
+        network: outer
+        mac_address: "BC:24:11:A5:70:0B"
+        ipv4: "198.51.100.1"
+        ipv6: ""
+  isp_routed_suburban:
+    hostname: isp-routed.suburban.goodkind.io
+    vmid: 904
+    inventory: false
+    ipv4: "10.240.208.1"
+    ipv6: "3d06:bad:b01:260::1"
+    ipv4_uplink: "10.240.200.95"
+    ipv6_uplink: "3d06:bad:b01:200::95"
   routing_tunnel_upstream_vps_suburban:
     hostname: routing-tunnel-upstream-vps.suburban.goodkind.io
     vmid: 915
@@ -657,6 +636,26 @@ service_mapping:
         mac_address: "BC:24:11:52:17:01"
         ipv4: ""
         ipv6: "2001:db8:480:1::10"
+
+  # Second-router simulator, testbed only. An FRR speaker on the transit link
+  # that peers with both MWAN speakers in the iBGP AS and announces the prefix
+  # it owns, proving router N+1 onboarding needs no MWAN change. Like the ISP
+  # sims it stays out of the SSH inventory; deploy-router2-sim.yml configures
+  # it through pct from the hypervisor.
+  router2_suburban:
+    hostname: router2.suburban.goodkind.io
+    vmid: 905
+    inventory: false
+    ipv4_transit: "10.240.240.5"
+    ipv6_transit: "3d06:bad:b01:201::5"
+    # Uplink on the management bridge, matching the ISP sims and continuing
+    # their host-suffix run. The transit link is the router's WAN side, so it
+    # reaches neither the guest segment nor the internet; package installs
+    # need this second path.
+    ipv4_uplink: "10.240.200.93"
+    ipv6_uplink: "3d06:bad:b01:200::93"
+    # The prefix the simulator announces over BGP and holds on its loopback.
+    announced_prefix_v6: "3d06:bad:b01:230::/64"
   routing_tunnel_vps_vps_suburban:
     hostname: routing-tunnel-vps-vps.suburban.goodkind.io
     vmid: 918
@@ -720,6 +719,84 @@ service_mapping:
         mac_address: "BC:24:11:52:20:01"
         ipv4: ""
         ipv6: "2001:db8:580:1::10"
+
+group_children:
+  tack_all:
+    - tack_servers
+    - tack_search1_servers
+    - tack_qa_suburban_servers
+    - tack_search1_suburban_servers
+    - tack_data1_servers
+    - tack_data2_servers
+    - tack_data3_servers
+    - tack_app2_servers
+    - tack_data1_suburban_servers
+    - tack_data2_suburban_servers
+    - tack_data3_suburban_servers
+    - tack_app2_suburban_servers
+  tack_prod_all:
+    - tack_servers
+    - tack_search1_servers
+    - tack_app2_servers
+    - tack_data1_servers
+    - tack_data2_servers
+    - tack_data3_servers
+  tack_qa_all:
+    - tack_qa_suburban_servers
+    - tack_search1_suburban_servers
+    - tack_app2_suburban_servers
+    - tack_data1_suburban_servers
+    - tack_data2_suburban_servers
+    - tack_data3_suburban_servers
+  tack_data_servers:
+    - tack_data1_servers
+    - tack_data2_servers
+    - tack_data3_servers
+  tack_data_suburban_servers:
+    - tack_data1_suburban_servers
+    - tack_data2_suburban_servers
+    - tack_data3_suburban_servers
+  tack_app_servers:
+    - tack_servers
+    - tack_app2_servers
+  tack_app_suburban_servers:
+    - tack_qa_suburban_servers
+    - tack_app2_suburban_servers
+  tack_search:
+    - tack_search1_servers
+    - tack_search1_suburban_servers
+  mwan_all:
+    - mwan_servers
+    - mwan_suburban_servers
+  # One group per environment for the hosts that install released binaries:
+  # the gateway, the failover, the router, and the hypervisor. The hypervisor
+  # groups come from the static hosts file and merge by name. Each group's
+  # group_vars file pins the mwan and opnsensectl releases.
+  mwan_prod_all:
+    - mwan_servers
+    - mwan_failover_servers
+    - opnsense_servers
+    - vault_servers
+  mwan_testbed_all:
+    - mwan_suburban_servers
+    - mwan_failover_suburban_servers
+    - opnsense_suburban_servers
+    - suburban_servers
+  mwan_failover_all:
+    - mwan_failover_servers
+    - mwan_failover_suburban_servers
+  opnsense_all:
+    - opnsense_servers
+    - opnsense_suburban_servers
+  dns64_all:
+    - dns64_servers
+    - dns64_suburban_servers
+  seaweedfs_all:
+    - seaweedfs_servers
+    - seaweedfs_suburban_servers
+  testbed_routing_all:
+    - suburban_servers
+    - mwan_suburban_servers
 
 # The management entry reuses the vmbr1 bridge. OpenTofu creates every other
 # bridge.
@@ -805,78 +882,3 @@ testbed_routing_management:
   forwarding: false
   ipv4_default_route: true
   ipv6_default_route: false
-
-group_children:
-  tack_all:
-    - tack_servers
-    - tack_search1_servers
-    - tack_qa_suburban_servers
-    - tack_search1_suburban_servers
-    - tack_data1_servers
-    - tack_data2_servers
-    - tack_data3_servers
-    - tack_app2_servers
-    - tack_data1_suburban_servers
-    - tack_data2_suburban_servers
-    - tack_data3_suburban_servers
-    - tack_app2_suburban_servers
-  tack_prod_all:
-    - tack_servers
-    - tack_search1_servers
-    - tack_app2_servers
-    - tack_data1_servers
-    - tack_data2_servers
-    - tack_data3_servers
-  tack_qa_all:
-    - tack_qa_suburban_servers
-    - tack_search1_suburban_servers
-    - tack_app2_suburban_servers
-    - tack_data1_suburban_servers
-    - tack_data2_suburban_servers
-    - tack_data3_suburban_servers
-  tack_data_servers:
-    - tack_data1_servers
-    - tack_data2_servers
-    - tack_data3_servers
-  tack_data_suburban_servers:
-    - tack_data1_suburban_servers
-    - tack_data2_suburban_servers
-    - tack_data3_suburban_servers
-  tack_app_servers:
-    - tack_servers
-    - tack_app2_servers
-  tack_app_suburban_servers:
-    - tack_qa_suburban_servers
-    - tack_app2_suburban_servers
-  tack_search:
-    - tack_search1_servers
-    - tack_search1_suburban_servers
-  mwan_all:
-    - mwan_servers
-    - mwan_suburban_servers
-  # One group per environment for the hosts that install released binaries:
-  # the gateway, the failover, the router, and the hypervisor. The hypervisor
-  # groups come from the static hosts file and merge by name. Each group's
-  # group_vars file pins the mwan and opnsensectl releases.
-  mwan_prod_all:
-    - mwan_servers
-    - mwan_failover_servers
-    - opnsense_servers
-    - vault_servers
-  mwan_testbed_all:
-    - mwan_suburban_servers
-    - mwan_failover_suburban_servers
-    - opnsense_suburban_servers
-    - suburban_servers
-  mwan_failover_all:
-    - mwan_failover_servers
-    - mwan_failover_suburban_servers
-  opnsense_all:
-    - opnsense_servers
-    - opnsense_suburban_servers
-  dns64_all:
-    - dns64_servers
-    - dns64_suburban_servers
-  seaweedfs_all:
-    - seaweedfs_servers
-    - seaweedfs_suburban_servers

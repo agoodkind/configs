@@ -1,0 +1,71 @@
+---
+testbed_routing_scenario_tunnel_static:
+  kind: tunnel_configured_home
+  connections: [sonic_1]
+  nodes: [tunnel_static_vps, tunnel_static_upstream, tunnel_static_client]
+  home_prefixes: ["{{ testbed_routing_home_prefix }}"]
+  remote_prefixes: ["{{ testbed_routing_networks.tunnel_static_remote.ipv6_net }}"]
+  tunnels:
+    - id: tunnel_static_sonic_1
+      connection: sonic_1
+      protocol: sit
+      mtu: 1480
+      inner_prefix_length: 64
+      local:
+        node: mwan
+        interface: sit-static
+        outer_ipv4: "{{ testbed_routing_connections.sonic_1.mwan_ipv4 }}"
+        inner_ipv6: "2001:db8:3ff:1::1"
+      remote:
+        node: tunnel_static_vps
+        interface: sit-sonic1
+        outer_ipv4: >-
+          {{ service_mapping.routing_tunnel_static_vps_suburban.routing_interfaces.outer.ipv4 }}
+        inner_ipv6: "2001:db8:3ff:1::2"
+  routes:
+    - node: mwan
+      family: ipv4
+      destination: >-
+        {{ service_mapping.routing_tunnel_static_vps_suburban.routing_interfaces.outer.ipv4 }}/32
+      gateway: "{{ testbed_routing_connections.sonic_1.simulator_link_ipv4 }}"
+    - node: tunnel_static_vps
+      family: ipv4
+      destination: "{{ testbed_routing_connections.sonic_1.mwan_ipv4 }}/32"
+      gateway: "{{ testbed_routing_connections.sonic_1.simulator_outer_ipv4 }}"
+    - node: mwan
+      family: ipv6
+      destination: "{{ testbed_routing_networks.tunnel_static_remote.ipv6_net }}"
+      gateway: "2001:db8:3ff:1::2"
+    - node: tunnel_static_vps
+      family: ipv6
+      destination: "{{ testbed_routing_home_prefix }}"
+      gateway: "2001:db8:3ff:1::1"
+    - node: tunnel_static_client
+      family: ipv6
+      destination: "{{ testbed_routing_home_prefix }}"
+      gateway: >-
+        {{ service_mapping.routing_tunnel_static_upstream_suburban.routing_interfaces.remote.ipv6 }}
+  sessions:
+    - id: tunnel_static_upstream
+      address_family: ipv6_unicast
+      hops: 1
+      multihop_ttl: 0
+      local:
+        node: tunnel_static_vps
+        asn: 64530
+        address: >-
+          {{ service_mapping.routing_tunnel_static_vps_suburban.routing_interfaces.transit.ipv6 }}
+      remote:
+        node: tunnel_static_upstream
+        asn: 64531
+        address: >-
+          {{ service_mapping.routing_tunnel_static_upstream_suburban.routing_interfaces.transit.ipv6 }}
+      policy:
+        import_prefixes: ["{{ testbed_routing_networks.tunnel_static_remote.ipv6_net }}"]
+        export_prefixes: ["{{ testbed_routing_home_prefix }}"]
+  probe_targets:
+    - id: tunnel_remote
+      address: "2001:db8:3ff:1::2"
+    - id: remote_client
+      address: >-
+        {{ service_mapping.routing_tunnel_static_client_suburban.routing_interfaces.remote.ipv6 }}
