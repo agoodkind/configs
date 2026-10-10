@@ -1,0 +1,36 @@
+auto lo
+iface lo inet loopback
+
+auto ens1f0
+iface ens1f0 inet static
+	address 10.230.0.254/24
+	gateway 10.230.0.1
+	address 3d06:bad:b01:300::254/64
+	accept-ra 2
+	autoconf 1
+
+iface ens1f1 inet manual
+
+iface nic0 inet manual
+
+# bnxt_en rejects a write to sriov_numvfs while nic1 is down. The post-up
+# commands run after ifupdown2 sets nic1 up. `state enable` gives each
+# virtual function a link while nic1 has no cable.
+auto nic1
+iface nic1 inet manual
+	post-up echo 2 > /sys/class/net/nic1/device/sriov_numvfs
+	post-up ip link set nic1 vf 0 mac 02:57:50:04:01:00
+	post-up ip link set nic1 vf 1 mac 02:57:50:04:01:01
+	post-up ip link set nic1 vf 0 state enable
+	post-up ip link set nic1 vf 1 state enable
+	pre-down echo 0 > /sys/class/net/nic1/device/sriov_numvfs
+
+auto nic2
+iface nic2 inet dhcp
+	metric 1000
+	accept-ra 1
+	autoconf 1
+
+iface nic3 inet manual
+
+source /etc/network/interfaces.d/*

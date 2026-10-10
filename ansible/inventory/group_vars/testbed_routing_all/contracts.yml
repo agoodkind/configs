@@ -17,6 +17,16 @@ routing_simulator_route_families:
 routing_simulator_tunnel_protocols:
   - sit
 
+routing_simulator_default_routes:
+  - "::/0"
+
+routing_simulator_outer_ttl_range:
+  lowest: 1
+  highest: 255
+
+# BGP requires a hold time of at least three keepalive intervals.
+routing_simulator_hold_keepalive_ratio: 3
+
 routing_simulator_private_asn_ranges:
   - lowest: 64512
     highest: 65534

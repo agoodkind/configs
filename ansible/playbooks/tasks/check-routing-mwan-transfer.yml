@@ -1,0 +1,72 @@
+---
+- name: Transfer TCP data in each direction
+  ansible.builtin.command:
+    argv: >-
+      {{ ['pct', 'exec', routing_check.downstream.vmid | string, '--',
+      'timeout', testbed_routing_checks.transfer_timeout_seconds | string,
+      'iperf3', '-6', '-J', '-c', routing_check.remote_client_address,
+      '-B', routing_check.downstream.ipv6,
+      '-p', testbed_routing_checks.transfer_port | string,
+      '-n', testbed_routing_checks.transfer_bytes | string] + item }}
+  loop:
+    - []
+    - ["-R"]
+  register: routing_transfers
+  changed_when: false
+
+- name: Require transferred TCP data in each direction
+  ansible.builtin.assert:
+    that:
+      - "'error' not in (item.stdout | from_json)"
+      - (item.stdout | from_json).end.sum_received.bytes > 0
+    fail_msg: "Routing scenario {{ routing_check.name }}: the TCP transfer {{ item.item }} moved no data"
+  loop: "{{ routing_transfers.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Record the TCP transfers
+  ansible.builtin.set_fact:
+    routing_check_results: "{{ routing_check_results + ['tcp transfer both directions'] }}"
+
+- name: Send one packet at the path MTU and one packet above it
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_check.downstream.vmid }}"
+      - --
+      - ping
+      - "-6"
+      - -M
+      - do
+      - -c
+      - "1"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - -s
+      - "{{ item }}"
+      - "{{ routing_check.remote_client_address }}"
+  vars:
+    routing_icmpv6_overhead_bytes: 48
+  loop:
+    - "{{ routing_check.mtu | int - routing_icmpv6_overhead_bytes }}"
+    - "{{ routing_check.mtu | int - routing_icmpv6_overhead_bytes + 1 }}"
+  register: routing_size_pings
+  changed_when: false
+  failed_when: false
+
+- name: Require delivery at the MTU and delivery or a packet-too-big error above it
+  ansible.builtin.assert:
+    that:
+      - routing_size_pings.results[0].rc == 0
+      - >-
+        routing_size_pings.results[1].rc == 0
+        or (routing_size_pings.results[1].stdout ~ routing_size_pings.results[1].stderr)
+        is search('too big|too long|mtu', ignorecase=true)
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }}: a packet at the MTU failed, or
+      a larger packet disappeared without a packet-too-big error.
+
+- name: Record the packet size check
+  ansible.builtin.set_fact:
+    routing_check_results: "{{ routing_check_results + ['packet size'] }}"

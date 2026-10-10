@@ -1,0 +1,10 @@
+[NetDev]
+Name={{ rsim_tunnel.remote.interface }}
+Kind={{ rsim_tunnel.protocol }}
+MTUBytes={{ rsim_tunnel.mtu }}
+
+[Tunnel]
+Independent=yes
+Local={{ rsim_tunnel.remote.outer_ipv4 }}
+Remote={{ rsim_tunnel.local.outer_ipv4 }}
+TTL={{ rsim_tunnel.outer_ttl }}

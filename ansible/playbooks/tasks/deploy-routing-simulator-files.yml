@@ -1,0 +1,61 @@
+---
+- name: Collect the simulator files
+  ansible.builtin.import_tasks: routing-simulator-file-list.yml
+
+- name: Stage the simulator files and push each changed file
+  vars:
+    rsim_temp_dir: "/tmp/routing-simulator-{{ rsim.vmid }}"
+    rsim_template_dir: "{{ repo_root }}/testbed/routing-simulators"
+  block:
+    - name: Create the simulator temp directory
+      ansible.builtin.file:
+        path: "{{ rsim_temp_dir }}"
+        state: directory
+        mode: "0700"
+      changed_when: false
+
+    - name: Stage the simulator files
+      ansible.builtin.import_tasks: deploy-routing-simulator-stage.yml
+
+    - name: Read the staged and installed checksums
+      ansible.builtin.import_tasks: deploy-routing-simulator-checksums.yml
+
+    - name: Push each changed simulator file
+      ansible.builtin.import_tasks: deploy-routing-simulator-push.yml
+  always:
+    - name: Remove the simulator temp directory
+      ansible.builtin.file:
+        path: "{{ rsim_temp_dir }}"
+        state: absent
+      changed_when: false
+
+- name: Read the simulator network units in the guest
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ rsim.vmid }}"
+      - --
+      - find
+      - /etc/systemd/network
+      - -name
+      - "*-rsim-*"
+      - -printf
+      - "%f\n"
+  register: rsim_installed_units
+  changed_when: false
+
+- name: Remove each network unit that the inventory no longer declares
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, rm, "/etc/systemd/network/{{ item }}"]
+  loop: >-
+    {{ rsim_installed_units.stdout_lines
+    | difference(rsim_files | map(attribute=1) | map('basename') | list) }}
+  register: rsim_removed_units
+  changed_when: true
+
+- name: Record the service groups with a changed file
+  ansible.builtin.set_fact:
+    rsim_changed_groups: >-
+      {{ (rsim_push.results | selectattr('changed') | map(attribute='item.0.3') | list
+      + (['network'] if rsim_removed_units.changed else [])) | unique }}

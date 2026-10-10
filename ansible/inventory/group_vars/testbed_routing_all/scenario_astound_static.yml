@@ -10,6 +10,7 @@ testbed_routing_scenario_astound_static:
       connection: astound
       protocol: sit
       mtu: 1480
+      outer_ttl: 64
       inner_prefix_length: 64
       local:
         node: mwan

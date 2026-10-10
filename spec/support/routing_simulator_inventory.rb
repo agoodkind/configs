@@ -33,7 +33,8 @@ module RoutingSimulatorInventory
   LITERAL_VARIABLES = %w[
     service_mapping testbed_routing_networks testbed_routing_guests testbed_routing_management
     routing_simulator_roles routing_simulator_route_families routing_simulator_tunnel_protocols
-    routing_simulator_private_asn_ranges routing_simulator_contracts
+    routing_simulator_private_asn_ranges routing_simulator_contracts routing_simulator_default_routes
+    routing_simulator_outer_ttl_range routing_simulator_hold_keepalive_ratio
   ].freeze
 
   module_function

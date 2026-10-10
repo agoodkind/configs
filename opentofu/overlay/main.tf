@@ -63,6 +63,27 @@ variable "kernel_modules" {
   }
 }
 
+variable "grub_cmdline_linux_default" {
+  description = "The module writes GRUB_CMDLINE_LINUX_DEFAULT to /etc/default/grub.d/boot-messages.cfg and runs update-grub and proxmox-boot-tool refresh after file changes. `null` writes no file and runs no command."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.grub_cmdline_linux_default == null
+      ? true
+      : !can(regex("[\"\\n\\\\$`]", var.grub_cmdline_linux_default))
+    )
+    error_message = "The value must not contain a double quote, a newline, a backslash, a dollar sign, or a backquote because a shell reads the file."
+  }
+}
+
+variable "network_interfaces_file" {
+  description = "The module writes the file at this local path to /etc/network/interfaces on the host. A null value writes no file."
+  type        = string
+  default     = null
+}
+
 variable "acme_account" {
   description = "Name of the ACME account that the automation user manages."
   type        = string
@@ -218,6 +239,10 @@ locals {
   ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands)
 
   allowlist_path = "/etc/pve-overlay/kernel-modules.allow"
+
+  grub_boot_messages_path = "/etc/default/grub.d/boot-messages.cfg"
+
+  network_interfaces_path = "/etc/network/interfaces"
 }
 
 data "http" "files" {
@@ -317,4 +342,52 @@ resource "remote_file" "kernel_modules_allow" {
   permissions = "0644"
 
   depends_on = [terraform_data.allowlist_directory]
+}
+
+resource "remote_file" "grub_boot_messages" {
+  count = var.grub_cmdline_linux_default != null ? 1 : 0
+
+  conn {
+    host  = local.remote_host
+    user  = "root"
+    agent = true
+  }
+
+  path        = local.grub_boot_messages_path
+  content     = "GRUB_CMDLINE_LINUX_DEFAULT=\"${var.grub_cmdline_linux_default}\"\n"
+  permissions = "0644"
+}
+
+resource "terraform_data" "grub_refresh" {
+  count = var.grub_cmdline_linux_default != null ? 1 : 0
+
+  triggers_replace = [
+    sha256(remote_file.grub_boot_messages[0].content),
+  ]
+
+  connection {
+    type  = "ssh"
+    host  = var.ssh_host
+    user  = "root"
+    agent = true
+  }
+
+  provisioner "remote-exec" {
+    script = "${path.module}/files/refresh-grub.sh"
+  }
+}
+
+# The module does not run ifreload because a reload can interrupt the management address.
+resource "remote_file" "network_interfaces" {
+  count = var.network_interfaces_file != null ? 1 : 0
+
+  conn {
+    host  = local.remote_host
+    user  = "root"
+    agent = true
+  }
+
+  path        = local.network_interfaces_path
+  content     = file(var.network_interfaces_file)
+  permissions = "0644"
 }

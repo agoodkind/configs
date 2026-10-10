@@ -1,0 +1,16 @@
+{% set tracked = namespace(interface='') %}
+{% for tunnel in rsim.tunnels if tunnel.local.inner_ipv6 == rsim_route.gateway %}
+{% set tracked.interface = tunnel.remote.interface %}
+{% endfor %}
+[Unit]
+Description=Track the configured route to {{ rsim_route.destination }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/sbin/routing-home-route-tracker {{ rsim_route.destination }} {{ rsim_route.gateway }} {{ tracked.interface }} {{ testbed_routing_home_route_tracker.interval_seconds }} {{ testbed_routing_home_route_tracker.failure_threshold }} {{ testbed_routing_home_route_tracker.route_metric }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

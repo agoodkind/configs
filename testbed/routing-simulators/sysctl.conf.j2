@@ -1,0 +1,4 @@
+net.ipv4.ip_forward={{ rsim.forwarding | ternary(1, 0) }}
+net.ipv6.conf.all.forwarding={{ rsim.forwarding | ternary(1, 0) }}
+net.ipv6.conf.all.accept_ra=0
+net.ipv6.conf.default.accept_ra=0

@@ -1,0 +1,65 @@
+---
+- name: Collect the fault inputs
+  ansible.builtin.set_fact:
+    routing_recovery_results: []
+    routing_recovery:
+      name: "{{ routing_scenario_name }}"
+      scenario: "{{ routing_recovery_scenario }}"
+      witness: "{{ (testbed_routing_scenarios.keys() | reject('equalto', routing_scenario_name) | list)[0] }}"
+      downstream: "{{ service_mapping[testbed_routing_checks.downstream_client] }}"
+      remote_client_address: >-
+        {{ (routing_recovery_scenario.probe_targets | selectattr('id', 'equalto', 'remote_client')
+        | map(attribute='address') | list)[0] }}
+      upstream_nodes: >-
+        {{ routing_recovery_scenario.nodes | select('in', routing_recovery_upstream_nodes) | list }}
+      upstream_sessions: >-
+        {{ routing_recovery_scenario.sessions | selectattr('remote.node', 'in', routing_recovery_upstream_nodes)
+        | list }}
+      gateway_sessions: >-
+        {{ routing_recovery_scenario.sessions | selectattr('local.node', 'in', routing_recovery_gateway_nodes)
+        | list }}
+      # The router withdraws the peer's route when its hold timer expires.
+      wait_retries: >-
+        {{ (((routing_recovery_scenario.sessions | map(attribute='hold_seconds') | list + [0]) | max)
+        / testbed_routing_checks.retry_delay_seconds) | round(0, 'ceil') | int
+        + testbed_routing_checks.recovery_retries }}
+      links: >-
+        {{ (routing_recovery_scenario.tunnels | map(attribute='remote.node')
+        | zip(routing_recovery_scenario.tunnels | map(attribute='remote.interface')) | list)
+        if routing_recovery_scenario.tunnels != [] else routing_recovery_native_links }}
+  vars:
+    routing_recovery_scenario: "{{ testbed_routing_scenarios[routing_scenario_name] }}"
+    routing_recovery_upstream_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'upstream_router')
+      | map(attribute='key') | list }}
+    routing_recovery_gateway_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'gateway')
+      | map(attribute='key') | list }}
+    routing_recovery_native_links: >-
+      {%- set links = [] -%}
+      {%- for name in routing_recovery_scenario.connections -%}
+      {%- set connection = testbed_routing_connections[name] -%}
+      {%- set service = service_mapping[testbed_routing_nodes[connection.simulator].service] -%}
+      {%- for interface in service.routing_interfaces.values() if interface.ipv4 == connection.simulator_link_ipv4 -%}
+      {%- set _ = links.append(connection.simulator ~ '|' ~ interface.name) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {{ links | join(',') }}
+
+- name: Normalize the fault links
+  ansible.builtin.set_fact:
+    routing_recovery_links: >-
+      {{ routing_recovery.links if routing_recovery.scenario.tunnels != []
+      else (routing_recovery.links.split(',') | map('split', '|') | list) }}
+    routing_recovery_probe:
+      - pct
+      - exec
+      - "{{ routing_recovery.downstream.vmid | string }}"
+      - --
+      - ping
+      - "-6"
+      - -c
+      - "1"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds | string }}"
+      - "{{ routing_recovery.remote_client_address }}"

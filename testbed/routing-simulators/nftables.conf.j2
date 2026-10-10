@@ -1,0 +1,52 @@
+#!/usr/sbin/nft -f
+{% set test_interfaces = (rsim.interfaces | map(attribute='name') | list)
+   + (rsim.tunnels | map(attribute='remote.interface') | list) %}
+flush ruleset
+
+{% if rsim.uplink_sources != [] %}
+table ip nat {
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+{% for source in rsim.uplink_sources %}
+        oifname "{{ rsim.management_interface }}" ip saddr {{ source }} masquerade
+{% endfor %}
+    }
+}
+
+{% endif %}
+table inet filter {
+    chain input {
+        type filter hook input priority filter; policy drop;
+        iifname "lo" accept
+        iifname "{{ rsim.management_interface }}" accept
+        ct state established,related accept
+        ip protocol icmp accept
+        meta l4proto ipv6-icmp accept
+{% for tunnel in rsim.tunnels %}
+        ip saddr {{ tunnel.local.outer_ipv4 }} ip daddr {{ tunnel.remote.outer_ipv4 }} ip protocol 41 accept
+{% endfor %}
+{% for session in rsim.sessions %}
+{% if session.local.node == rsim.name %}
+        ip6 saddr {{ session.remote.address }} tcp dport 179 accept
+{% else %}
+        ip6 saddr {{ session.local.address }} tcp dport 179 accept
+{% endif %}
+{% endfor %}
+{% if rsim.transfer_server %}
+        tcp dport {{ testbed_routing_checks.transfer_port }} accept
+{% endif %}
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+{% if rsim.uplink_sources != [] %}
+        iifname { {{ rsim.uplink_interfaces | map('to_json') | join(', ') }} } oifname "{{ rsim.management_interface }}" ip saddr { {{ rsim.uplink_sources | join(', ') }} } accept
+        iifname "{{ rsim.management_interface }}" oifname { {{ rsim.uplink_interfaces | map('to_json') | join(', ') }} } ct state established,related accept
+{% endif %}
+        iifname "{{ rsim.management_interface }}" drop
+        oifname "{{ rsim.management_interface }}" drop
+{% if rsim.forwarding %}
+        iifname { {{ test_interfaces | map('to_json') | join(', ') }} } oifname { {{ test_interfaces | map('to_json') | join(', ') }} } accept
+{% endif %}
+    }
+}

@@ -51,6 +51,10 @@ locals {
 
   routing_guest_memory_megabytes = 512
   routing_guest_disk_gigabytes   = 4
+
+  # The simulator root disks use the slow storage tier because rpool has disk
+  # IO timeouts (TACK-483).
+  routing_guest_disk_datastore = "slow-zfs"
 }
 
 resource "proxmox_network_linux_bridge" "routing_simulator" {
@@ -120,7 +124,7 @@ resource "proxmox_virtual_environment_container" "routing_simulator" {
   }
 
   disk {
-    datastore_id = "local-zfs"
+    datastore_id = local.routing_guest_disk_datastore
     size         = local.routing_guest_disk_gigabytes
   }
 

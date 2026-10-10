@@ -1,0 +1,55 @@
+---
+# A repeat deploy does not copy files or restart services when the guest
+# file's checksum matches the rendered inventory file's checksum.
+- name: Collect the simulator files
+  ansible.builtin.import_tasks: routing-simulator-file-list.yml
+
+- name: Compare each guest file with the rendered inventory
+  vars:
+    rsim_temp_dir: "/tmp/routing-simulator-check-{{ rsim.vmid }}"
+    rsim_template_dir: "{{ playbook_dir | dirname | dirname }}/testbed/routing-simulators"
+  block:
+    - name: Create the simulator check directory
+      ansible.builtin.file:
+        path: "{{ rsim_temp_dir }}"
+        state: directory
+        mode: "0700"
+      changed_when: false
+
+    - name: Render the simulator files
+      ansible.builtin.import_tasks: deploy-routing-simulator-stage.yml
+
+    - name: Read the rendered and installed checksums
+      ansible.builtin.import_tasks: deploy-routing-simulator-checksums.yml
+
+    - name: Require each guest file to match the rendered inventory
+      ansible.builtin.assert:
+        that:
+          - item.2.stdout.startswith(item.1.stat.checksum)
+        fail_msg: "{{ rsim.name }}: {{ item.0.1 }} differs from the rendered inventory"
+      loop: "{{ rsim_files | zip(rsim_staged.results, rsim_installed.results) | list }}"
+      loop_control:
+        label: "{{ item.0.1 }}"
+  always:
+    - name: Remove the simulator check directory
+      ansible.builtin.file:
+        path: "{{ rsim_temp_dir }}"
+        state: absent
+      changed_when: false
+
+- name: Require the active firewall and FRR files to equal their candidates
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, cmp, "{{ item.candidate }}", "{{ item.active }}"]
+  loop:
+    - { candidate: /etc/nftables.conf.candidate, active: /etc/nftables.conf, enabled: true }
+    - { candidate: /etc/frr/frr.conf.candidate, active: /etc/frr/frr.conf, enabled: "{{ rsim.bgp }}" }
+  when: item.enabled | bool
+  changed_when: false
+
+- name: Require each home route tracker unit to run
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, systemctl, is-active, "{{ item }}"]
+  loop: >-
+    {{ rsim_files | selectattr(3, 'equalto', 'tracker') | map(attribute=0)
+    | select('search', '\.service$') | list }}
+  changed_when: false

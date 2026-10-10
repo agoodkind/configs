@@ -10,6 +10,7 @@ testbed_routing_scenario_tunnel_vps:
       connection: sonic_1
       protocol: sit
       mtu: 1480
+      outer_ttl: 64
       inner_prefix_length: 64
       local:
         node: mwan
@@ -26,6 +27,7 @@ testbed_routing_scenario_tunnel_vps:
       connection: astound
       protocol: sit
       mtu: 1480
+      outer_ttl: 64
       inner_prefix_length: 64
       local:
         node: mwan
@@ -67,6 +69,8 @@ testbed_routing_scenario_tunnel_vps:
       address_family: ipv6_unicast
       hops: 1
       multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
       local:
         node: mwan
         asn: 64512
@@ -76,12 +80,14 @@ testbed_routing_scenario_tunnel_vps:
         asn: 64550
         address: "2001:db8:5ff:1::2"
       policy:
-        import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}"]
+        import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}", "::/0"]
         export_prefixes: ["{{ testbed_routing_home_prefix }}"]
     - id: tunnel_vps_home_astound
       address_family: ipv6_unicast
       hops: 1
       multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
       local:
         node: mwan
         asn: 64512
@@ -91,12 +97,14 @@ testbed_routing_scenario_tunnel_vps:
         asn: 64550
         address: "2001:db8:5ff:2::2"
       policy:
-        import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}"]
+        import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}", "::/0"]
         export_prefixes: ["{{ testbed_routing_home_prefix }}"]
     - id: tunnel_vps_upstream
       address_family: ipv6_unicast
       hops: 1
       multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
       local:
         node: tunnel_vps_vps
         asn: 64550
@@ -108,7 +116,7 @@ testbed_routing_scenario_tunnel_vps:
         address: >-
           {{ service_mapping.routing_tunnel_vps_upstream_suburban.routing_interfaces.transit.ipv6 }}
       policy:
-        import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}"]
+        import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}", "::/0"]
         export_prefixes: ["{{ testbed_routing_home_prefix }}"]
   probe_targets:
     - id: tunnel_remote_sonic_1

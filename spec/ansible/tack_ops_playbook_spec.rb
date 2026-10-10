@@ -30,6 +30,7 @@ module TackOpsPlaybook
   SUPERUSER_URL = 'render-only-superuser-url'
   OTHER_COMMANDS = ['ops deploy verify', 'ops audit prove-schema-guard', 'audit signers', 'audit query',
                     'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
+                    'ops qa datagen search-load', 'ops qa datagen search-mixed',
                     'ops backfill once-search-projections',
                     'ops search provision', 'ops search reindex', 'ops search verify'].freeze
 
@@ -144,6 +145,17 @@ RSpec.describe TackOpsPlaybook do
   it 'accepts an allowlisted command with flag arguments on one QA guest' do
     expect(described_class.request_passes('tack_ops_args' => ['--scale=small', '--commit'],
                                           'tack_ops_command' => 'ops qa datagen seed')).to be(true)
+  end
+
+  it 'accepts search with comma-separated endpoints and both search load commands on one QA guest', :aggregate_failures do
+    endpoints = '--endpoints=http://[3d06:bad:b01:210::217]:8000,http://[3d06:bad:b01:210::223]:8000'
+
+    expect(described_class.request_passes('tack_ops_command' => 'ops qa datagen search',
+                                          'tack_ops_args' => ['--commit', endpoints])).to be(true)
+    expect(described_class.request_passes('tack_ops_command' => 'ops qa datagen search-load',
+                                          'tack_ops_args' => ['--rate=1000', '--commit'])).to be(true)
+    expect(described_class.request_passes('tack_ops_command' => 'ops qa datagen search-mixed',
+                                          'tack_ops_args' => ['--rate=1000', '--write-rate=60', '--commit'])).to be(true)
   end
 
   it 'refuses every request outside the reviewed commands, guests, and arguments', :aggregate_failures do

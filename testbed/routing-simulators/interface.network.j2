@@ -1,0 +1,46 @@
+[Match]
+Name={{ rsim_interface.name }}
+
+[Network]
+IPv6AcceptRA=no
+{% if rsim_interface.ipv4 %}
+Address={{ rsim_interface.ipv4 }}/{{ testbed_routing_networks[rsim_interface.network].ipv4_net.split('/')[1] }}
+{% endif %}
+{% if rsim_interface.ipv6 %}
+Address={{ rsim_interface.ipv6 }}/{{ testbed_routing_networks[rsim_interface.network].ipv6_net.split('/')[1] }}
+{% endif %}
+{% for route in rsim.static_routes %}
+{% set gateway = namespace(network='') %}
+{% for entry in service_mapping.values() if 'routing_interfaces' in entry %}
+{% for candidate in entry.routing_interfaces.values() if route.gateway in [candidate.ipv4, candidate.ipv6] %}
+{% set gateway.network = candidate.network %}
+{% endfor %}
+{% endfor %}
+{% if gateway.network == rsim_interface.network %}
+
+[Route]
+Destination={{ route.destination }}
+Gateway={{ route.gateway }}
+{% endif %}
+{% endfor %}
+{% if rsim_interface.name == rsim.interfaces[0].name %}
+{# zebra prefers a kernel route to a BGP route for the same prefix. An IPv6
+   routing policy rule after the main table rule allows the BGP route to be
+   selected. #}
+{% for prefix in testbed_routing_management_unreachable_prefixes %}
+{% if ':' in prefix %}
+
+[RoutingPolicyRule]
+Family=ipv6
+To={{ prefix }}
+Type=unreachable
+Priority={{ testbed_routing_unreachable_rule_priority }}
+{% else %}
+
+[Route]
+Destination={{ prefix }}
+Type=unreachable
+Metric={{ testbed_routing_unreachable_metric }}
+{% endif %}
+{% endfor %}
+{% endif %}

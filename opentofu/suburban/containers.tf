@@ -99,6 +99,7 @@ resource "proxmox_virtual_environment_container" "mwan_failover_suburban" {
   lifecycle {
     prevent_destroy = false
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }
@@ -689,6 +690,7 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
   lifecycle {
     prevent_destroy = false
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }
