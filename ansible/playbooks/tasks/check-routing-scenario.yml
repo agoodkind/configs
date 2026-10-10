@@ -20,7 +20,8 @@
       - routing_check_expected | difference(routing_check_results) == []
     fail_msg: >-
       Routing scenario {{ routing_check.name }} skipped required checks:
-      {{ routing_check_expected | difference(routing_check_results) }}
+      {{ routing_check_expected | difference(routing_check_results) }}. The
+      recorded checks are {{ routing_check_results }}
   vars:
     routing_check_expected: >-
       {{ (routing_check.nodes | map('regex_replace', '^', 'node ') | list)
