@@ -63,6 +63,77 @@ variable "kernel_modules" {
   }
 }
 
+variable "container_options" {
+  description = "An object grants bpfdelegate and hostnic privileges to the automation user on the selected containers and links. Container ACLs include retained_roles and existing VM roles. A null value removes ScopedBpfDelegate, ScopedHostNic, and ScopedHostNicUse."
+  type = object({
+    retained_roles = list(string)
+    hostnic = object({
+      vmids = list(number)
+      links = list(string)
+    })
+    bpfdelegate = object({
+      vmids   = list(number)
+      cmds    = list(string)
+      maps    = list(string)
+      progs   = list(string)
+      attachs = list(string)
+    })
+  })
+  default = null
+
+  validation {
+    condition = (
+      var.container_options == null
+      ? true
+      : alltrue([
+        for role in var.container_options.retained_roles : can(regex("^[A-Za-z0-9_-]+$", role))
+      ])
+    )
+    error_message = "Each retained_roles entry must contain at least one character and use only letters (A-Z or a-z), digits (0-9), underscores, or hyphens."
+  }
+
+  validation {
+    condition = (
+      var.container_options == null
+      ? true
+      : alltrue([
+        for vmid in concat(
+          var.container_options.hostnic.vmids,
+          var.container_options.bpfdelegate.vmids,
+        ) : vmid >= 100 && floor(vmid) == vmid
+      ])
+    )
+    error_message = "Each hostnic.vmids or bpfdelegate.vmids entry must be an integer greater than or equal to 100."
+  }
+
+  validation {
+    condition = (
+      var.container_options == null
+      ? true
+      : alltrue([
+        for link in var.container_options.hostnic.links : can(regex("^[A-Za-z0-9_.-]+$", link))
+      ])
+    )
+    error_message = "Each hostnic.links entry must contain at least one character and use only letters (A-Z or a-z), digits (0-9), underscores, periods, or hyphens."
+  }
+
+  validation {
+    condition = (
+      var.container_options == null
+      ? true
+      : alltrue([
+        for token in concat(
+          var.container_options.bpfdelegate.cmds,
+          var.container_options.bpfdelegate.maps,
+          var.container_options.bpfdelegate.progs,
+          var.container_options.bpfdelegate.attachs,
+        ) : can(regex("^[a-z0-9_]+$", token))
+      ])
+    )
+    error_message = "Each bpfdelegate.cmds, bpfdelegate.maps, bpfdelegate.progs, or bpfdelegate.attachs entry must contain at least one character and use only lowercase letters (a-z), digits (0-9), or underscores."
+  }
+}
+
 variable "grub_cmdline_linux_default" {
   description = "The module writes GRUB_CMDLINE_LINUX_DEFAULT to /etc/default/grub.d/boot-messages.cfg and runs update-grub and proxmox-boot-tool refresh after file changes. `null` writes no file and runs no command."
   type        = string
@@ -155,7 +226,44 @@ locals {
     }
   } : {}
 
-  roles = merge(local.guest_api_roles, local.kernel_modules_roles, {
+  bpfdelegate_privilege_prefixes = {
+    cmds    = "VM.Config.BPFDelegate.Cmd"
+    maps    = "VM.Config.BPFDelegate.Map"
+    progs   = "VM.Config.BPFDelegate.Prog"
+    attachs = "VM.Config.BPFDelegate.Attach"
+  }
+
+  bpfdelegate_privileges = var.container_options == null ? [] : flatten([
+    for list_name in ["cmds", "maps", "progs", "attachs"] : [
+      for token in var.container_options.bpfdelegate[list_name] : join("", [
+        "${local.bpfdelegate_privilege_prefixes[list_name]}.",
+        join("", [for part in split("_", token) : "${upper(substr(part, 0, 1))}${substr(part, 1, -1)}"]),
+      ])
+    ]
+  ])
+
+  container_options_role_names = ["ScopedBpfDelegate", "ScopedHostNic", "ScopedHostNicUse"]
+
+  container_options_roles = var.container_options != null ? {
+    ScopedBpfDelegate = {
+      paths      = []
+      privileges = local.bpfdelegate_privileges
+    }
+    ScopedHostNic = {
+      paths = []
+      privileges = [
+        "VM.Config.HostNIC",
+      ]
+    }
+    ScopedHostNicUse = {
+      paths = [for link in var.container_options.hostnic.links : "/hostnic/${link}"]
+      privileges = [
+        "Sys.HostNIC.Use",
+      ]
+    }
+  } : {}
+
+  roles = merge(local.guest_api_roles, local.kernel_modules_roles, local.container_options_roles, {
     ScopedContainerFeatures = {
       path = "/"
       privileges = [
@@ -202,18 +310,49 @@ locals {
     }
   })
 
+  container_options_vm_roles = var.container_options == null ? {} : {
+    ScopedHostNic     = var.container_options.hostnic.vmids
+    ScopedBpfDelegate = var.container_options.bpfdelegate.vmids
+  }
+
+  container_options_vmids = sort(distinct(flatten([
+    for role, vmids in local.container_options_vm_roles : [for vmid in vmids : tostring(vmid)]
+  ])))
+
+  # Each container ACL needs the existing VM roles because a more specific user ACL overrides inherited user roles.
+  root_vm_roles = [
+    for role in sort(keys(local.roles)) : role
+    if try(local.roles[role].path, "") == "/" && anytrue([
+      for privilege in local.roles[role].privileges : startswith(privilege, "VM.")
+    ])
+  ]
+
+  container_options_acl_commands = [
+    for vmid in local.container_options_vmids : join(" ", [
+      "pveum acl modify /vms/${vmid} --users ${var.automation_user} --roles",
+      join(",", concat(var.container_options.retained_roles, local.root_vm_roles, [
+        for role in sort(keys(local.container_options_vm_roles)) : role
+        if contains([for id in local.container_options_vm_roles[role] : tostring(id)], vmid)
+      ])),
+      "--propagate 1",
+    ])
+  ]
+
   # `pveum role add` fails for an existing role, and `pveum role modify` fails
   # for a missing role.
-  grant_commands = flatten([
+  grant_commands = concat(flatten([
     for role in sort(keys(local.roles)) : [
       join(" ", [
         "if pveum role list --output-format json | grep -q '\"roleid\":\"${role}\"';",
         "then pveum role modify ${role} --privs '${join(" ", local.roles[role].privileges)}';",
         "else pveum role add ${role} --privs '${join(" ", local.roles[role].privileges)}'; fi",
       ]),
-      "pveum acl modify ${local.roles[role].path} --users ${var.automation_user} --roles ${role} --propagate 1",
+      [
+        for path in try(local.roles[role].paths, [local.roles[role].path]) :
+        "pveum acl modify ${path} --users ${var.automation_user} --roles ${role} --propagate 1"
+      ],
     ]
-  ])
+  ]), local.container_options_acl_commands)
 
   # Earlier grants put these roles on /vms and /nodes/<node>. `pveum acl
   # delete` succeeds when the entry is absent.
@@ -233,10 +372,18 @@ locals {
     ]),
   ]
 
+  container_options_revoke_commands = var.container_options != null ? [] : [
+    for role in local.container_options_role_names : join(" ", [
+      "if pveum role list --output-format json | grep -q '\"roleid\":\"${role}\"';",
+      "then pveum acl delete / --users ${var.automation_user} --roles ${role};",
+      "pveum role delete ${role}; fi",
+    ])
+  ]
+
   revoke_commands = concat([
     "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
     "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
-  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands)
+  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands, local.container_options_revoke_commands)
 
   allowlist_path = "/etc/pve-overlay/kernel-modules.allow"
 
