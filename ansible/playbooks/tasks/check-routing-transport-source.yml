@@ -76,7 +76,8 @@
       - item.rc == 0
     fail_msg: >-
       Routing scenario {{ routing_check.name }}: tunnel {{ item.item.item.id }}
-      received no packet with the provider link source address.
+      received no packet with the provider link source address. tcpdump
+      prints {{ item.stdout | default('') }} {{ item.stderr | default('') }}
   loop: "{{ routing_source_results.results }}"
   loop_control:
     label: "{{ item.item.item.id }}"

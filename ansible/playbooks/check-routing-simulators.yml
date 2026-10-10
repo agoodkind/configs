@@ -1,10 +1,10 @@
 ---
 # Run
 #   ./configsctl deploy check-routing-simulators --limit suburban \
-#     -e routing_scenario=all -e routing_check_mode=infrastructure
+#     --extra-var routing_scenario=all --extra-var routing_check_mode=infrastructure
 # Run
 #   ./configsctl deploy check-routing-simulators --limit suburban \
-#     -e routing_scenario=astound_static -e routing_check_mode=mwan
+#     --extra-var routing_scenario=astound_static --extra-var routing_check_mode=mwan
 
 - name: Validate the routing simulator check request
   hosts: suburban_servers
@@ -49,7 +49,9 @@
       ansible.builtin.assert:
         that:
           - routing_check_user.stdout == '0'
-        fail_msg: The checks run pct on the hypervisor and require the root user.
+        fail_msg: >-
+          The checks run pct on the hypervisor and require the root user. id -u
+          prints {{ routing_check_user.stdout }}
 
     - name: Read the controller revision
       ansible.builtin.command:
