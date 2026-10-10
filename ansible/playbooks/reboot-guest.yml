@@ -1,0 +1,28 @@
+---
+- name: Check the guest reboot request
+  hosts: tack_all
+  gather_facts: false
+  tasks:
+    - name: Refuse a guest reboot outside one QA Tack guest
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | difference(groups['tack_qa_all']) | list == []
+          - ansible_play_hosts_all | intersect(groups['tack_prod_all']) | list == []
+          - ansible_play_hosts_all | unique | list | count == 1
+        fail_msg: >-
+          reboot-guest reboots exactly one QA Tack guest and never a
+          production guest. The selected guests are
+          {{ ansible_play_hosts_all }}.
+        quiet: true
+      any_errors_fatal: true
+
+- name: Reboot the guest and require a new boot identity
+  hosts: tack_all
+  gather_facts: false
+  tasks:
+    - name: End a check run before the reboot
+      ansible.builtin.meta: end_host
+      when: ansible_check_mode
+
+    - name: Reboot the guest and require a new boot identity
+      ansible.builtin.import_tasks: tasks/reboot-and-require-new-boot.yml
