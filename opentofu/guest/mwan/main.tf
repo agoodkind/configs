@@ -112,8 +112,10 @@ locals {
 
   stack_mask_units = length(local.stack_debs) > 0 ? toset(["sysrepo-plugind.service"]) : toset([])
 
+  firewall_mask_units = var.role == "wan" ? toset(["nftables.service"]) : toset([])
+
   mask_units = setunion(
-    var.role == "wan" ? toset(["nftables.service"]) : toset([]),
+    local.firewall_mask_units,
     local.stack_mask_units,
   )
 
@@ -228,6 +230,21 @@ resource "pveguest_file" "yang" {
   mode    = each.value.mode
 }
 
+# Masking nftables.service does not clear loaded rules; the active unit's ExecStop flushes the ruleset.
+resource "pveguest_systemd_unit" "firewall_stopped" {
+  for_each = local.firewall_mask_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = each.key
+  enabled = false
+  active  = false
+
+  depends_on = [pveguest_deb_packages.stack]
+}
+
 resource "pveguest_link" "mask" {
   for_each = local.mask_units
 
@@ -238,7 +255,10 @@ resource "pveguest_link" "mask" {
   path   = "/etc/systemd/system/${each.key}"
   target = "/dev/null"
 
-  depends_on = [pveguest_deb_packages.stack]
+  depends_on = [
+    pveguest_deb_packages.stack,
+    pveguest_systemd_unit.firewall_stopped,
+  ]
 }
 
 resource "pveguest_systemd_unit" "stack_masked" {
