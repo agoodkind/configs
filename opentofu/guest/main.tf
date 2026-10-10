@@ -44,12 +44,25 @@ locals {
     }
   }
 
+  # PowerEdge requires a provider node for host and container resources without enrolling a guest in the base module.
+  host_only_sites = toset(["poweredge"])
+
+  node_sites = setunion(toset(values(local.guest_sites)), local.host_only_sites)
+
   # The service mapping stores the address of a hypervisor under the key
   # <site>_hypervisor. The certificate of the API does not cover that address.
+  node_hosts = {
+    for site in local.node_sites :
+    site => try(
+      "[${local.service_mapping["${site}_hypervisor"].ipv6}]",
+      local.service_mapping["${site}_hypervisor"].ipv4,
+    )
+  }
+
   nodes = {
-    for site in toset(values(local.guest_sites)) :
+    for site in local.node_sites :
     site => {
-      endpoint  = "https://[${local.service_mapping["${site}_hypervisor"].ipv6}]:8006"
+      endpoint  = "https://${local.node_hosts[site]}:8006"
       api_token = "${local.proxmox_token_principal}=${local.proxmox_token_secrets[site]}"
       insecure  = true
       node_name = try(local.proxmox_node_name_overrides[site], null)
