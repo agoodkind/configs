@@ -27,6 +27,15 @@ selects that workspace.
 
 Each workspace needs its own `init`.
 
+Run [opentofu/guest/install-providers.sh](guest/install-providers.sh) before the first `./configsctl tofu guest init` in a checkout. The script installs both pinned providers into the guest workspace's implied local mirror.
+
+```bash
+opentofu/guest/install-providers.sh
+./configsctl tofu guest init
+```
+
+Run the script again after a change to [providers.pin](guest/providers.pin). After a new release under the unchanged provider version `0.1.0`, delete `opentofu/guest/.terraform.lock.hcl` before running `./configsctl tofu guest init` again.
+
 ## Secrets
 
 configsctl exports only the vault keys that match one of two rules.
