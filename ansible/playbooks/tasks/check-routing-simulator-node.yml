@@ -12,7 +12,9 @@
   ansible.builtin.assert:
     that:
       - "'running' in rsim_status.stdout"
-    fail_msg: "{{ rsim.name }}: guest {{ rsim.vmid }} is not running"
+    fail_msg: >-
+      {{ rsim.name }}: guest {{ rsim.vmid }} is not running. pct status prints
+      {{ rsim_status.stdout }}
 
 - name: Read the guest addresses
   ansible.builtin.command:
@@ -26,7 +28,8 @@
       - rsim_expected_addresses | difference(rsim_actual_addresses) == []
     fail_msg: >-
       {{ rsim.name }}: missing addresses
-      {{ rsim_expected_addresses | difference(rsim_actual_addresses) }}
+      {{ rsim_expected_addresses | difference(rsim_actual_addresses) }}. The
+      guest has {{ rsim_actual_addresses }}
   vars:
     rsim_actual_addresses: >-
       {{ rsim_addresses.stdout | from_json | map(attribute='addr_info') | flatten
@@ -53,7 +56,9 @@
       - rsim_link.linkinfo.info_data.local == item.item.remote.outer_ipv4
       - rsim_link.linkinfo.info_data.remote == item.item.local.outer_ipv4
       - rsim_link.linkinfo.info_data.ttl == item.item.outer_ttl
-    fail_msg: "{{ rsim.name }}: tunnel {{ item.item.id }} differs from the inventory"
+    fail_msg: >-
+      {{ rsim.name }}: tunnel {{ item.item.id }} differs from the inventory. ip
+      link prints {{ item.stdout }}
   vars:
     rsim_link: "{{ (item.stdout | from_json)[0] }}"
   loop: "{{ rsim_tunnel_links.results }}"
@@ -84,7 +89,9 @@
   ansible.builtin.assert:
     that:
       - item.item.gateway in (item.stdout | from_json | map(attribute='gateway') | list)
-    fail_msg: "{{ rsim.name }}: no route to {{ item.item.destination }} through {{ item.item.gateway }}"
+    fail_msg: >-
+      {{ rsim.name }}: no route to {{ item.item.destination }} through
+      {{ item.item.gateway }}. ip route prints {{ item.stdout }}
   loop: "{{ rsim_route_reads.results }}"
   loop_control:
     label: "{{ item.item.destination }}"
@@ -101,10 +108,15 @@
 - name: Require the unreachable management prefixes
   ansible.builtin.assert:
     that:
-      - >-
-        ((':' in item) | ternary('to ' ~ item ~ ' unreachable', 'unreachable ' ~ item))
-        in (rsim_unreachable.results | map(attribute='stdout') | join('\n'))
-    fail_msg: "{{ rsim.name }}: prefix {{ item }} is not unreachable"
+      - rsim_unreachable_output is search(rsim_unreachable_pattern)
+    fail_msg: >-
+      {{ rsim.name }}: prefix {{ item }} is not unreachable. ip route and ip
+      rule print {{ rsim_unreachable_output }}
+  vars:
+    rsim_unreachable_output: "{{ rsim_unreachable.results | map(attribute='stdout') | join('\n') }}"
+    rsim_unreachable_pattern: >-
+      {{ (':' in item) | ternary('to ' ~ (item | regex_escape) ~ ' (lookup [^ ]+ )?unreachable',
+      'unreachable ' ~ (item | regex_escape)) }}
   loop: "{{ testbed_routing_management_unreachable_prefixes }}"
 
 - name: Read the forwarding state, the firewall, and the FRR state
@@ -129,7 +141,11 @@
       - "'snat' not in rsim_state.results[1].stdout"
       - "'dnat' not in rsim_state.results[1].stdout"
       - (rsim_state.results[2].rc == 0) == rsim.bgp
-    fail_msg: "{{ rsim.name }}: forwarding, translation, or FRR state differs from the inventory"
+    fail_msg: >-
+      {{ rsim.name }}: forwarding, translation, or FRR state differs from the
+      inventory. net.ipv6.conf.all.forwarding is {{ rsim_state.results[0].stdout }},
+      systemctl is-active frr.service prints {{ rsim_state.results[2].stdout }},
+      and nft list ruleset prints {{ rsim_state.results[1].stdout }}
   vars:
     rsim_masquerade_rules: "{{ rsim_state.results[1].stdout_lines | select('search', 'masquerade') | list }}"
 

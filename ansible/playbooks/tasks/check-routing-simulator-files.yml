@@ -26,7 +26,10 @@
       ansible.builtin.assert:
         that:
           - item.2.stdout.startswith(item.1.stat.checksum)
-        fail_msg: "{{ rsim.name }}: {{ item.0.1 }} differs from the rendered inventory"
+        fail_msg: >-
+          {{ rsim.name }}: {{ item.0.1 }} differs from the rendered inventory.
+          The rendered checksum is {{ item.1.stat.checksum }}, and sha256sum in
+          the guest prints {{ item.2.stdout }} {{ item.2.stderr }}
       loop: "{{ rsim_files | zip(rsim_staged.results, rsim_installed.results) | list }}"
       loop_control:
         label: "{{ item.0.1 }}"
