@@ -11,6 +11,8 @@ locals {
       guest_api      = true
       kernel_modules = null
 
+      container_options = null
+
       grub_cmdline_linux_default = null
       network_interfaces_file    = null
     }
@@ -41,6 +43,20 @@ locals {
           "8021q",
         ]
       }
+      container_options = {
+        retained_roles = ["PVEAdmin"]
+        hostnic = {
+          vmids = [313, 314]
+          links = ["nic2", "nic1v0", "nic1v1"]
+        }
+        bpfdelegate = {
+          vmids   = [313]
+          cmds    = ["map_create", "prog_load", "btf_load"]
+          maps    = ["hash"]
+          progs   = ["socket_filter", "sched_cls"]
+          attachs = ["cgroup_inet_ingress", "tcx_ingress", "tcx_egress"]
+        }
+      }
       grub_cmdline_linux_default = "systemd.show_status=1"
       network_interfaces_file    = "${path.module}/overlay/files/poweredge/interfaces"
     }
@@ -50,6 +66,8 @@ locals {
       commit         = "662112b62488c8acab16cfe26c7297b6c8f95093"
       guest_api      = true
       kernel_modules = null
+
+      container_options = null
 
       grub_cmdline_linux_default = null
       network_interfaces_file    = null
@@ -69,6 +87,8 @@ module "overlay" {
   kernel_modules  = each.value.kernel_modules
   acme_account    = local.acme_account
   acme_plugin     = local.acme_plugin
+
+  container_options = each.value.container_options
 
   grub_cmdline_linux_default = each.value.grub_cmdline_linux_default
   network_interfaces_file    = each.value.network_interfaces_file
