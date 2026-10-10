@@ -301,6 +301,10 @@ service_mapping:
     inventory: false
     ipv6: *suburban_hypervisor_ipv6
 
+  poweredge_hypervisor:
+    inventory: false
+    ipv4: "10.230.0.254"
+
   # Suburban's own addresses on the VLAN-aware trunk, the guest segment every
   # testbed guest shares. OpenTofu derives the bridge addresses from here, and
   # the cloudflared ICMP proxy sources from them so proxied pings to guests
