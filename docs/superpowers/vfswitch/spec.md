@@ -107,7 +107,7 @@ Poweredge, 2026-10-04, card firmware 236.1.173.0, kernel 7.0.14-20-pve.
 | Two containers start, each with one port and one VF | Pass |
 | Ping between the containers | 5 of 5, about 0.2 ms |
 | Bridge on the host | None |
-| Host receive counter on `nic1` during the ping | Increased by 1 |
+| Host receive counter on `nic1` during the ping | The test exchanged 10 unicast ping frames. The counter rose by 1. The test did not capture that frame of unknown type. |
 | Stop a container | Its devices return to the host |
 | Start it again | Its devices move back in |
 
@@ -185,8 +185,8 @@ delegated.
   function 0. Container 2 has `nic0` and virtual function 1. The host does not
   have any of those four devices in its network namespace.
 - AC3: The containers exchange ping replies without a host bridge.
-- AC4: The `nic1` receive counter on the host does not increase for those
-  ping frames.
+- AC4: During AC3, the host `nic1` receive counter increases by fewer frames
+  than the number of ping requests and replies exchanged.
 - AC5: Proxmox returns assigned devices to the host after the container
   stops. Proxmox assigns those devices to the container network namespace at
   its next start.
