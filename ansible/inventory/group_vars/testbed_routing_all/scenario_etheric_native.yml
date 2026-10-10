@@ -1,0 +1,59 @@
+---
+testbed_routing_scenario_etheric_native:
+  kind: native_bgp
+  connections: [etheric]
+  nodes: [etheric_native_router, etheric_native_upstream, etheric_native_client]
+  home_prefixes: ["{{ testbed_routing_home_prefix }}"]
+  remote_prefixes: ["{{ testbed_routing_networks.etheric_native_remote.ipv6_net }}"]
+  tunnels: []
+  routes:
+    - node: etheric_native_client
+      family: ipv6
+      destination: "{{ testbed_routing_home_prefix }}"
+      gateway: >-
+        {{ service_mapping.routing_etheric_native_upstream_suburban.routing_interfaces.remote.ipv6 }}
+  sessions:
+    - id: etheric_native_home
+      address_family: ipv6_unicast
+      hops: 1
+      multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
+      local:
+        node: mwan
+        asn: 64512
+        address: "{{ service_mapping.mwan_suburban.routing_interfaces.etheric.ipv6 }}"
+      remote:
+        node: etheric_native_router
+        asn: 64520
+        address: >-
+          {{ service_mapping.routing_etheric_native_router_suburban.routing_interfaces.provider.ipv6 }}
+      policy:
+        import_prefixes: ["{{ testbed_routing_networks.etheric_native_remote.ipv6_net }}", "::/0"]
+        export_prefixes: ["{{ testbed_routing_home_prefix }}"]
+    - id: etheric_native_upstream
+      address_family: ipv6_unicast
+      hops: 1
+      multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
+      local:
+        node: etheric_native_router
+        asn: 64520
+        address: >-
+          {{ service_mapping.routing_etheric_native_router_suburban.routing_interfaces.transit.ipv6 }}
+      remote:
+        node: etheric_native_upstream
+        asn: 64521
+        address: >-
+          {{ service_mapping.routing_etheric_native_upstream_suburban.routing_interfaces.transit.ipv6 }}
+      policy:
+        import_prefixes: ["{{ testbed_routing_networks.etheric_native_remote.ipv6_net }}", "::/0"]
+        export_prefixes: ["{{ testbed_routing_home_prefix }}"]
+  probe_targets:
+    - id: provider_router
+      address: >-
+        {{ service_mapping.routing_etheric_native_router_suburban.routing_interfaces.provider.ipv6 }}
+    - id: remote_client
+      address: >-
+        {{ service_mapping.routing_etheric_native_client_suburban.routing_interfaces.remote.ipv6 }}

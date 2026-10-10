@@ -1,0 +1,38 @@
+---
+- name: Collect the fault inputs
+  ansible.builtin.import_tasks: check-routing-recovery-inputs.yml
+
+- name: Check link loss and recovery
+  ansible.builtin.import_tasks: check-routing-recovery-link.yml
+
+- name: Check upstream loss and recovery
+  ansible.builtin.import_tasks: check-routing-recovery-upstream.yml
+
+- name: Check the undeclared prefix
+  ansible.builtin.import_tasks: check-routing-recovery-undeclared.yml
+
+- name: Check the home route tracker
+  ansible.builtin.import_tasks: check-routing-recovery-tracker.yml
+
+- name: Require every required fault check
+  ansible.builtin.assert:
+    that:
+      - routing_recovery_expected | difference(routing_recovery_results | map(attribute='fault') | list) == []
+    fail_msg: >-
+      Routing scenario {{ routing_recovery.name }} skipped fault checks:
+      {{ routing_recovery_expected | difference(routing_recovery_results | map(attribute='fault') | list) }}
+  vars:
+    routing_recovery_expected: >-
+      {{ ['link loss']
+      + ((routing_recovery.upstream_nodes != []) | ternary(['upstream loss', 'undeclared prefix'], []))
+      + ((routing_recovery.scenario.kind == 'tunnel_configured_home')
+      | ternary(['tracker probe loss', 'tracker unit stop'], [])) }}
+
+- name: Record the fault report
+  ansible.builtin.set_fact:
+    routing_check_report: >-
+      {{ routing_check_report + [{
+        'scenario': routing_recovery.name,
+        'mode': 'fault and recovery',
+        'checks': routing_recovery_results
+      }] }}

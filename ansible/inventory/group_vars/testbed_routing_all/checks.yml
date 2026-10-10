@@ -1,0 +1,17 @@
+---
+# No scenario announces undeclared_prefix.
+testbed_routing_checks:
+  downstream_client: mwan_test_client_a_suburban
+  ordinary_ipv4_target: "1.1.1.1"
+  undeclared_prefix: "2001:db8:ffff::/48"
+  native_mtu: 1500
+  ping_count: 3
+  ping_timeout_seconds: 2
+  capture_timeout_seconds: 20
+  transfer_bytes: 1048576
+  transfer_port: 5201
+  transfer_timeout_seconds: 30
+  session_retries: 18
+  recovery_retries: 24
+  restore_retries: 3
+  retry_delay_seconds: 5

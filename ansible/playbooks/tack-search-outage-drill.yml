@@ -1,0 +1,146 @@
+---
+- name: Check the search outage drill request
+  hosts: tack_search1_suburban_servers
+  gather_facts: false
+  tasks:
+    - name: Refuse a search outage drill outside the QA search members or the outage range
+      ansible.builtin.assert:
+        that:
+          - tack_search_outage_seconds | string is match('[0-9]+\Z')
+          - tack_search_outage_seconds | int >= 30
+          - tack_search_outage_seconds | int <= 600
+          - ansible_play_hosts_all | difference(groups['tack_qa_all']) | list == []
+          - ansible_play_hosts_all | intersect(groups['tack_prod_all']) | list == []
+        fail_msg: >-
+          The playbook rejects an outage request if the duration is not a whole
+          number from 30 to 600 seconds, any guest is outside tack_qa_all,
+          or any guest is in tack_prod_all.
+          The requested duration is {{ tack_search_outage_seconds }} seconds.
+          The selected guests are {{ ansible_play_hosts_all }}.
+        quiet: true
+      any_errors_fatal: true
+
+- name: Stop OpenSearch, wait, and start it again
+  hosts: tack_search1_suburban_servers
+  gather_facts: false
+  become: true
+  vars:
+    tack_search_outage_health_retries: 40
+    tack_search_outage_health_delay_seconds: 10
+    tack_search_outage_health_request_timeout_seconds: 5
+    tack_search_outage_healthy_statuses: [green, yellow]
+    tack_search_outage_container: tack-opensearch-1
+    tack_search_outage_exit_retries: 30
+    tack_search_outage_exit_delay_seconds: 2
+    tack_search_outage_block_failed: false
+    tack_search_outage_failed_task: ""
+  tasks:
+    - name: Run the OpenSearch outage
+      block:
+        - name: Stop the OpenSearch member
+          ansible.builtin.command:
+            cmd: docker compose stop opensearch
+            chdir: "{{ tack_install_dir }}"
+          register: tack_search_outage_stop
+          changed_when: true
+
+        - name: Print the guest clock after the stop
+          ansible.builtin.debug:
+            msg: "OpenSearch stopped on {{ inventory_hostname }} at {{ tack_search_outage_stop.end }} guest time."
+          when: tack_search_outage_stop is not skipped
+
+        - name: Wait for the outage seconds
+          ansible.builtin.pause:
+            seconds: "{{ tack_search_outage_seconds | int }}"
+
+        - name: Read the guest clock after the wait
+          ansible.builtin.command:
+            cmd: date --utc +%Y-%m-%dT%H:%M:%SZ
+          register: tack_search_outage_wait_clock
+          changed_when: false
+          check_mode: false
+
+        - name: Print the guest clock after the wait
+          ansible.builtin.debug:
+            msg: >-
+              The {{ tack_search_outage_seconds }} second wait ended on
+              {{ inventory_hostname }} at {{ tack_search_outage_wait_clock.stdout }} guest time.
+      rescue:
+        - name: Record the outage task failure
+          ansible.builtin.set_fact:
+            tack_search_outage_block_failed: true
+            tack_search_outage_failed_task: "{{ ansible_failed_task.name | default('unknown task') }}"
+      always:
+        - name: Wait for the OpenSearch container to exit
+          ansible.builtin.command:
+            argv:
+              - docker
+              - container
+              - inspect
+              - "{{ tack_search_outage_container }}"
+          register: tack_search_outage_container_state
+          changed_when: false
+          ignore_errors: true
+          until:
+            - tack_search_outage_container_state.rc == 0
+            - not (tack_search_outage_container_state.stdout | from_json)[0].State.Running
+          retries: "{{ tack_search_outage_exit_retries }}"
+          delay: "{{ tack_search_outage_exit_delay_seconds }}"
+          when: not ansible_check_mode
+
+        - name: Start the OpenSearch member
+          ansible.builtin.command:
+            cmd: docker compose start opensearch
+            chdir: "{{ tack_install_dir }}"
+          register: tack_search_outage_start
+          changed_when: true
+
+        - name: Print the guest clock after the start
+          ansible.builtin.debug:
+            msg: "OpenSearch started on {{ inventory_hostname }} at {{ tack_search_outage_start.end }} guest time."
+          when: tack_search_outage_start is not skipped
+
+    - name: Wait until the OpenSearch cluster health is green or yellow
+      ansible.builtin.uri:
+        url: "{{ tack_search_member_url }}/_cluster/health"
+        method: GET
+        url_username: "{{ tack_search_username }}"
+        url_password: "{{ tack_search_password }}"
+        force_basic_auth: true
+        ca_path: "{{ tack_search_ca_path }}"
+        timeout: "{{ tack_search_outage_health_request_timeout_seconds }}"
+        status_code: 200
+      register: tack_search_outage_health
+      until: tack_search_outage_health.json.status | default('') in tack_search_outage_healthy_statuses
+      retries: "{{ tack_search_outage_health_retries }}"
+      delay: "{{ tack_search_outage_health_delay_seconds }}"
+      no_log: true
+
+    - name: Read the guest clock after the health check
+      ansible.builtin.command:
+        cmd: date --utc +%Y-%m-%dT%H:%M:%SZ
+      register: tack_search_outage_health_clock
+      changed_when: false
+      check_mode: false
+
+    - name: Print the guest clock and cluster health after the health check
+      ansible.builtin.debug:
+        msg: >-
+          OpenSearch on {{ inventory_hostname }} reported cluster health
+          {{ tack_search_outage_health.json.status | default('not read in check mode') }} at
+          {{ tack_search_outage_health_clock.stdout }} guest time.
+
+    - name: Fail after recovery if an outage task failed
+      ansible.builtin.fail:
+        msg: >-
+          Outage task {{ tack_search_outage_failed_task }} failed on {{ inventory_hostname }}. The play started
+          the OpenSearch member and waited for cluster health before reporting the task failure.
+      when: tack_search_outage_block_failed | bool
+
+    - name: Fail after recovery if the container exit wait failed
+      ansible.builtin.fail:
+        msg: >-
+          The state read for container {{ tack_search_outage_container }} on {{ inventory_hostname }} failed
+          or the container still ran after retries. The play started the OpenSearch member and waited for
+          cluster health before reporting the exit wait failure.
+      when: tack_search_outage_container_state is failed

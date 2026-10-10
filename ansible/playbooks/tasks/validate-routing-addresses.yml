@@ -1,0 +1,67 @@
+---
+- name: Require each tunnel and session address to match its node and link
+  ansible.builtin.assert:
+    that:
+      - routing_scenario_address_problems == ''
+    fail_msg: "Routing scenario {{ item.key }}: {{ routing_scenario_address_problems }}"
+  loop: "{{ testbed_routing_scenarios | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    routing_scenario_address_problems: >-
+      {%- set owners = {} -%}
+      {%- set problems = [] -%}
+      {%- for node in item.value.nodes + routing_simulator_gateway_nodes -%}
+      {%- for interface in service_mapping[testbed_routing_nodes[node].service].routing_interfaces.values() -%}
+      {%- for address in [interface.ipv4, interface.ipv6] -%}
+      {%- if address != '' and address not in owners -%}
+      {%- set _ = owners.update({address: {'node': node, 'link': interface.network}}) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- for tunnel in item.value.tunnels -%}
+      {%- for side in [tunnel.local, tunnel.remote] if side.inner_ipv6 not in owners -%}
+      {%- set _ = owners.update({side.inner_ipv6: {'node': side.node, 'link': 'tunnel ' ~ tunnel.id}}) -%}
+      {%- endfor -%}
+      {%- if tunnel.local.outer_ipv4 != testbed_routing_connections[tunnel.connection].mwan_ipv4 -%}
+      {%- set _ = problems.append('tunnel ' ~ tunnel.id ~ ' local.outer_ipv4 differs from the mwan_ipv4 of connection '
+      ~ tunnel.connection) -%}
+      {%- endif -%}
+      {%- if tunnel.remote.outer_ipv4 not in owners -%}
+      {%- set _ = problems.append('tunnel ' ~ tunnel.id ~ ' remote.outer_ipv4 is no interface address') -%}
+      {%- elif owners[tunnel.remote.outer_ipv4].node != tunnel.remote.node -%}
+      {%- set _ = problems.append('tunnel ' ~ tunnel.id ~ ' remote.outer_ipv4 belongs to node '
+      ~ owners[tunnel.remote.outer_ipv4].node) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- for session in item.value.sessions -%}
+      {%- set links = [] -%}
+      {%- for side in [session.local, session.remote] -%}
+      {%- if side.address not in owners -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' address ' ~ side.address
+      ~ ' is no interface or tunnel address') -%}
+      {%- elif owners[side.address].node != side.node -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' address ' ~ side.address ~ ' belongs to node '
+      ~ owners[side.address].node) -%}
+      {%- else -%}
+      {%- set _ = links.append(owners[side.address].link) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- if links[1:] != [] -%}
+      {%- if links[0] == links[1] -%}
+      {%- if session.hops != 1 or session.multihop_ttl != 0 -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' is on one link and requires hops 1 and multihop_ttl 0') -%}
+      {%- endif -%}
+      {%- elif session.hops < 2 or session.multihop_ttl < session.hops -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' crosses several links and requires hops of at least 2'
+      ~ ' and multihop_ttl of at least hops') -%}
+      {%- endif -%}
+      {%- endif -%}
+      {%- if session.keepalive_seconds < 1
+      or session.hold_seconds < session.keepalive_seconds * routing_simulator_hold_keepalive_ratio -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' requires hold_seconds of at least '
+      ~ routing_simulator_hold_keepalive_ratio ~ ' times keepalive_seconds') -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ problems | join('; ') }}

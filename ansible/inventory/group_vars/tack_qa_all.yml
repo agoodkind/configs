@@ -11,6 +11,7 @@ tack_audit_reader_password: "{{ vault_tack_qa_audit_reader_password }}"
 tack_audit_redactor_password: "{{ vault_tack_qa_audit_redactor_password }}"
 tack_audit_operator_password: "{{ vault_tack_qa_audit_operator_password }}"
 tack_migrator_password: "{{ vault_tack_qa_migrator_password }}"
+tack_ops_migrator_login: true
 
 # Phase C audit cutover (TACK-232). The cluster id pins Kafka's storage uuid so
 # a recreate does not orphan the log.
@@ -121,12 +122,12 @@ tack_search_cursor_key: "{{ vault_tack_qa_search_cursor_key }}"
 # The `ops search provision` command applies this index topology. One member
 # cannot place a replica. Tack requires the routing shard count to be a
 # multiple of the primary shard count. A routing shard count of 8 allows later
-# splits to 2, 4, and 8 primary shards. Public search stays off until the QA
-# projection backfill and the empty rebuild from FoundationDB pass.
+# splits to 2, 4, and 8 primary shards.
 tack_search_shards: 1
 tack_search_routing_shards: 8
 tack_search_replicas: 0
-tack_search_public_enabled: false
+tack_search_public_enabled: true
+tack_search_model_repair_enabled: true
 
 # QA runs a second application process on tack_app2_suburban for the search
 # two-process continuation check (TACK-544). That app publishes audit events

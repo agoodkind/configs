@@ -33,11 +33,14 @@ tack_search:
     - cluster:admin/opensearch/ml/deploy_model_on_nodes
     - cluster:admin/opensearch/ml/models/get
     - cluster:admin/opensearch/ml/tasks/get
+    - cluster:admin/opensearch/ml/tasks/search
     - cluster:admin/opensearch/ml/profile/nodes
     - cluster:admin/opensearch/ml/predict
     # Under the least_load dispatch policy, a predict request reads ML node
     # statistics as the calling user to choose a node.
     - cluster:admin/opensearch/ml/stats/nodes
+    # ops search verify lists the ML connectors and fails when one exists.
+    - cluster:admin/opensearch/ml/connectors/search
   index_permissions:
     # node-pages is the public alias, and each physical index matches
     # node-pages-*.

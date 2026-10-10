@@ -1,0 +1,64 @@
+---
+# Routing validation requires every node role, route family, tunnel protocol,
+# autonomous system number, and scenario kind to match these declarations.
+routing_simulator_roles:
+  - gateway
+  - transport
+  - tunnel_endpoint
+  - provider_router
+  - vps
+  - upstream_router
+  - remote_client
+
+routing_simulator_route_families:
+  - ipv4
+  - ipv6
+
+routing_simulator_tunnel_protocols:
+  - sit
+
+routing_simulator_default_routes:
+  - "::/0"
+
+routing_simulator_outer_ttl_range:
+  lowest: 1
+  highest: 255
+
+# BGP requires a hold time of at least three keepalive intervals.
+routing_simulator_hold_keepalive_ratio: 3
+
+routing_simulator_private_asn_ranges:
+  - lowest: 64512
+    highest: 65534
+  - lowest: 4200000000
+    highest: 4294967294
+
+# node_roles lists the sorted roles of the nodes that a scenario of the kind
+# owns. gateway_peer_roles lists the roles that terminate a BGP session with
+# the gateway.
+routing_simulator_contracts:
+  tunnel_static_routes:
+    node_roles: [remote_client, tunnel_endpoint]
+    tunneled: true
+    bgp: false
+    gateway_peer_roles: []
+  native_bgp:
+    node_roles: [provider_router, remote_client, upstream_router]
+    tunneled: false
+    bgp: true
+    gateway_peer_roles: [provider_router]
+  tunnel_configured_home:
+    node_roles: [remote_client, upstream_router, vps]
+    tunneled: true
+    bgp: true
+    gateway_peer_roles: []
+  tunnel_upstream_peer:
+    node_roles: [remote_client, upstream_router, vps]
+    tunneled: true
+    bgp: true
+    gateway_peer_roles: [upstream_router]
+  tunnel_vps_peer:
+    node_roles: [remote_client, upstream_router, vps]
+    tunneled: true
+    bgp: true
+    gateway_peer_roles: [vps]

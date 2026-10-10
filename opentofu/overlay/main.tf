@@ -26,9 +26,62 @@ variable "node_name" {
   type        = string
 }
 
+variable "commit" {
+  description = "The hypervisor installs this commit from agoodkind/proxmox-overlays."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.commit))
+    error_message = "commit must contain exactly 40 lowercase hexadecimal characters."
+  }
+}
+
+variable "guest_api" {
+  description = "The automation user can execute guest commands and read and write guest files when this option is true. The selected commit must provide the guest API."
+  type        = bool
+}
+
 variable "automation_user" {
   description = "Proxmox user that receives the scoped roles."
   type        = string
+}
+
+variable "kernel_modules" {
+  description = "A null value disables kernel module API access for the automation user by removing the ScopedKernelModules role and its ACL. An object grants ScopedKernelModules on /. The API accepts only entries in allow. An empty allow list permits no modules. The selected overlay commit must provide the kernel module API."
+  type = object({
+    allow = list(string)
+  })
+  default = null
+
+  validation {
+    condition = (
+      var.kernel_modules == null
+      ? true
+      : alltrue([for name in var.kernel_modules.allow : can(regex("^[a-z0-9_]+$", name))])
+    )
+    error_message = "Each kernel module name must contain at least one character and use only lowercase letters (a-z), digits (0-9), or underscores."
+  }
+}
+
+variable "grub_cmdline_linux_default" {
+  description = "The module writes GRUB_CMDLINE_LINUX_DEFAULT to /etc/default/grub.d/boot-messages.cfg and runs update-grub and proxmox-boot-tool refresh after file changes. `null` writes no file and runs no command."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.grub_cmdline_linux_default == null
+      ? true
+      : !can(regex("[\"\\n\\\\$`]", var.grub_cmdline_linux_default))
+    )
+    error_message = "The value must not contain a double quote, a newline, a backslash, a dollar sign, or a backquote because a shell reads the file."
+  }
+}
+
+variable "network_interfaces_file" {
+  description = "The module writes the file at this local path to /etc/network/interfaces on the host. A null value writes no file."
+  type        = string
+  default     = null
 }
 
 variable "acme_account" {
@@ -42,10 +95,7 @@ variable "acme_plugin" {
 }
 
 locals {
-  # A change of this commit changes the content of remote_file.files, and
-  # terraform_data.apply then reruns `pve-overlay apply`.
-  commit = "bb4324db0f2bf3caef9cd5569e1b3b0afb411aea"
-  source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${local.commit}"
+  source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${var.commit}"
   script = "/usr/local/sbin/pve-overlay"
 
   # Key: the file path in agoodkind/proxmox-overlays. Debian creates
@@ -77,16 +127,44 @@ locals {
   # brackets in that format.
   remote_host = strcontains(var.ssh_host, ":") ? "[${var.ssh_host}]" : var.ssh_host
 
-  roles = {
+  # Proxmox evaluates a user's privileges on a path from the most specific
+  # path with an ACL entry for that user. An entry on /vms or /nodes/<node>
+  # replaces every role granted to the user on /, including VM.Audit, and the
+  # inventory plugin then lists no guest. The guest and node roles are granted
+  # on / with the user's other roles.
+  guest_api_roles = var.guest_api ? {
+    ScopedGuestExec = {
+      path = "/"
+      privileges = [
+        "VM.Guest.Exec",
+        "VM.Guest.FileRead",
+        "VM.Guest.FileWrite",
+      ]
+    }
+  } : {}
+
+  kernel_modules_allow = var.kernel_modules == null ? [] : var.kernel_modules.allow
+
+  kernel_modules_roles = var.kernel_modules != null ? {
+    ScopedKernelModules = {
+      path = "/"
+      privileges = [
+        "Sys.KernelModules.Audit",
+        "Sys.KernelModules.Modify",
+      ]
+    }
+  } : {}
+
+  roles = merge(local.guest_api_roles, local.kernel_modules_roles, {
     ScopedContainerFeatures = {
-      path = "/vms"
+      path = "/"
       privileges = [
         "VM.Config.Nesting",
         "VM.Config.Keyctl",
       ]
     }
     ScopedVsock = {
-      path = "/vms"
+      path = "/"
       privileges = [
         "VM.Config.Vsock",
       ]
@@ -111,7 +189,7 @@ locals {
       ]
     }
     ScopedAcmeCertificate = {
-      path = "/nodes/${var.node_name}"
+      path = "/"
       privileges = [
         "Sys.ACME.Certificate.Order",
         "Sys.ACME.Certificate.Renew",
@@ -122,7 +200,7 @@ locals {
         "Sys.ACME.Config.Domain.Remove",
       ]
     }
-  }
+  })
 
   # `pveum role add` fails for an existing role, and `pveum role modify` fails
   # for a missing role.
@@ -136,6 +214,35 @@ locals {
       "pveum acl modify ${local.roles[role].path} --users ${var.automation_user} --roles ${role} --propagate 1",
     ]
   ])
+
+  # Earlier grants put these roles on /vms and /nodes/<node>. `pveum acl
+  # delete` succeeds when the entry is absent.
+  guest_api_revoke_commands = var.guest_api ? [] : [
+    join(" ", [
+      "if pveum role list --output-format json | grep -q '\"roleid\":\"ScopedGuestExec\"';",
+      "then pveum acl delete / --users ${var.automation_user} --roles ScopedGuestExec;",
+      "pveum role delete ScopedGuestExec; fi",
+    ]),
+  ]
+
+  kernel_modules_revoke_commands = var.kernel_modules != null ? [] : [
+    join(" ", [
+      "if pveum role list --output-format json | grep -q '\"roleid\":\"ScopedKernelModules\"';",
+      "then pveum acl delete / --users ${var.automation_user} --roles ScopedKernelModules;",
+      "pveum role delete ScopedKernelModules; fi",
+    ]),
+  ]
+
+  revoke_commands = concat([
+    "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
+    "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
+  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands)
+
+  allowlist_path = "/etc/pve-overlay/kernel-modules.allow"
+
+  grub_boot_messages_path = "/etc/default/grub.d/boot-messages.cfg"
+
+  network_interfaces_path = "/etc/network/interfaces"
 }
 
 data "http" "files" {
@@ -146,7 +253,7 @@ data "http" "files" {
   lifecycle {
     postcondition {
       condition     = self.status_code == 200
-      error_message = "GitHub returned ${self.status_code} for ${each.key} at ${local.commit}."
+      error_message = "GitHub returned ${self.status_code} for ${each.key} at ${var.commit}."
     }
   }
 }
@@ -190,7 +297,7 @@ resource "terraform_data" "apply" {
 resource "terraform_data" "grant" {
   triggers_replace = [
     terraform_data.apply.id,
-    sha256(join("\n", local.grant_commands)),
+    sha256(join("\n", concat(local.grant_commands, local.revoke_commands))),
   ]
 
   connection {
@@ -201,6 +308,86 @@ resource "terraform_data" "grant" {
   }
 
   provisioner "remote-exec" {
-    inline = concat(["set -eu"], local.grant_commands)
+    inline = concat(["set -eu"], local.grant_commands, local.revoke_commands)
   }
+}
+
+resource "terraform_data" "allowlist_directory" {
+  count = length(local.kernel_modules_allow) > 0 ? 1 : 0
+
+  connection {
+    type  = "ssh"
+    host  = var.ssh_host
+    user  = "root"
+    agent = true
+  }
+
+  provisioner "remote-exec" {
+    inline = ["install -d -m 0755 -o root -g root ${dirname(local.allowlist_path)}"]
+  }
+}
+
+# The API treats a missing allowlist file as an empty allowlist.
+resource "remote_file" "kernel_modules_allow" {
+  count = length(local.kernel_modules_allow) > 0 ? 1 : 0
+
+  conn {
+    host  = local.remote_host
+    user  = "root"
+    agent = true
+  }
+
+  path        = local.allowlist_path
+  content     = "${join("\n", local.kernel_modules_allow)}\n"
+  permissions = "0644"
+
+  depends_on = [terraform_data.allowlist_directory]
+}
+
+resource "remote_file" "grub_boot_messages" {
+  count = var.grub_cmdline_linux_default != null ? 1 : 0
+
+  conn {
+    host  = local.remote_host
+    user  = "root"
+    agent = true
+  }
+
+  path        = local.grub_boot_messages_path
+  content     = "GRUB_CMDLINE_LINUX_DEFAULT=\"${var.grub_cmdline_linux_default}\"\n"
+  permissions = "0644"
+}
+
+resource "terraform_data" "grub_refresh" {
+  count = var.grub_cmdline_linux_default != null ? 1 : 0
+
+  triggers_replace = [
+    sha256(remote_file.grub_boot_messages[0].content),
+  ]
+
+  connection {
+    type  = "ssh"
+    host  = var.ssh_host
+    user  = "root"
+    agent = true
+  }
+
+  provisioner "remote-exec" {
+    script = "${path.module}/files/refresh-grub.sh"
+  }
+}
+
+# The module does not run ifreload because a reload can interrupt the management address.
+resource "remote_file" "network_interfaces" {
+  count = var.network_interfaces_file != null ? 1 : 0
+
+  conn {
+    host  = local.remote_host
+    user  = "root"
+    agent = true
+  }
+
+  path        = local.network_interfaces_path
+  content     = file(var.network_interfaces_file)
+  permissions = "0644"
 }

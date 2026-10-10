@@ -1,0 +1,34 @@
+---
+- name: Load the SIT tunnel module on the hypervisor
+  ansible.builtin.command:
+    argv: [modprobe, sit]
+  changed_when: false
+
+- name: Load the SIT tunnel module at hypervisor boot
+  ansible.builtin.copy:
+    content: "sit\n"
+    dest: /etc/modules-load.d/routing-simulators.conf
+    mode: "0644"
+
+- name: Install the acceptance tools on existing guests
+  ansible.builtin.include_tasks:
+    file: deploy-routing-simulator-packages.yml
+    apply:
+      tags: ["routing-simulators"]
+  vars:
+    rsim_package_vmid: "{{ item }}"
+    rsim_package_names: [tcpdump, iperf3]
+  loop:
+    - "{{ service_mapping.isp_astound_suburban.vmid }}"
+    - "{{ service_mapping[testbed_routing_checks.downstream_client].vmid }}"
+
+- name: Configure each routing simulator guest
+  ansible.builtin.include_tasks:
+    file: deploy-routing-simulator-node.yml
+    apply:
+      tags: ["routing-simulators"]
+  vars:
+    rsim_name: "{{ item }}"
+  loop: >-
+    {{ testbed_routing_nodes | dict2items
+    | selectattr('value.service', 'in', testbed_routing_guests) | map(attribute='key') | list }}

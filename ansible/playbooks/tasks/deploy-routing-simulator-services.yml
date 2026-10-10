@@ -1,0 +1,145 @@
+---
+# Each service restarts or reloads only after a push changes a file in the
+# service's group in rsim_changed_groups.
+- name: Apply the simulator sysctl values
+  ansible.builtin.command:
+    argv: >-
+      {{ ['pct', 'exec', rsim.vmid | string, '--', 'sysctl', '-p']
+      + (rsim_files | selectattr(3, 'equalto', 'sysctl') | map(attribute=1) | list) }}
+  changed_when: false
+
+- name: Check the simulator firewall candidate
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, nft, -c, -f, /etc/nftables.conf.candidate]
+  changed_when: false
+
+- name: Install the changed simulator firewall
+  ansible.builtin.command:
+    cmd: >-
+      pct exec {{ rsim.vmid }} -- sh -c
+      'cp /etc/nftables.conf.candidate /etc/nftables.conf && systemctl restart nftables'
+  when: "'nftables' in rsim_changed_groups"
+  changed_when: true
+
+- name: Read the FRR version
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, dpkg-query, --show, --showformat, "FRR ${Version}", frr]
+  register: rsim_frr_version
+  when: rsim.bgp | bool
+  changed_when: false
+
+- name: Report the FRR version
+  ansible.builtin.debug:
+    msg: "{{ rsim.name }} in scenario {{ rsim.scenario }} runs {{ rsim_frr_version.stdout_lines[0] }}"
+  when: rsim.bgp | bool
+
+- name: Check the FRR configuration candidate
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, vtysh, -C, -f, /etc/frr/frr.conf.candidate]
+  register: rsim_frr_check
+  when: rsim.bgp | bool
+  changed_when: false
+  failed_when: false
+
+- name: Require a valid FRR configuration before the restart
+  ansible.builtin.assert:
+    that:
+      - rsim_frr_check.rc == 0
+    fail_msg: >-
+      FRR rejects the configuration of node {{ rsim.name }} in scenario
+      {{ rsim.scenario }}: {{ rsim_frr_check.stdout }} {{ rsim_frr_check.stderr }}
+  when: rsim.bgp | bool
+
+- name: Install the changed FRR configuration and restart FRR
+  ansible.builtin.command:
+    cmd: >-
+      pct exec {{ rsim.vmid }} -- sh -c
+      'install -o frr -g frr -m 0640 /etc/frr/frr.conf.candidate /etc/frr/frr.conf
+      && systemctl restart frr'
+  when:
+    - rsim.bgp | bool
+    - "'frr' in rsim_changed_groups"
+  changed_when: true
+
+- name: Collect the simulator units
+  ansible.builtin.set_fact:
+    rsim_tracker_units: "{{ rsim_tracker_unit_names }}"
+    rsim_units: >-
+      {{ ['systemd-networkd.service', 'nftables.service']
+      + (['frr.service'] if rsim.bgp else [])
+      + (['iperf3.service'] if rsim.transfer_server else [])
+      + rsim_tracker_unit_names }}
+  vars:
+    rsim_tracker_unit_names: >-
+      {{ rsim_files | selectattr(3, 'equalto', 'tracker') | map(attribute=0)
+      | select('search', '\.service$') | list }}
+
+- name: Load the changed home route tracker units
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, systemctl, daemon-reload]
+  when: "'tracker' in rsim_changed_groups"
+  changed_when: true
+
+- name: Read the state of each simulator unit
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ rsim.vmid }}"
+      - --
+      - systemctl
+      - show
+      - "{{ item }}"
+      - --property=ActiveState,UnitFileState
+      - --no-pager
+  loop: "{{ rsim_units }}"
+  register: rsim_unit_states
+  changed_when: false
+
+- name: Reload the changed simulator network units
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, networkctl, reload]
+  when:
+    - "'network' in rsim_changed_groups"
+    - "'ActiveState=active' in rsim_unit_states.results[0].stdout"
+  changed_when: true
+
+- name: Restart the changed home route trackers
+  ansible.builtin.command:
+    argv: "{{ ['pct', 'exec', rsim.vmid | string, '--', 'systemctl', 'restart'] + rsim_tracker_units }}"
+  when: "'tracker' in rsim_changed_groups"
+  changed_when: true
+
+- name: Enable and start each simulator unit that is disabled or inactive
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, systemctl, enable, --now, "{{ item.item }}"]
+  loop: "{{ rsim_unit_states.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: "'ActiveState=active' not in item.stdout or 'UnitFileState=enabled' not in item.stdout"
+  changed_when: true
+
+- name: Read the FRR unit state on a node without BGP
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ rsim.vmid }}"
+      - --
+      - systemctl
+      - show
+      - frr.service
+      - --property=LoadState,ActiveState,UnitFileState
+      - --no-pager
+  register: rsim_frr_state
+  when: not rsim.bgp | bool
+  changed_when: false
+
+- name: Stop and disable FRR on a node without BGP
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, systemctl, disable, --now, frr.service]
+  when:
+    - not rsim.bgp | bool
+    - "'LoadState=loaded' in rsim_frr_state.stdout"
+    - "'ActiveState=active' in rsim_frr_state.stdout or 'UnitFileState=enabled' in rsim_frr_state.stdout"
+  changed_when: true

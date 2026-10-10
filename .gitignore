@@ -68,6 +68,7 @@ __pycache__/
 router/cloudflared-token.sh
 
 .terraform/
+terraform.d/
 .terraform.lock.hcl
 terraform.tfvars
 *.tfstate

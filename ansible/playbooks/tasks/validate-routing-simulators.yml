@@ -1,0 +1,21 @@
+---
+- name: Validate the routing simulator keys
+  ansible.builtin.import_tasks: validate-routing-keys.yml
+
+- name: Validate the routing simulator nodes
+  ansible.builtin.import_tasks: validate-routing-nodes.yml
+
+- name: Validate the routing simulator address owners
+  ansible.builtin.import_tasks: validate-routing-address-owners.yml
+
+- name: Validate the routing simulator identities
+  ansible.builtin.import_tasks: validate-routing-identities.yml
+
+- name: Validate the routing simulator contracts
+  ansible.builtin.import_tasks: validate-routing-contracts.yml
+
+- name: Validate the routing simulator addresses
+  ansible.builtin.import_tasks: validate-routing-addresses.yml
+
+- name: Validate the routing simulator service interfaces
+  ansible.builtin.import_tasks: validate-routing-service-interfaces.yml

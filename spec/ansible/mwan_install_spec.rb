@@ -201,6 +201,16 @@ module MwanInstall
 
     verdicts['changed']
   end
+
+  def condition_verdict(conditions, variables)
+    verdicts = TaskExpressions.evaluate(
+      variables: variables, facts: [],
+      conditions: { 'verdict' => TaskExpressions.condition_list(conditions) }
+    )['conditions'] || {}
+    raise "evaluator returned no verdict: #{verdicts.inspect}" unless verdicts.key?('verdict')
+
+    verdicts['verdict']
+  end
 end
 
 RSpec.describe MwanInstall do
@@ -300,6 +310,88 @@ RSpec.describe MwanInstall do
     )
   end
 
+  it 'retries until the boot identity changes and rejects exhausted, failed, or unreachable reads' do
+    tasks = described_class.role_tasks(file: 'deploy-mwan.yml', play: 'Configure MWAN VM')
+    schedule = tasks.index { |task| task['name'] == 'Schedule the reboot independently of the SSH connection' }
+    read = tasks.index { |task| task['name'] == 'Read the post-reboot boot identity' }
+    assertion = tasks.index { |task| task['name'] == 'Require an actual gateway reboot' }
+
+    expect([schedule, read, assertion]).to all(be_a(Integer))
+    expect(schedule).to be < read
+    expect(read).to be < assertion
+    expect(described_class.command_argv(tasks[read])).to eq(%w[cat /proc/sys/kernel/random/boot_id])
+    expect(tasks[read]['register']).to eq('mwan_post_reboot_boot_id')
+    expect(tasks[read]['retries']).to be_a(Integer).and be_positive
+    expect(tasks[read]['delay']).to be_a(Integer).and be_positive
+    expect(tasks[read].dig('vars', 'ansible_ssh_retries')).to be_a(Integer).and be_positive
+    expect(tasks[read]).not_to have_key('ignore_errors')
+    expect(tasks[read]['ignore_unreachable']).to be(true)
+
+    previous = TaskExpressions.command_result(0, "previous-boot\n", '')
+    unchanged = TaskExpressions.command_result(0, "previous-boot\n", '')
+    changed = TaskExpressions.command_result(0, "next-boot\n", '')
+    command_failed = TaskExpressions.command_result(1, '', '').merge('failed' => true)
+    exhausted = unchanged.merge('failed' => true)
+    unreachable = { 'changed' => false, 'unreachable' => true }
+    until_cases = { unchanged => false, command_failed => false, changed => true }
+    assert_cases = { exhausted => false, command_failed => false, unreachable => false, changed => true }
+
+    until_cases.each do |result, want|
+      variables = { 'mwan_pre_reboot_boot_id' => previous, 'mwan_post_reboot_boot_id' => result }
+      expect(described_class.condition_verdict(tasks[read]['until'], variables)).to be(want), result.inspect
+    end
+    assert_cases.each do |result, want|
+      variables = { 'mwan_pre_reboot_boot_id' => previous, 'mwan_post_reboot_boot_id' => result }
+      conditions = described_class.module_field(tasks[assertion], 'ansible.builtin.assert', 'that')
+      expect(described_class.condition_verdict(conditions, variables)).to be(want), result.inspect
+    end
+  end
+
+  it 'requires journal tasks to ignore unreachable gateways before delegated recovery and final rejection' do
+    tasks = described_class.role_tasks(file: 'deploy-mwan.yml', play: 'Configure MWAN VM')
+    deployment = tasks.find { |task| task['name'] == 'Write the release and reboot the gateway' }
+    rescue_tasks = described_class.flatten(deployment.fetch('rescue'), MwanInstall::PLAYBOOK_DIRECTORY)
+    journal_write = rescue_tasks.index { |task| task['name'] == 'Write the gateway journal of this boot to a file' }
+    journal_copy = rescue_tasks.index { |task| task['name'] == 'Copy the gateway journal to the controller' }
+    recover = rescue_tasks.index { |task| Array(described_class.command_argv(task)).include?('recover') }
+    reject = rescue_tasks.index { |task| task['name'] == 'Reject the failed deployment after coordinated recovery' }
+
+    expect([journal_write, journal_copy, recover, reject]).to all(be_a(Integer))
+    expect(rescue_tasks[journal_write]['ignore_unreachable']).to be(true)
+    expect(rescue_tasks[journal_copy]['ignore_unreachable']).to be(true)
+    expect(journal_write).to be < journal_copy
+    expect(journal_copy).to be < recover
+    expect(recover).to be < reject
+    expect(rescue_tasks[recover]['delegate_to']).to eq('{{ mwan_proxmox_delegate }}')
+    expect(rescue_tasks[reject]).to have_key('ansible.builtin.fail')
+  end
+
+  it 'places the gateway SSH wait between recovery and final deployment rejection' do
+    tasks = described_class.role_tasks(file: 'deploy-mwan.yml', play: 'Configure MWAN VM')
+    deployment = tasks.find { |task| task['name'] == 'Write the release and reboot the gateway' }
+    rescue_tasks = described_class.flatten(deployment.fetch('rescue'), MwanInstall::PLAYBOOK_DIRECTORY)
+    recover = rescue_tasks.index { |task| Array(described_class.command_argv(task)).include?('recover') }
+    wait = rescue_tasks.index { |task| task.key?('ansible.builtin.wait_for_connection') }
+    reject = rescue_tasks.index { |task| task['name'] == 'Reject the failed deployment after coordinated recovery' }
+
+    last = rescue_tasks.size - 1
+    expect([recover, wait, reject]).to eq([last - 2, last - 1, last])
+    wait_task = rescue_tasks[wait]
+    expect(wait_task.values_at('ignore_errors', 'ignore_unreachable')).to eq([true, true])
+
+    bound = described_class.module_field(wait_task, 'ansible.builtin.wait_for_connection', 'timeout')
+    MwanInstall::GATEWAY_GROUP_FILES.each do |name|
+      group = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, name))
+      recovery_bound = group.fetch('mwan_operation_recovery_timeout_seconds')
+      render = TaskExpressions.render_task(wait_task, 'timeout' => bound)
+      rendered = TaskExpressions.evaluate(
+        variables: { 'mwan_operation_recovery_timeout_seconds' => recovery_bound }, facts: [], renders: [render]
+      )['renders'][0]['timeout']
+      expect(recovery_bound).to be_a(Integer).and(be_positive), name
+      expect(rendered).to eq(recovery_bound), name
+    end
+  end
+
   it 'accepts both gateway renders through the compatible mwan validators' do
     binary = ENV['MWAN_TRANSLATION_TEST_BINARY']
     skip 'Set MWAN_TRANSLATION_TEST_BINARY to a Linux mwan executable with network and firewall checks' unless binary
@@ -382,7 +474,7 @@ RSpec.describe MwanInstall do
       management: '3d06:bad:b01::113', dns_v4: ['10.250.0.1'], dns_v6: ['3d06:bad:b01::1'],
       transit_v4: '10.250.250.3', transit_v6: '3d06:bad:b01:fe::3',
       return_prefix: '3d06:bad:b01::/60', return_gateway: '3d06:bad:b01:fe::2',
-      management_dhcp_v6: false, transit_accept_ra: nil
+      management_dhcp_v6: nil, transit_accept_ra: false
     },
     'render_mwan_network.yml' => {
       management_mac: 'BC:24:11:B3:9E:46', transit_mac: 'BC:24:11:49:5D:94',

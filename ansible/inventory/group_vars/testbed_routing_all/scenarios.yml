@@ -1,0 +1,11 @@
+---
+# The local node of a session accepts import_prefixes and announces
+# export_prefixes. The remote node accepts export_prefixes and announces
+# import_prefixes. hops counts the links between the session addresses. A
+# session on one link uses multihop_ttl = 0.
+testbed_routing_scenarios:
+  astound_static: "{{ testbed_routing_scenario_astound_static }}"
+  etheric_native: "{{ testbed_routing_scenario_etheric_native }}"
+  tunnel_static: "{{ testbed_routing_scenario_tunnel_static }}"
+  tunnel_upstream: "{{ testbed_routing_scenario_tunnel_upstream }}"
+  tunnel_vps: "{{ testbed_routing_scenario_tunnel_vps }}"

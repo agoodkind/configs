@@ -29,6 +29,9 @@
   pre_tasks:
     - name: Require a merged controller checkout
       ansible.builtin.import_tasks: tasks/require-merged-checkout.yml
+    - name: Validate the routing simulator inventory
+      ansible.builtin.import_tasks: tasks/validate-routing-simulators.yml
+      tags: [never, routing-simulators]
   tasks:
     - name: Pull the pinned mwan release
       ansible.builtin.import_tasks: tasks/github-release.yml
@@ -477,6 +480,13 @@
       loop_control:
         loop_var: isp_entry
       tags: ["isp-lxcs"]
+
+    - name: Configure the routing simulators
+      ansible.builtin.include_tasks:
+        file: tasks/deploy-routing-simulators.yml
+        apply:
+          tags: ["routing-simulators"]
+      tags: [never, routing-simulators]
 
   handlers:
     - name: Restart cloudflared

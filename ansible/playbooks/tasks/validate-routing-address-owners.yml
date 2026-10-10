@@ -1,0 +1,31 @@
+---
+# An interface address and a tunnel inner address share one address space.
+- name: Require one owner for each routing simulator address
+  ansible.builtin.assert:
+    that:
+      - routing_simulator_address_conflicts == ''
+    fail_msg: "The routing simulator inventory repeats an address: {{ routing_simulator_address_conflicts }}"
+  vars:
+    routing_simulator_address_conflicts: >-
+      {%- set owners = {} -%}
+      {%- set conflicts = [] -%}
+      {%- set claims = [] -%}
+      {%- for name, node in testbed_routing_nodes.items() -%}
+      {%- for key, interface in service_mapping[node.service].routing_interfaces.items() -%}
+      {%- for address in [interface.ipv4, interface.ipv6] if address != '' -%}
+      {%- set _ = claims.append([address, 'node ' ~ name ~ ' interface ' ~ key]) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- for tunnel in routing_simulator_tunnels -%}
+      {%- set _ = claims.append([tunnel.local.inner_ipv6, 'tunnel ' ~ tunnel.id ~ ' local.inner_ipv6']) -%}
+      {%- set _ = claims.append([tunnel.remote.inner_ipv6, 'tunnel ' ~ tunnel.id ~ ' remote.inner_ipv6']) -%}
+      {%- endfor -%}
+      {%- for address, owner in claims -%}
+      {%- if address in owners -%}
+      {%- set _ = conflicts.append(address ~ ' belongs to ' ~ owners[address] ~ ' and to ' ~ owner) -%}
+      {%- else -%}
+      {%- set _ = owners.update({address: owner}) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ conflicts | join('; ') }}

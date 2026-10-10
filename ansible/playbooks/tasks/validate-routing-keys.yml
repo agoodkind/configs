@@ -1,0 +1,72 @@
+---
+- name: Require every routing scenario key
+  ansible.builtin.assert:
+    that:
+      - routing_scenario_missing_keys == ''
+    fail_msg: "Routing scenario {{ item.key }} lacks required keys: {{ routing_scenario_missing_keys }}"
+  loop: "{{ testbed_routing_scenarios | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    routing_scenario_required_keys:
+      scenario:
+        - kind
+        - connections
+        - nodes
+        - home_prefixes
+        - remote_prefixes
+        - tunnels
+        - routes
+        - sessions
+        - probe_targets
+      entries:
+        tunnels:
+          keys: [id, connection, protocol, mtu, outer_ttl, inner_prefix_length, local, remote]
+          nested:
+            local: [node, interface, outer_ipv4, inner_ipv6]
+            remote: [node, interface, outer_ipv4, inner_ipv6]
+        sessions:
+          keys: [id, address_family, hops, multihop_ttl, keepalive_seconds, hold_seconds, local, remote, policy]
+          nested:
+            local: [node, asn, address]
+            remote: [node, asn, address]
+            policy: [import_prefixes, export_prefixes]
+        routes:
+          keys: [node, family, destination, gateway]
+          nested: {}
+        probe_targets:
+          keys: [id, address]
+          nested: {}
+    routing_scenario_missing_keys: >-
+      {%- set missing = [] -%}
+      {%- for key in routing_scenario_required_keys.scenario -%}
+      {%- if key not in item.value -%}
+      {%- set _ = missing.append('scenario key ' ~ key) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- for group, required in routing_scenario_required_keys.entries.items() -%}
+      {%- if group in item.value -%}
+      {%- for entry in item.value[group] -%}
+      {%- if 'id' in entry -%}
+      {%- set label = group ~ ' entry ' ~ entry.id -%}
+      {%- else -%}
+      {%- set label = group ~ ' entry ' ~ loop.index -%}
+      {%- endif -%}
+      {%- for key in required['keys'] -%}
+      {%- if key not in entry -%}
+      {%- set _ = missing.append(label ~ ' key ' ~ key) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- for parent, children in required.nested.items() -%}
+      {%- if parent in entry -%}
+      {%- for child in children -%}
+      {%- if child not in entry[parent] -%}
+      {%- set _ = missing.append(label ~ ' key ' ~ parent ~ '.' ~ child) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ missing | join('; ') }}

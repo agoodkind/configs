@@ -18,3 +18,8 @@ suburban ansible_host=3d06:bad:b01:200::1
 [proxmox_servers:children]
 vault_servers
 suburban_servers
+
+# configsctl adds these hosts to OpenTofu apply and destroy lock sets.
+# No Ansible play targets this group.
+[tofu_lock_hosts]
+poweredge ansible_host=3d06:bad:b01:300::254

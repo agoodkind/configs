@@ -1,0 +1,128 @@
+---
+testbed_routing_scenario_tunnel_vps:
+  kind: tunnel_vps_peer
+  connections: [sonic_1, astound]
+  nodes: [tunnel_vps_vps, tunnel_vps_upstream, tunnel_vps_client]
+  home_prefixes: ["{{ testbed_routing_home_prefix }}"]
+  remote_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}"]
+  tunnels:
+    - id: tunnel_vps_sonic_1
+      connection: sonic_1
+      protocol: sit
+      mtu: 1480
+      outer_ttl: 64
+      inner_prefix_length: 64
+      local:
+        node: mwan
+        interface: sit-vps-sonic
+        outer_ipv4: "{{ testbed_routing_connections.sonic_1.mwan_ipv4 }}"
+        inner_ipv6: "2001:db8:5ff:1::1"
+      remote:
+        node: tunnel_vps_vps
+        interface: sit-sonic1
+        outer_ipv4: >-
+          {{ service_mapping.routing_tunnel_vps_vps_suburban.routing_interfaces.outer.ipv4 }}
+        inner_ipv6: "2001:db8:5ff:1::2"
+    - id: tunnel_vps_astound
+      connection: astound
+      protocol: sit
+      mtu: 1480
+      outer_ttl: 64
+      inner_prefix_length: 64
+      local:
+        node: mwan
+        interface: sit-vps-astound
+        outer_ipv4: "{{ testbed_routing_connections.astound.mwan_ipv4 }}"
+        inner_ipv6: "2001:db8:5ff:2::1"
+      remote:
+        node: tunnel_vps_vps
+        interface: sit-astound
+        outer_ipv4: >-
+          {{ service_mapping.routing_tunnel_vps_vps_suburban.routing_interfaces.outer.ipv4 }}
+        inner_ipv6: "2001:db8:5ff:2::2"
+  routes:
+    - node: mwan
+      family: ipv4
+      destination: >-
+        {{ service_mapping.routing_tunnel_vps_vps_suburban.routing_interfaces.outer.ipv4 }}/32
+      gateway: "{{ testbed_routing_connections.sonic_1.simulator_link_ipv4 }}"
+    - node: mwan
+      family: ipv4
+      destination: >-
+        {{ service_mapping.routing_tunnel_vps_vps_suburban.routing_interfaces.outer.ipv4 }}/32
+      gateway: "{{ testbed_routing_connections.astound.simulator_link_ipv4 }}"
+    - node: tunnel_vps_vps
+      family: ipv4
+      destination: "{{ testbed_routing_connections.sonic_1.mwan_ipv4 }}/32"
+      gateway: "{{ testbed_routing_connections.sonic_1.simulator_outer_ipv4 }}"
+    - node: tunnel_vps_vps
+      family: ipv4
+      destination: "{{ testbed_routing_connections.astound.mwan_ipv4 }}/32"
+      gateway: "{{ testbed_routing_connections.astound.simulator_outer_ipv4 }}"
+    - node: tunnel_vps_client
+      family: ipv6
+      destination: "{{ testbed_routing_home_prefix }}"
+      gateway: >-
+        {{ service_mapping.routing_tunnel_vps_upstream_suburban.routing_interfaces.remote.ipv6 }}
+  sessions:
+    - id: tunnel_vps_home_sonic_1
+      address_family: ipv6_unicast
+      hops: 1
+      multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
+      local:
+        node: mwan
+        asn: 64512
+        address: "2001:db8:5ff:1::1"
+      remote:
+        node: tunnel_vps_vps
+        asn: 64550
+        address: "2001:db8:5ff:1::2"
+      policy:
+        import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}", "::/0"]
+        export_prefixes: ["{{ testbed_routing_home_prefix }}"]
+    - id: tunnel_vps_home_astound
+      address_family: ipv6_unicast
+      hops: 1
+      multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
+      local:
+        node: mwan
+        asn: 64512
+        address: "2001:db8:5ff:2::1"
+      remote:
+        node: tunnel_vps_vps
+        asn: 64550
+        address: "2001:db8:5ff:2::2"
+      policy:
+        import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}", "::/0"]
+        export_prefixes: ["{{ testbed_routing_home_prefix }}"]
+    - id: tunnel_vps_upstream
+      address_family: ipv6_unicast
+      hops: 1
+      multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
+      local:
+        node: tunnel_vps_vps
+        asn: 64550
+        address: >-
+          {{ service_mapping.routing_tunnel_vps_vps_suburban.routing_interfaces.transit.ipv6 }}
+      remote:
+        node: tunnel_vps_upstream
+        asn: 64531
+        address: >-
+          {{ service_mapping.routing_tunnel_vps_upstream_suburban.routing_interfaces.transit.ipv6 }}
+      policy:
+        import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}", "::/0"]
+        export_prefixes: ["{{ testbed_routing_home_prefix }}"]
+  probe_targets:
+    - id: tunnel_remote_sonic_1
+      address: "2001:db8:5ff:1::2"
+    - id: tunnel_remote_astound
+      address: "2001:db8:5ff:2::2"
+    - id: remote_client
+      address: >-
+        {{ service_mapping.routing_tunnel_vps_client_suburban.routing_interfaces.remote.ipv6 }}

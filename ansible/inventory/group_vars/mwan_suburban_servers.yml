@@ -9,12 +9,6 @@
 # ----------------------------------------------------------------------------
 
 mwan_environment: "testbed"
-mwan_release_tag: "202610032358-b1-ab73e2c"
-mwan_release_assets:
-  - name: mwan_linux_amd64.tar.gz
-    checksum: "sha256:2928b85de31011ad17eb91da0397d06178bd1af887ca371ddecb3c3d5dc7bf73"
-  - name: wanconfig-stack_linux_amd64.tar.gz
-    checksum: "sha256:ae11e8de8fcf714f6f5f1086f751a332345f83dc3b409b44570debd6b2ca051f"
 mwan_bootstrap_guest: false
 # Under the repository root, where .gitignore already excludes .make.
 mwan_controller_artifact_root: "{{ playbook_dir | dirname | dirname }}/.make/mwan-controller/{{ mwan_environment }}"
@@ -234,7 +228,7 @@ mwan_att_ipv4_addr: "10.240.205.2"
 mwan_att_gateway: "10.240.205.1"
 mwan_monkeybrains_ipv4: "10.240.206.2/24"
 mwan_monkeybrains_gateway: "10.240.206.1"
-mwan_astound_ipv4: "10.240.207.2/24"
+mwan_astound_ipv4: "{{ service_mapping.mwan_suburban.ipv4_astound }}/24"
 mwan_astound_gateway: "10.240.207.1"
 mwan_routed_ipv4: "10.240.208.2/24"
 mwan_routed_gateway: "{{ service_mapping.isp_routed_suburban.ipv4 }}"

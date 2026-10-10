@@ -1,0 +1,83 @@
+---
+testbed_routing_scenario_tunnel_upstream:
+  kind: tunnel_upstream_peer
+  connections: [sonic_2]
+  nodes: [tunnel_upstream_vps, tunnel_upstream_upstream, tunnel_upstream_client]
+  home_prefixes: ["{{ testbed_routing_home_prefix }}"]
+  remote_prefixes: ["{{ testbed_routing_networks.tunnel_upstream_remote.ipv6_net }}"]
+  tunnels:
+    - id: tunnel_upstream_sonic_2
+      connection: sonic_2
+      protocol: sit
+      mtu: 1480
+      outer_ttl: 64
+      inner_prefix_length: 64
+      local:
+        node: mwan
+        interface: sit-upstream
+        outer_ipv4: "{{ testbed_routing_connections.sonic_2.mwan_ipv4 }}"
+        inner_ipv6: "2001:db8:4ff:1::1"
+      remote:
+        node: tunnel_upstream_vps
+        interface: sit-sonic2
+        outer_ipv4: >-
+          {{ service_mapping.routing_tunnel_upstream_vps_suburban.routing_interfaces.outer.ipv4 }}
+        inner_ipv6: "2001:db8:4ff:1::2"
+  routes:
+    - node: mwan
+      family: ipv4
+      destination: >-
+        {{ service_mapping.routing_tunnel_upstream_vps_suburban.routing_interfaces.outer.ipv4 }}/32
+      gateway: "{{ testbed_routing_connections.sonic_2.simulator_link_ipv4 }}"
+    - node: tunnel_upstream_vps
+      family: ipv4
+      destination: "{{ testbed_routing_connections.sonic_2.mwan_ipv4 }}/32"
+      gateway: "{{ testbed_routing_connections.sonic_2.simulator_outer_ipv4 }}"
+    - node: mwan
+      family: ipv6
+      destination: "{{ testbed_routing_networks.tunnel_upstream_transit.ipv6_net }}"
+      gateway: "2001:db8:4ff:1::2"
+    - node: tunnel_upstream_vps
+      family: ipv6
+      destination: "{{ testbed_routing_home_prefix }}"
+      gateway: "2001:db8:4ff:1::1"
+    - node: tunnel_upstream_vps
+      family: ipv6
+      destination: "{{ testbed_routing_networks.tunnel_upstream_remote.ipv6_net }}"
+      gateway: >-
+        {{ service_mapping.routing_tunnel_upstream_upstream_suburban.routing_interfaces.transit.ipv6 }}
+    - node: tunnel_upstream_upstream
+      family: ipv6
+      destination: "2001:db8:4ff:1::/64"
+      gateway: >-
+        {{ service_mapping.routing_tunnel_upstream_vps_suburban.routing_interfaces.transit.ipv6 }}
+    - node: tunnel_upstream_client
+      family: ipv6
+      destination: "{{ testbed_routing_home_prefix }}"
+      gateway: >-
+        {{ service_mapping.routing_tunnel_upstream_upstream_suburban.routing_interfaces.remote.ipv6 }}
+  sessions:
+    - id: tunnel_upstream_home
+      address_family: ipv6_unicast
+      hops: 2
+      multihop_ttl: 2
+      keepalive_seconds: 3
+      hold_seconds: 9
+      local:
+        node: mwan
+        asn: 64512
+        address: "2001:db8:4ff:1::1"
+      remote:
+        node: tunnel_upstream_upstream
+        asn: 64541
+        address: >-
+          {{ service_mapping.routing_tunnel_upstream_upstream_suburban.routing_interfaces.transit.ipv6 }}
+      policy:
+        import_prefixes: ["{{ testbed_routing_networks.tunnel_upstream_remote.ipv6_net }}", "::/0"]
+        export_prefixes: ["{{ testbed_routing_home_prefix }}"]
+  probe_targets:
+    - id: tunnel_remote
+      address: "2001:db8:4ff:1::2"
+    - id: remote_client
+      address: >-
+        {{ service_mapping.routing_tunnel_upstream_client_suburban.routing_interfaces.remote.ipv6 }}

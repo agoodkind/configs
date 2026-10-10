@@ -99,6 +99,7 @@ resource "proxmox_virtual_environment_container" "mwan_failover_suburban" {
   lifecycle {
     prevent_destroy = false
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }
@@ -418,6 +419,11 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
         gateway = local.service_mapping.vmbr1_suburban.ipv4
       }
     }
+    ip_config {
+      ipv4 {
+        address = "${local.service_mapping.isp_astound_suburban.routing_interfaces.outer.ipv4}/${local.routing_outer_ipv4_prefix_length}"
+      }
+    }
   }
 
   features {
@@ -434,6 +440,14 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
     name        = "eth1"
     bridge      = proxmox_network_linux_bridge.vm_management_suburban.name
     mac_address = "BC:24:11:A5:70:05"
+  }
+
+  # The provider restarts container 903 during the apply that adds this
+  # interface.
+  network_interface {
+    name        = local.service_mapping.isp_astound_suburban.routing_interfaces.outer.name
+    bridge      = local.routing_bridge_names[local.service_mapping.isp_astound_suburban.routing_interfaces.outer.network]
+    mac_address = local.service_mapping.isp_astound_suburban.routing_interfaces.outer.mac_address
   }
 
   disk {
@@ -676,6 +690,7 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
   lifecycle {
     prevent_destroy = false
     ignore_changes = [
+      initialization[0].user_account,
       operating_system[0].template_file_id,
     ]
   }

@@ -1,0 +1,11 @@
+---
+# The gateway forwards this prefix without translation. The routed simulator
+# routes the same prefix on its own connection.
+testbed_routing_home_prefix: "3d06:bad:b01:210::/60"
+
+# Each simulator guest installs an unreachable route for every prefix in this
+# list.
+testbed_routing_management_unreachable_prefixes: >-
+  {{ [testbed_routing_home_prefix, '2001:db8::/32']
+  + (testbed_routing_networks | dict2items | rejectattr('key', 'equalto', 'management')
+  | map(attribute='value.ipv4_net') | reject('equalto', '') | list) }}

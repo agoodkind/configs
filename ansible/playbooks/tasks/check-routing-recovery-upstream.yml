@@ -1,0 +1,69 @@
+---
+- name: Check upstream loss and recovery
+  when: routing_recovery.upstream_nodes != []
+  block:
+    - name: Read the clock before the upstream loss
+      ansible.builtin.command:
+        argv: [date, +%s]
+      register: routing_upstream_loss_start
+      changed_when: false
+
+    - name: Stop FRR on each upstream router
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ routing_node_vmids[item] }}", --, systemctl, stop, frr.service]
+      loop: "{{ routing_recovery.upstream_nodes }}"
+      changed_when: true
+
+    - name: Wait until packets routed by the scenario fail
+      ansible.builtin.command:
+        argv: "{{ routing_recovery_probe }}"
+      register: routing_upstream_loss_probe
+      changed_when: false
+      failed_when: false
+      until: routing_upstream_loss_probe.rc != 0
+      retries: "{{ routing_recovery.wait_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+    - name: Require failed packets after the upstream loss
+      ansible.builtin.assert:
+        that:
+          - routing_upstream_loss_probe.rc != 0
+        fail_msg: "Routing scenario {{ routing_recovery.name }}: packets still pass after the upstream loss"
+  always:
+    - name: Start FRR on each upstream router and require active FRR
+      ansible.builtin.import_tasks: run-routing-restore-commands.yml
+      vars:
+        routing_upstream_guests: >-
+          {{ routing_recovery.upstream_nodes | map('extract', routing_node_vmids) | map('string')
+          | map('regex_replace', '^', 'pct exec ') | list }}
+        routing_restore_commands: >-
+          {{ (routing_upstream_guests | map('regex_replace', '$', ' -- systemctl start frr.service') | list)
+          + (routing_upstream_guests | map('regex_replace', '$', ' -- systemctl is-active frr.service') | list) }}
+
+# The recovery probe runs only after every restore command succeeds.
+- name: Wait until packets routed by the scenario pass again
+  ansible.builtin.command:
+    argv: "{{ routing_recovery_probe }}"
+  register: routing_upstream_recovery_probe
+  changed_when: false
+  until: routing_upstream_recovery_probe.rc == 0
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+  when: routing_recovery.upstream_nodes != []
+
+- name: Read the clock after the upstream recovery
+  ansible.builtin.command:
+    argv: [date, +%s]
+  register: routing_upstream_loss_end
+  changed_when: false
+  when: routing_recovery.upstream_nodes != []
+
+- name: Record the upstream loss check
+  ansible.builtin.set_fact:
+    routing_recovery_results: >-
+      {{ routing_recovery_results + [{
+        'fault': 'upstream loss',
+        'seconds_from_fault_to_recovery':
+          routing_upstream_loss_end.stdout | int - routing_upstream_loss_start.stdout | int
+      }] }}
+  when: routing_recovery.upstream_nodes != []

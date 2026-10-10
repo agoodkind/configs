@@ -17,13 +17,32 @@ from the Ansible vault.
 
 A fresh checkout needs one `./configsctl tofu init` before its first plan.
 
+Each directory under the workspaces directory with a `backend` block is a
+workspace with its own state file. A workspace name before the tofu command
+selects that workspace.
+
+```bash
+./configsctl tofu guest plan
+```
+
+Each workspace needs its own `init`.
+
+Run [opentofu/guest/install-providers.sh](guest/install-providers.sh) before the first `./configsctl tofu guest init` in a checkout. The script installs both pinned providers into the guest workspace's implied local mirror.
+
+```bash
+opentofu/guest/install-providers.sh
+./configsctl tofu guest init
+```
+
+Run the script again after a change to [providers.pin](guest/providers.pin). After a new release under the unchanged provider version `0.1.0`, delete `opentofu/guest/.terraform.lock.hcl` before running `./configsctl tofu guest init` again.
+
 ## Secrets
 
 configsctl exports only the vault keys that match one of two rules.
 
 | Vault key | OpenTofu receives |
 | --- | --- |
-| Same name as a variable declared in the OpenTofu files | That variable |
+| Same name as a variable declared in the selected workspace | That variable |
 | `vault_tofu_env_<NAME>` | The environment variable `<NAME>` |
 
 The S3 backend reads its credentials from the environment variables
@@ -31,13 +50,14 @@ The S3 backend reads its credentials from the environment variables
 `vault_tofu_env_AWS_ACCESS_KEY_ID` and `vault_tofu_env_AWS_SECRET_ACCESS_KEY`
 supply them.
 
-To change the module folder or the `vault_tofu_env_` prefix, edit
-[configsctl.yml](../configsctl.yml).
+To change the workspaces directory (`workspaces_dir`) or the `vault_tofu_env_`
+prefix, edit [configsctl.yml](../configsctl.yml).
 
 ## Add a secret
 
 1. Add the vault key with `./configsctl set-secrets`.
-2. Declare a variable with the same name in the OpenTofu files.
+2. Declare a variable with the same name in the workspace that reads the
+   secret.
 
 ## Rotate the backend credential
 

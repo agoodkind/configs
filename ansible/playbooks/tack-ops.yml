@@ -17,15 +17,9 @@
 #     --extra-var tack_server_digest=<CI index digest of tack-server> \
 #     --extra-var tack_audit_consumer_digest=<CI index digest of tack-audit-consumer>
 #
-# Each run first runs ops deploy verify with the two CI index digests of the
-# reviewed build. The command compares each digest exactly with the index
-# descriptor digest of the image that tack-app-1 and tack-audit-consumer-1
-# run on the guest's containerd image store, and a mismatch stops the run.
-# The audit row of the command records tack_commit as the deploy commit. The
-# command line and the result line record both digests, and the QA reset and
-# production run evidence save both lines. The run then prints the dry run of
-# the command, and with tack_ops_execute true runs it with --execute. A run
-# with --check runs the verification and the dry run only.
+# The playbook runs ops deploy verify before the requested command.
+# Verification rejects image digests that differ from the supplied values.
+# In check mode, the playbook runs verification and the command dry run.
 #
 # Extra vars override every play and group variable. The allowed commands,
 # the service of each command, and the command lines are literals in the
@@ -50,12 +44,15 @@
           - tack_server_digest is match('sha256:[0-9a-f]{64}\Z')
           - tack_audit_consumer_digest is match('sha256:[0-9a-f]{64}\Z')
           - >-
-            tack_ops_command in ['ops deploy verify', 'audit signers',
+            tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
+            'audit signers', 'audit query',
             'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
-            'ops backfill once-search-projections',
+            'ops qa datagen search-load', 'ops qa datagen search-mixed',
+            'ops backfill once-search-projections', 'ops backfill once-drop-killtest-schema',
             'ops search provision', 'ops search reindex', 'ops search verify']
           - tack_ops_args is sequence and tack_ops_args is not string and tack_ops_args is not mapping
-          - tack_ops_args | reject('match', '--[a-z][a-z0-9-]*(=[A-Za-z0-9._/:@-]+)?\Z') | list == []
+          - tack_ops_command != 'ops backfill once-drop-killtest-schema' or tack_ops_args == []
+          - tack_ops_args | reject('match', '--[a-z][a-z0-9-]*(=[A-Za-z0-9._/:@,\[\]-]+)?\Z') | list == []
           - tack_ops_args | select('match', '--(execute|operator-|deploy-commit)') | list == []
           - ansible_play_hosts_all | difference(groups['tack_qa_all']) | list == []
           - ansible_play_hosts_all | intersect(groups['tack_prod_all']) | list == []
@@ -67,7 +64,8 @@
           tack_audit_consumer_digest are the CI index digests of the reviewed
           build; each is sha256: followed by 64 lowercase hex characters. Each
           extra argument is one --flag or --flag=value token and never --execute, --operator-*, or
-          --deploy-commit. Command "{{ tack_ops_command }}", arguments
+          --deploy-commit. ops backfill once-drop-killtest-schema accepts no
+          extra argument. Command "{{ tack_ops_command }}", arguments
           {{ tack_ops_args }}, commit "{{ tack_commit }}", tack-server digest
           "{{ tack_server_digest }}", tack-audit-consumer digest
           "{{ tack_audit_consumer_digest }}", guests
@@ -118,8 +116,11 @@
           {{ counts.dry_run | bool
              and counts.result.node_types.missing == 0
              and counts.result.property_definitions.missing == 0 }}
+      # A dry run prints two operator lines before the JSON envelope, and the
+      # envelope spans several lines.
       vars:
-        counts: "{{ (tack_metadata_name_index_read.stdout_lines | last | from_json).result }}"
+        output: "{{ tack_metadata_name_index_read.stdout }}"
+        counts: "{{ (output[output.index('{'):] | from_json).result }}"
       when: *tack_ops_index_build
 
     - name: Refuse a search index build without a complete metadata name index
@@ -130,20 +131,43 @@
       ansible.builtin.command:
         cmd: >-
           docker compose run --rm
-          {{ 'tack-ops' if tack_ops_command == 'ops deploy verify' else 'app' }}
+          {{ '-e DATABASE_URL' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
+          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
+                                                'ops backfill once-drop-killtest-schema'] else 'app' }}
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }}
         chdir: "{{ tack_install_dir }}"
+      # The command needs the engine superuser login to drop killtest.
+      # Remove this entry and the spec constants and examples when removing
+      # ops backfill once-drop-killtest-schema (TACK-560;
+      # command removal day 2026-12-06).
+      environment: &tack_ops_superuser_environment >-
+        {{ {'DATABASE_URL': tack_ledger_superuser_database_url}
+           if tack_ops_command == 'ops backfill once-drop-killtest-schema' else {} }}
+      register: tack_ops_dry_run
       changed_when: false
       check_mode: false
+
+    - name: Show the output of the dry run
+      ansible.builtin.debug:
+        msg: "{{ tack_ops_dry_run.stdout_lines }}"
 
     - name: Run the Tack ops command with --execute
       ansible.builtin.command:
         cmd: >-
           docker compose run --rm
-          {{ 'tack-ops' if tack_ops_command == 'ops deploy verify' else 'app' }}
+          {{ '-e DATABASE_URL' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
+          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
+                                                'ops backfill once-drop-killtest-schema'] else 'app' }}
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }} --execute
         chdir: "{{ tack_install_dir }}"
+      environment: *tack_ops_superuser_environment
+      register: tack_ops_execute_run
       changed_when: true
       when: tack_ops_execute | bool
+
+    - name: Show the output of the --execute run
+      ansible.builtin.debug:
+        msg: "{{ tack_ops_execute_run.stdout_lines }}"
+      when: tack_ops_execute_run is not skipped
