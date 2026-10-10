@@ -45,17 +45,15 @@
   register: rsim_installed_units
   changed_when: false
 
+# Every service group is pending after the removal deletes the applied record.
 - name: Remove each network unit that the inventory no longer declares
   ansible.builtin.command:
-    argv: [pct, exec, "{{ rsim.vmid }}", --, rm, "/etc/systemd/network/{{ item }}"]
+    argv: >-
+      {{ rsim.guest_command + ['rm', '-f', testbed_routing_applied_record, '/etc/systemd/network/' ~ item] }}
   loop: >-
     {{ rsim_installed_units.stdout_lines
     | difference(rsim_files | map(attribute=1) | map('basename') | list) }}
-  register: rsim_removed_units
   changed_when: true
 
-- name: Record the service groups with a changed file
-  ansible.builtin.set_fact:
-    rsim_changed_groups: >-
-      {{ (rsim_push.results | selectattr('changed') | map(attribute='item.0.3') | list
-      + (['network'] if rsim_removed_units.changed else [])) | unique }}
+- name: Collect the service groups with a pending apply
+  ansible.builtin.import_tasks: deploy-routing-simulator-pending.yml

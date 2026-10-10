@@ -11,7 +11,7 @@
 # sha256sum exits with status 1 when the guest has no file at the path.
 - name: Read the checksum of each file in the guest
   ansible.builtin.command:
-    argv: [pct, exec, "{{ rsim.vmid }}", --, sha256sum, "{{ item.1 }}"]
+    argv: "{{ rsim.guest_command + ['sha256sum', item.1] }}"
   loop: "{{ rsim_files }}"
   loop_control:
     label: "{{ item.1 }}"

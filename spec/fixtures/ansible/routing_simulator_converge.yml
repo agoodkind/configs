@@ -1,0 +1,44 @@
+---
+- name: Push and apply simulator files on the controller
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+  vars:
+    rsim:
+      guest_command: []
+    rsim_temp_dir: "{{ work_directory }}/staged"
+    testbed_routing_applied_record: "{{ work_directory }}/record/applied"
+    rsim_files:
+      - [first.conf, "{{ work_directory }}/guest/first.conf", "0644", first]
+      - [second.conf, "{{ work_directory }}/guest/second.conf", "0644", second]
+  tasks:
+    - name: Read the staged and installed checksums
+      ansible.builtin.import_tasks: ../../../ansible/playbooks/tasks/deploy-routing-simulator-checksums.yml
+
+    - name: Push each file with a changed checksum
+      ansible.builtin.copy:
+        src: "{{ rsim_temp_dir }}/{{ item.0.0 }}"
+        dest: "{{ item.0.1 }}"
+        mode: "{{ item.0.2 }}"
+      loop: "{{ rsim_files | zip(rsim_staged.results, rsim_installed.results) | list }}"
+      loop_control:
+        label: "{{ item.0.1 }}"
+      when: not item.2.stdout.startswith(item.1.stat.checksum)
+
+    - name: Collect the service groups with a pending apply
+      ansible.builtin.import_tasks: ../../../ansible/playbooks/tasks/deploy-routing-simulator-pending.yml
+
+    - name: Run the command before the apply
+      ansible.builtin.command:
+        cmd: "{{ before_apply_command }}"
+      changed_when: false
+
+    - name: Apply each pending group
+      ansible.builtin.command:
+        argv: [mkdir, "{{ work_directory }}/applied/{{ run_name }}-{{ item }}"]
+      loop: "{{ rsim_pending_groups }}"
+      changed_when: true
+
+    - name: Record the applied simulator configuration
+      ansible.builtin.import_tasks: ../../../ansible/playbooks/tasks/deploy-routing-simulator-record.yml

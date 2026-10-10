@@ -10,14 +10,14 @@ RSpec.describe 'routing simulator BGP configuration' do
     RoutingSimulatorConfig.render(source, node, 'frr.conf.j2').lines.map(&:strip)
   end
 
-  def restarts_frr?(node, changed_groups)
-    restart = RoutingSimulatorConfig.task('Install the changed FRR configuration and restart FRR',
+  def restarts_frr?(node, pending_groups)
+    restart = RoutingSimulatorConfig.task('Install the pending FRR configuration and restart FRR',
                                           'tasks', 'deploy-routing-simulator-services.yml')
-    facts = [RoutingSimulatorConfig.fact({ 'rsim_changed_groups' => changed_groups })]
+    facts = [RoutingSimulatorConfig.fact({ 'rsim_pending_groups' => pending_groups })]
     RoutingSimulatorConfig.condition(inventory, node, restart.fetch('when'), facts: facts)
   end
 
-  it 'restarts FRR only on a BGP node with a changed FRR file', :aggregate_failures do
+  it 'restarts FRR only on a BGP node with a pending FRR file', :aggregate_failures do
     expected = { 'astound_static_endpoint' => false, 'astound_static_client' => false, 'tunnel_upstream_vps' => false,
                  'isp_sonic' => false, 'tunnel_upstream_upstream' => true, 'tunnel_vps_vps' => true }
 

@@ -13,3 +13,6 @@
 
 - name: Apply the simulator configuration
   ansible.builtin.import_tasks: deploy-routing-simulator-services.yml
+
+- name: Record the applied simulator configuration
+  ansible.builtin.import_tasks: deploy-routing-simulator-record.yml

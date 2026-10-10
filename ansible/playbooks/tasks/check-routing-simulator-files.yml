@@ -1,6 +1,6 @@
 ---
-# A repeat deploy does not copy files or restart services when the guest
-# file's checksum matches the rendered inventory file's checksum.
+# A repeat deploy does not copy a file when the guest file's checksum matches
+# the rendered inventory file's checksum.
 - name: Collect the simulator files
   ansible.builtin.import_tasks: routing-simulator-file-list.yml
 
