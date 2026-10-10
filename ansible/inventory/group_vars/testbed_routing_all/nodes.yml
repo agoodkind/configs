@@ -1,0 +1,87 @@
+---
+testbed_routing_nodes:
+  mwan:
+    role: gateway
+    service: mwan_suburban
+    scenario: ""
+    router_id: ""
+  isp_astound:
+    role: transport
+    service: isp_astound_suburban
+    scenario: ""
+    router_id: ""
+  isp_sonic:
+    role: transport
+    service: isp_sonic_suburban
+    scenario: ""
+    router_id: ""
+  astound_static_endpoint:
+    role: tunnel_endpoint
+    service: routing_astound_static_endpoint_suburban
+    scenario: astound_static
+    router_id: ""
+  astound_static_client:
+    role: remote_client
+    service: routing_astound_static_client_suburban
+    scenario: astound_static
+    router_id: ""
+  etheric_native_router:
+    role: provider_router
+    service: routing_etheric_native_router_suburban
+    scenario: etheric_native
+    router_id: "192.0.2.9"
+  etheric_native_upstream:
+    role: upstream_router
+    service: routing_etheric_native_upstream_suburban
+    scenario: etheric_native
+    router_id: "192.0.2.10"
+  etheric_native_client:
+    role: remote_client
+    service: routing_etheric_native_client_suburban
+    scenario: etheric_native
+    router_id: ""
+  tunnel_static_vps:
+    role: vps
+    service: routing_tunnel_static_vps_suburban
+    scenario: tunnel_static
+    router_id: "192.0.2.12"
+  tunnel_static_upstream:
+    role: upstream_router
+    service: routing_tunnel_static_upstream_suburban
+    scenario: tunnel_static
+    router_id: "192.0.2.13"
+  tunnel_static_client:
+    role: remote_client
+    service: routing_tunnel_static_client_suburban
+    scenario: tunnel_static
+    router_id: ""
+  tunnel_upstream_vps:
+    role: vps
+    service: routing_tunnel_upstream_vps_suburban
+    scenario: tunnel_upstream
+    router_id: ""
+  tunnel_upstream_upstream:
+    role: upstream_router
+    service: routing_tunnel_upstream_upstream_suburban
+    scenario: tunnel_upstream
+    router_id: "192.0.2.16"
+  tunnel_upstream_client:
+    role: remote_client
+    service: routing_tunnel_upstream_client_suburban
+    scenario: tunnel_upstream
+    router_id: ""
+  tunnel_vps_vps:
+    role: vps
+    service: routing_tunnel_vps_vps_suburban
+    scenario: tunnel_vps
+    router_id: "192.0.2.18"
+  tunnel_vps_upstream:
+    role: upstream_router
+    service: routing_tunnel_vps_upstream_suburban
+    scenario: tunnel_vps
+    router_id: "192.0.2.19"
+  tunnel_vps_client:
+    role: remote_client
+    service: routing_tunnel_vps_client_suburban
+    scenario: tunnel_vps
+    router_id: ""

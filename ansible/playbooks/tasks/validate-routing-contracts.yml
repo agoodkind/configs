@@ -1,0 +1,56 @@
+---
+- name: Require each routing scenario to satisfy the contract of its kind
+  ansible.builtin.assert:
+    that:
+      - item.value.kind in routing_simulator_contracts
+      - item.value.nodes | difference(testbed_routing_nodes.keys() | list) == []
+      - >-
+        (item.value.nodes | map('extract', testbed_routing_nodes) | map(attribute='scenario')
+        | unique | list) == [item.key]
+      - >-
+        (item.value.nodes | map('extract', testbed_routing_nodes) | map(attribute='role') | sort)
+        == routing_simulator_contracts[item.value.kind].node_roles
+      - item.value.connections | difference(testbed_routing_connections.keys() | list) == []
+      - item.value.home_prefixes != []
+      - item.value.remote_prefixes != []
+      - item.value.probe_targets != []
+      - >-
+        item.value.routes | map(attribute='node')
+        | difference(item.value.nodes + routing_simulator_gateway_nodes) == []
+      - item.value.routes | map(attribute='family') | difference(routing_simulator_route_families) == []
+      - (item.value.tunnels != []) == routing_simulator_contracts[item.value.kind].tunneled
+      - item.value.tunnels | map(attribute='protocol') | difference(routing_simulator_tunnel_protocols) == []
+      - item.value.tunnels | map(attribute='connection') | difference(item.value.connections) == []
+      - >-
+        item.value.tunnels | map(attribute='connection') | map('extract', testbed_routing_connections)
+        | map(attribute='simulator_outer_ipv4') | select('equalto', '') | list == []
+      - item.value.tunnels | map(attribute='local.node') | difference(routing_simulator_gateway_nodes) == []
+      - item.value.tunnels | map(attribute='remote.node') | difference(item.value.nodes) == []
+      - (item.value.sessions != []) == routing_simulator_contracts[item.value.kind].bgp
+      - >-
+        item.value.sessions | map(attribute='local.node')
+        | difference(item.value.nodes + routing_simulator_gateway_nodes) == []
+      - item.value.sessions | map(attribute='remote.node') | difference(item.value.nodes) == []
+      - >-
+        (item.value.sessions | selectattr('local.node', 'in', routing_simulator_gateway_nodes)
+        | map(attribute='remote.node') | map('extract', testbed_routing_nodes) | map(attribute='role')
+        | unique | list) == routing_simulator_contracts[item.value.kind].gateway_peer_roles
+      - item.value.sessions | map(attribute='policy.import_prefixes') | select('equalto', []) | list == []
+      - item.value.sessions | map(attribute='policy.export_prefixes') | select('equalto', []) | list == []
+      - >-
+        ((item.value.sessions | map(attribute='policy.import_prefixes') | flatten)
+        + (item.value.sessions | map(attribute='policy.export_prefixes') | flatten))
+        | difference(item.value.home_prefixes + item.value.remote_prefixes) == []
+      - routing_scenario_asns | reject('ge', routing_simulator_private_asn_ranges[0].lowest) | list == []
+      - >-
+        routing_scenario_asns | select('gt', routing_simulator_private_asn_ranges[0].highest)
+        | reject('ge', routing_simulator_private_asn_ranges[1].lowest) | list == []
+      - routing_scenario_asns | select('gt', routing_simulator_private_asn_ranges[1].highest) | list == []
+    fail_msg: "Routing scenario {{ item.key }} violates the contract of its kind."
+  loop: "{{ testbed_routing_scenarios | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    routing_scenario_asns: >-
+      {{ (item.value.sessions | map(attribute='local.asn') | list)
+      + (item.value.sessions | map(attribute='remote.asn') | list) }}

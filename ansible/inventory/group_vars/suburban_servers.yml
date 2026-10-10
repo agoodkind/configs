@@ -334,7 +334,7 @@ testbed_isp_lxcs:
     v4_pool: "10.240.207.100 - 10.240.207.200"
     v4_dns: "1.1.1.1"
     v4_reservations:
-      - { mac: "BC:24:11:A5:70:06", addr: "10.240.207.2" }
+      - { mac: "BC:24:11:A5:70:06", addr: "{{ service_mapping.mwan_suburban.ipv4_astound }}" }
     static_v4_block: ""
     static_v4_route_to: ""
     routed_ipv4_prefix: ""

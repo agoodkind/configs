@@ -1,0 +1,55 @@
+---
+- name: Collect the routing simulator identities
+  ansible.builtin.set_fact:
+    routing_simulator_identities:
+      node_service: "{{ routing_simulator_services }}"
+      vmid: >-
+        {{ routing_simulator_services | map('extract', service_mapping) | map(attribute='vmid') | list }}
+      hostname: >-
+        {{ routing_simulator_services | map('extract', service_mapping) | map(attribute='hostname') | list }}
+      mac_address: >-
+        {{ routing_simulator_interfaces | map(attribute='mac_address') | map('upper') | list }}
+      interface_ipv4: >-
+        {{ routing_simulator_interfaces | map(attribute='ipv4') | reject('equalto', '') | list }}
+      interface_ipv6: >-
+        {{ routing_simulator_interfaces | map(attribute='ipv6') | reject('equalto', '') | list }}
+      bridge: >-
+        {{ testbed_routing_networks.values() | map(attribute='bridge') | list }}
+      connection_gateway_ipv4: >-
+        {{ testbed_routing_connections.values() | map(attribute='mwan_ipv4') | list }}
+      connection_simulator_link_ipv4: >-
+        {{ testbed_routing_connections.values() | map(attribute='simulator_link_ipv4') | list }}
+      router_id: >-
+        {{ testbed_routing_nodes.values() | map(attribute='router_id') | reject('equalto', '') | list }}
+      tunnel_id: >-
+        {{ routing_simulator_tunnels | map(attribute='id') | list }}
+      tunnel_endpoint_tuple: >-
+        {{ routing_simulator_tunnels | map(attribute='protocol')
+        | zip(routing_simulator_tunnels | map(attribute='local.outer_ipv4'),
+        routing_simulator_tunnels | map(attribute='remote.outer_ipv4'))
+        | map('join', '/') | list }}
+      tunnel_interface: >-
+        {{ (routing_simulator_tunnels | map(attribute='local.node')
+        | zip(routing_simulator_tunnels | map(attribute='local.interface'))
+        | map('join', '/') | list)
+        + (routing_simulator_tunnels | map(attribute='remote.node')
+        | zip(routing_simulator_tunnels | map(attribute='remote.interface'))
+        | map('join', '/') | list) }}
+      tunnel_inner_ipv6: >-
+        {{ (routing_simulator_tunnels | map(attribute='local.inner_ipv6') | list)
+        + (routing_simulator_tunnels | map(attribute='remote.inner_ipv6') | list) }}
+      session_id: >-
+        {{ routing_simulator_sessions | map(attribute='id') | list }}
+      session_address_pair: >-
+        {{ routing_simulator_sessions | map(attribute='local.address')
+        | zip(routing_simulator_sessions | map(attribute='remote.address'))
+        | map('join', '/') | list }}
+
+- name: Require unique routing simulator identities
+  ansible.builtin.assert:
+    that:
+      - (item.value | unique | list) == item.value
+    fail_msg: "The routing simulator inventory repeats a {{ item.key }} value."
+  loop: "{{ routing_simulator_identities | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"

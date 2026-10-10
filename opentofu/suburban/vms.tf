@@ -27,6 +27,9 @@ resource "proxmox_virtual_environment_vm" "mwan_suburban" {
   on_boot       = false
   started       = true
 
+  # The provider does not restart the gateway for an update.
+  reboot_after_update = false
+
   keyboard_layout = "en-us"
 
   agent {
@@ -106,6 +109,18 @@ resource "proxmox_virtual_environment_vm" "mwan_suburban" {
     bridge      = proxmox_network_linux_bridge.isp_routed_suburban.name
     model       = "virtio"
     mac_address = "BC:24:11:A5:70:08"
+  }
+
+  # Proxmox numbers these devices in key order after the seven devices above.
+  # A new key must sort after the existing keys.
+  dynamic "network_device" {
+    for_each = local.service_mapping.mwan_suburban.routing_interfaces
+
+    content {
+      bridge      = local.routing_bridge_names[network_device.value.network]
+      model       = "virtio"
+      mac_address = network_device.value.mac_address
+    }
   }
 
   # No initialization block: the VM carries no cloud-init drive or values.

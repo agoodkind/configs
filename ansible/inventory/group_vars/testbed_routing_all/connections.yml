@@ -1,0 +1,27 @@
+---
+testbed_routing_connections:
+  astound:
+    isp: astound
+    simulator: isp_astound
+    mwan_ipv4: "{{ service_mapping.mwan_suburban.ipv4_astound }}"
+    simulator_link_ipv4: "{{ service_mapping.isp_astound_suburban.ipv4 }}"
+    simulator_outer_ipv4: "{{ service_mapping.isp_astound_suburban.routing_interfaces.outer.ipv4 }}"
+  sonic_1:
+    isp: sonic
+    simulator: isp_sonic
+    mwan_ipv4: "{{ service_mapping.mwan_suburban.routing_interfaces.sonic_1.ipv4 }}"
+    simulator_link_ipv4: "{{ service_mapping.isp_sonic_suburban.routing_interfaces.sonic_1.ipv4 }}"
+    simulator_outer_ipv4: "{{ service_mapping.isp_sonic_suburban.routing_interfaces.outer.ipv4 }}"
+  sonic_2:
+    isp: sonic
+    simulator: isp_sonic
+    mwan_ipv4: "{{ service_mapping.mwan_suburban.routing_interfaces.sonic_2.ipv4 }}"
+    simulator_link_ipv4: "{{ service_mapping.isp_sonic_suburban.routing_interfaces.sonic_2.ipv4 }}"
+    simulator_outer_ipv4: "{{ service_mapping.isp_sonic_suburban.routing_interfaces.outer.ipv4 }}"
+  etheric:
+    isp: etheric
+    simulator: etheric_native_router
+    mwan_ipv4: "{{ service_mapping.mwan_suburban.routing_interfaces.etheric.ipv4 }}"
+    simulator_link_ipv4: >-
+      {{ service_mapping.routing_etheric_native_router_suburban.routing_interfaces.provider.ipv4 }}
+    simulator_outer_ipv4: ""
