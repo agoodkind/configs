@@ -52,7 +52,7 @@
             'ops search provision', 'ops search reindex', 'ops search verify']
           - tack_ops_args is sequence and tack_ops_args is not string and tack_ops_args is not mapping
           - tack_ops_command != 'ops backfill once-drop-killtest-schema' or tack_ops_args == []
-          - tack_ops_args | reject('match', '--[a-z][a-z0-9-]*(=[A-Za-z0-9._/:@,-]+)?\Z') | list == []
+          - tack_ops_args | reject('match', '--[a-z][a-z0-9-]*(=[A-Za-z0-9._/:@,\[\]-]+)?\Z') | list == []
           - tack_ops_args | select('match', '--(execute|operator-|deploy-commit)') | list == []
           - ansible_play_hosts_all | difference(groups['tack_qa_all']) | list == []
           - ansible_play_hosts_all | intersect(groups['tack_prod_all']) | list == []

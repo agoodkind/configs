@@ -148,7 +148,7 @@ RSpec.describe TackOpsPlaybook do
   end
 
   it 'accepts search with comma-separated endpoints and both search load commands on one QA guest', :aggregate_failures do
-    endpoints = '--endpoints=http://tack-qa.suburban.goodkind.io:8080,http://tack-app2.suburban.goodkind.io:8080'
+    endpoints = '--endpoints=http://[3d06:bad:b01:210::217]:8000,http://[3d06:bad:b01:210::223]:8000'
 
     expect(described_class.request_passes('tack_ops_command' => 'ops qa datagen search',
                                           'tack_ops_args' => ['--commit', endpoints])).to be(true)
