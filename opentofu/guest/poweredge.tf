@@ -52,8 +52,7 @@ locals {
     disk_size_gb = 8
   }
 
-  # Host ports that carry LAN client traffic. The LAN stays dormant until a
-  # separate user instruction.
+  # Keep LAN client ports on the host until the user authorizes LAN activation.
   poweredge_lan_ports = toset(["nic0", "nic3", "ens1f1"])
 
   poweredge_gateway_container_options = {
@@ -92,8 +91,6 @@ resource "pveguest_host_kernel_modules" "poweredge" {
   modules = local.poweredge_kernel_modules
 }
 
-# The gateway and LAN containers receive host interfaces only through the
-# hostnicN options, so neither declares a network_interface block.
 resource "proxmox_virtual_environment_container" "poweredge_gateway" {
   node_name = local.poweredge_node
   vm_id     = local.poweredge_gateway_vmid

@@ -44,15 +44,13 @@ locals {
     }
   }
 
-  # The poweredge node receives host and container resources that this
-  # workspace declares without enrolling a guest.
+  # PowerEdge requires a provider node for host and container resources without enrolling a guest in the base module.
   host_only_sites = toset(["poweredge"])
 
   node_sites = setunion(toset(values(local.guest_sites)), local.host_only_sites)
 
   # The service mapping stores the address of a hypervisor under the key
-  # <site>_hypervisor, as ipv6 or as ipv4. The certificate of the API does not
-  # cover that address.
+  # <site>_hypervisor. The certificate of the API does not cover that address.
   node_hosts = {
     for site in local.node_sites :
     site => try(
