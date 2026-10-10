@@ -35,7 +35,7 @@ RSpec.describe 'routing simulator network units' do
     expect(netdev.lines.map(&:strip)).to include('MTUBytes=1400', 'TTL=32')
   end
 
-  it 'routes the home prefix through the tunnel on the endpoint without BGP' do
+  it 'configures the home prefix route in the tunnel unit of the endpoint without BGP' do
     network = render('astound_static_endpoint', 'tunnel.network.j2', 'rsim_tunnel' => 'rsim.tunnels[0]')
 
     expect(network).to match(/\[Route\]\nDestination=#{Regexp.escape(home_prefix)}\nGateway=2001:db8:1ff:1::1\n/)

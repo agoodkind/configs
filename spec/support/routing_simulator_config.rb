@@ -49,7 +49,7 @@ module RoutingSimulatorConfig
     )
   end
 
-  # items maps a loop variable to the expression that selects its value from
+  # items maps a loop variable to the expression that reads its value from
   # the node configuration.
   def render(inventory, node, template, items = {})
     facts = items.map { |name, expression| fact({ name => "{{ #{expression} }}" }) }

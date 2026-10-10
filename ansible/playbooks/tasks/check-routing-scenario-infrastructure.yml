@@ -8,7 +8,7 @@
   loop_control:
     loop_var: routing_check_node
 
-- name: Send outer packets from each tunnel endpoint to its transport simulator
+- name: Ping the transport simulator's outer address on each tunnel endpoint
   ansible.builtin.command:
     argv:
       - pct
@@ -74,7 +74,7 @@
   retries: "{{ testbed_routing_checks.session_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
 
-- name: Send packets from each remote client to its configured gateway
+- name: Ping the configured gateway on each remote client
   ansible.builtin.command:
     argv:
       - pct

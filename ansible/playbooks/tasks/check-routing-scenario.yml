@@ -5,11 +5,11 @@
 - name: Check the simulator guests of the scenario
   ansible.builtin.import_tasks: check-routing-scenario-infrastructure.yml
 
-- name: Check the source address of packets through each transport simulator
+- name: Check the source address of packets at each transport simulator
   ansible.builtin.include_tasks:
     file: check-routing-transport-source.yml
 
-- name: Check the scenario through the gateway
+- name: Check the scenario with the MWAN gateway
   ansible.builtin.include_tasks:
     file: check-routing-scenario-mwan.yml
   when: routing_check.mode == 'mwan'

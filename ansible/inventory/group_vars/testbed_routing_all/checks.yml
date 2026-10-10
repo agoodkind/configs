@@ -13,4 +13,5 @@ testbed_routing_checks:
   transfer_timeout_seconds: 30
   session_retries: 18
   recovery_retries: 24
+  restore_retries: 3
   retry_delay_seconds: 5

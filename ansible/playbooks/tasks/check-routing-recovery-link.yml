@@ -13,7 +13,7 @@
       loop: "{{ routing_recovery_links }}"
       changed_when: true
 
-    - name: Wait until packets through the scenario fail
+    - name: Wait until packets routed by the scenario fail
       ansible.builtin.command:
         argv: "{{ routing_recovery_probe }}"
       register: routing_link_loss_probe
@@ -65,9 +65,25 @@
           pct exec {{ routing_node_vmids[item.0] }} -- sh -c
           'ip link set dev {{ item.1 }} up && networkctl reconfigure {{ item.1 }}'
       loop: "{{ routing_recovery_links }}"
+      register: routing_link_restore
       changed_when: true
+      until: routing_link_restore.rc == 0
+      retries: "{{ testbed_routing_checks.restore_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+      ignore_errors: true
 
-    - name: Wait until packets through the scenario pass again
+    - name: Require each scenario link up
+      ansible.builtin.assert:
+        that:
+          - routing_link_failed_restores == []
+        fail_msg: >-
+          Routing scenario {{ routing_recovery.name }}: the restore failed on links
+          {{ routing_link_failed_restores }}
+      vars:
+        routing_link_failed_restores: >-
+          {{ routing_link_restore.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
+
+    - name: Wait until packets routed by the scenario pass again
       ansible.builtin.command:
         argv: "{{ routing_recovery_probe }}"
       register: routing_link_recovery_probe

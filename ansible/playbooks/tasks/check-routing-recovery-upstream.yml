@@ -14,7 +14,7 @@
       loop: "{{ routing_recovery.upstream_nodes }}"
       changed_when: true
 
-    - name: Wait until packets through the scenario fail
+    - name: Wait until packets routed by the scenario fail
       ansible.builtin.command:
         argv: "{{ routing_recovery_probe }}"
       register: routing_upstream_loss_probe
@@ -34,9 +34,33 @@
       ansible.builtin.command:
         argv: [pct, exec, "{{ routing_node_vmids[item] }}", --, systemctl, start, frr.service]
       loop: "{{ routing_recovery.upstream_nodes }}"
+      register: routing_upstream_start
       changed_when: true
+      until: routing_upstream_start.rc == 0
+      retries: "{{ testbed_routing_checks.restore_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+      ignore_errors: true
 
-    - name: Wait until packets through the scenario pass again
+    - name: Read the FRR state on each upstream router
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ routing_node_vmids[item] }}", --, systemctl, is-active, frr.service]
+      loop: "{{ routing_recovery.upstream_nodes }}"
+      register: routing_upstream_state
+      changed_when: false
+      failed_when: false
+
+    - name: Require active FRR on each upstream router
+      ansible.builtin.assert:
+        that:
+          - routing_upstream_inactive == []
+        fail_msg: >-
+          Routing scenario {{ routing_recovery.name }}: FRR is not active on
+          {{ routing_upstream_inactive }}
+      vars:
+        routing_upstream_inactive: >-
+          {{ routing_upstream_state.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}
+
+    - name: Wait until packets routed by the scenario pass again
       ansible.builtin.command:
         argv: "{{ routing_recovery_probe }}"
       register: routing_upstream_recovery_probe

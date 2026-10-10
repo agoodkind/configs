@@ -35,7 +35,7 @@
   ansible.builtin.pause:
     seconds: "{{ testbed_routing_checks.ping_timeout_seconds }}"
 
-- name: Send echo requests from each provider link address to the tunnel endpoint
+- name: Ping the tunnel endpoint with each provider link source address
   ansible.builtin.command:
     argv:
       - pct

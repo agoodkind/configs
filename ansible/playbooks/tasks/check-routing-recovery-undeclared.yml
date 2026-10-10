@@ -107,7 +107,10 @@
         label: "{{ item.id }}"
       register: routing_undeclared_network_removal
       changed_when: true
-      failed_when: false
+      until: routing_undeclared_network_removal.rc == 0
+      retries: "{{ testbed_routing_checks.restore_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+      ignore_errors: true
 
     - name: Remove the undeclared kernel route from each upstream router
       ansible.builtin.command:
@@ -127,7 +130,10 @@
         label: "{{ item.id }}"
       register: routing_undeclared_route_removal
       changed_when: true
-      failed_when: false
+      until: routing_undeclared_route_removal.rc == 0
+      retries: "{{ testbed_routing_checks.restore_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+      ignore_errors: true
 
     - name: Require both restore steps on each upstream router
       ansible.builtin.assert:

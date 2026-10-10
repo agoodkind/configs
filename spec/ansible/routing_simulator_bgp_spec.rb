@@ -27,7 +27,7 @@ RSpec.describe 'routing simulator BGP configuration' do
     end
   end
 
-  it 'peers the tunnel_upstream upstream router with the gateway across the VPS', :aggregate_failures do
+  it 'configures a multihop session between the tunnel_upstream upstream router and the gateway', :aggregate_failures do
     remote_net = RoutingSimulatorConfig.network(inventory, 'tunnel_upstream_remote', 'ipv6')
 
     expect(frr('tunnel_upstream_upstream')).to include(
@@ -68,7 +68,7 @@ RSpec.describe 'routing simulator BGP configuration' do
     expect(frr('etheric_native_router').grep(/\A(network|redistribute)|default-originate/)).to be_empty
   end
 
-  it 'installs one static default route through the service interface with two exported interfaces' do
+  it 'installs one static default route on the service interface of a node with two exported interfaces' do
     transit_net = RoutingSimulatorConfig.network(inventory, 'tunnel_vps_transit', 'ipv6')
     changed = RoutingSimulatorInventory.changed_scenario('tunnel_vps') do |scenario|
       scenario['sessions'][2]['policy']['import_prefixes'] << transit_net

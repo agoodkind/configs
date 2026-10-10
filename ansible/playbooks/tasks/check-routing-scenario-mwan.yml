@@ -7,7 +7,7 @@
   vars:
     routing_ordinary_phase: before
 
-- name: Capture and send packets through the gateway
+- name: Capture and send packets at the gateway
   ansible.builtin.import_tasks: check-routing-mwan-packets.yml
 
 - name: Transfer TCP data and check the packet size

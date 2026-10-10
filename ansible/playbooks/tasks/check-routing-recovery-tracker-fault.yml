@@ -68,14 +68,37 @@
           - "{{ routing_tracker_fault_table }}"
       loop: "{{ routing_recovery_tracked_routes | map(attribute=0) | unique | list }}"
       when: routing_tracker_fault == 'probe loss'
+      register: routing_tracker_table_removal
       changed_when: true
+      until: routing_tracker_table_removal.rc == 0
+      retries: "{{ testbed_routing_checks.restore_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+      ignore_errors: true
 
     - name: Start each home route tracker unit
       ansible.builtin.command:
         argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, systemctl, start, "{{ item.4 }}"]
       loop: "{{ routing_recovery_tracked_routes }}"
       when: routing_tracker_fault == 'unit stop'
+      register: routing_tracker_unit_start
       changed_when: true
+      until: routing_tracker_unit_start.rc == 0
+      retries: "{{ testbed_routing_checks.restore_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+      ignore_errors: true
+
+    - name: Require each tracker restore step
+      ansible.builtin.assert:
+        that:
+          - routing_tracker_failed_restores == []
+        fail_msg: >-
+          Routing scenario {{ routing_recovery.name }}: failed restore commands
+          {{ routing_tracker_failed_restores }}
+      vars:
+        routing_tracker_failed_restores: >-
+          {{ (routing_tracker_table_removal.results + routing_tracker_unit_start.results)
+          | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0)
+          | map(attribute='cmd') | map('join', ' ') | list }}
 
     - name: Wait until the kernel has the tracked home route again
       ansible.builtin.command:

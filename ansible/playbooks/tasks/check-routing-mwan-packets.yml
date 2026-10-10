@@ -27,7 +27,7 @@
   ansible.builtin.pause:
     seconds: "{{ testbed_routing_checks.ping_timeout_seconds }}"
 
-- name: Send ICMP echo requests from the downstream client to the remote client
+- name: Ping the remote client on the downstream client
   ansible.builtin.command:
     argv:
       - pct
@@ -45,7 +45,7 @@
       - "{{ routing_check.remote_client_address }}"
   changed_when: false
 
-- name: Send ICMP echo requests from the remote client to the downstream client
+- name: Ping the downstream client on the remote client
   ansible.builtin.command:
     argv:
       - pct
