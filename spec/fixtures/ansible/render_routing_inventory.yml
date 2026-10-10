@@ -1,0 +1,11 @@
+---
+- name: Render the routing simulator inventory of each testbed host
+  hosts: suburban_servers:mwan_suburban_servers
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Write the rendered routing scenarios
+      ansible.builtin.copy:
+        content: "{{ {'groups': group_names, 'scenarios': testbed_routing_scenarios} | to_json }}"
+        dest: "{{ output_directory }}/{{ inventory_hostname }}.json"
+        mode: "0600"

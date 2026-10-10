@@ -21,6 +21,8 @@
       - (item.value.tunnels != []) == routing_simulator_contracts[item.value.kind].tunneled
       - item.value.tunnels | map(attribute='protocol') | difference(routing_simulator_tunnel_protocols) == []
       - item.value.tunnels | map(attribute='connection') | difference(item.value.connections) == []
+      - item.value.tunnels | map(attribute='outer_ttl') | select('lt', routing_simulator_outer_ttl_range.lowest) | list == []
+      - item.value.tunnels | map(attribute='outer_ttl') | select('gt', routing_simulator_outer_ttl_range.highest) | list == []
       - >-
         item.value.tunnels | map(attribute='connection') | map('extract', testbed_routing_connections)
         | map(attribute='simulator_outer_ipv4') | select('equalto', '') | list == []
@@ -40,7 +42,8 @@
       - >-
         ((item.value.sessions | map(attribute='policy.import_prefixes') | flatten)
         + (item.value.sessions | map(attribute='policy.export_prefixes') | flatten))
-        | difference(item.value.home_prefixes + item.value.remote_prefixes) == []
+        | difference(item.value.home_prefixes + item.value.remote_prefixes + routing_simulator_default_routes)
+        == []
       - routing_scenario_asns | reject('ge', routing_simulator_private_asn_ranges[0].lowest) | list == []
       - >-
         routing_scenario_asns | select('gt', routing_simulator_private_asn_ranges[0].highest)

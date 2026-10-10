@@ -1,0 +1,54 @@
+---
+- name: Stage the simulator firewall, sysctl, and FRR files
+  ansible.builtin.template:
+    src: "{{ rsim_template_dir }}/{{ item.src }}"
+    dest: "{{ rsim_temp_dir }}/{{ item.name }}"
+    mode: "0644"
+  loop:
+    - { src: nftables.conf.j2, name: nftables.conf, enabled: true }
+    - { src: sysctl.conf.j2, name: sysctl.conf, enabled: true }
+    - { src: frr.conf.j2, name: frr.conf, enabled: "{{ rsim.bgp }}" }
+    - { src: daemons.j2, name: daemons, enabled: "{{ rsim.bgp }}" }
+  when: item.enabled | bool
+  changed_when: false
+
+- name: Stage the simulator interface units
+  ansible.builtin.template:
+    src: "{{ rsim_template_dir }}/interface.network.j2"
+    dest: "{{ rsim_temp_dir }}/{{ rsim_interface.name }}.network"
+    mode: "0644"
+  loop: "{{ rsim.interfaces }}"
+  loop_control:
+    loop_var: rsim_interface
+  changed_when: false
+
+- name: Stage the simulator tunnel units
+  ansible.builtin.template:
+    src: "{{ rsim_template_dir }}/tunnel.{{ item.1 }}.j2"
+    dest: "{{ rsim_temp_dir }}/{{ item.0.remote.interface }}.{{ item.1 }}"
+    mode: "0644"
+  vars:
+    rsim_tunnel: "{{ item.0 }}"
+  loop: "{{ rsim.tunnels | product(['netdev', 'network']) | list }}"
+  changed_when: false
+
+- name: Stage the home route tracker units
+  ansible.builtin.template:
+    src: "{{ rsim_template_dir }}/home-route-tracker.service.j2"
+    dest: "{{ rsim_temp_dir }}/routing-home-route-{{ rsim_route_index }}.service"
+    mode: "0644"
+  loop: "{{ rsim.tracked_routes }}"
+  loop_control:
+    loop_var: rsim_route
+    index_var: rsim_route_index
+  changed_when: false
+
+- name: Stage the static simulator files
+  ansible.builtin.copy:
+    src: "{{ rsim_template_dir }}/{{ item }}"
+    dest: "{{ rsim_temp_dir }}/{{ item }}"
+    mode: "0644"
+  loop:
+    - networkd.conf
+    - home-route-tracker.sh
+  changed_when: false

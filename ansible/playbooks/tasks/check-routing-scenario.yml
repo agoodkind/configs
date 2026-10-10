@@ -1,0 +1,46 @@
+---
+- name: Collect the scenario check inputs
+  ansible.builtin.import_tasks: check-routing-scenario-inputs.yml
+
+- name: Check the simulator guests of the scenario
+  ansible.builtin.import_tasks: check-routing-scenario-infrastructure.yml
+
+- name: Check the source address of packets through each transport simulator
+  ansible.builtin.include_tasks:
+    file: check-routing-transport-source.yml
+
+- name: Check the scenario through the gateway
+  ansible.builtin.include_tasks:
+    file: check-routing-scenario-mwan.yml
+  when: routing_check.mode == 'mwan'
+
+- name: Require every required check
+  ansible.builtin.assert:
+    that:
+      - routing_check_expected | difference(routing_check_results) == []
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }} skipped required checks:
+      {{ routing_check_expected | difference(routing_check_results) }}
+  vars:
+    routing_check_expected: >-
+      {{ (routing_check.nodes | map('regex_replace', '^', 'node ') | list)
+      + (routing_check.scenario.tunnels | map(attribute='id') | map('regex_replace', '^', 'outer transport ') | list)
+      + (routing_check.remote_sessions | map(attribute='id') | map('regex_replace', '^', 'session ') | list)
+      + ['remote client gateway']
+      + (routing_check.transport_tunnels | map(attribute='id') | map('regex_replace', '^', 'transport source ') | list)
+      + ((routing_check.mode == 'mwan') | ternary(routing_check_mwan_expected, [])) }}
+    routing_check_mwan_expected: >-
+      {{ ['ordinary ipv4 before', 'packet captures', 'icmp both directions', 'tcp transfer both directions',
+      'packet size', 'ordinary ipv4 after']
+      + (routing_check.gateway_sessions | map(attribute='id') | map('regex_replace', '^', 'gateway session ') | list)
+      + ((routing_check.scenario.sessions != []) | ternary(['home route on upstream'], [])) }}
+
+- name: Record the scenario report
+  ansible.builtin.set_fact:
+    routing_check_report: >-
+      {{ routing_check_report + [{
+        'scenario': routing_check.name,
+        'mode': routing_check.mode,
+        'checks': routing_check_results,
+        'configuration_sha256': routing_check_hashes
+      }] }}

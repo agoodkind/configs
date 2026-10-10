@@ -58,5 +58,10 @@
       ~ ' and multihop_ttl of at least hops') -%}
       {%- endif -%}
       {%- endif -%}
+      {%- if session.keepalive_seconds < 1
+      or session.hold_seconds < session.keepalive_seconds * routing_simulator_hold_keepalive_ratio -%}
+      {%- set _ = problems.append('session ' ~ session.id ~ ' requires hold_seconds of at least '
+      ~ routing_simulator_hold_keepalive_ratio ~ ' times keepalive_seconds') -%}
+      {%- endif -%}
       {%- endfor -%}
       {{ problems | join('; ') }}

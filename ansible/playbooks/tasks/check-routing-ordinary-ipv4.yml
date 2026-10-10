@@ -1,0 +1,20 @@
+---
+- name: Send ordinary IPv4 packets from the downstream client
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_check.downstream.vmid }}"
+      - --
+      - ping
+      - "-4"
+      - -c
+      - "{{ testbed_routing_checks.ping_count }}"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - "{{ testbed_routing_checks.ordinary_ipv4_target }}"
+  changed_when: false
+
+- name: Record the ordinary IPv4 check
+  ansible.builtin.set_fact:
+    routing_check_results: "{{ routing_check_results + ['ordinary ipv4 ' ~ routing_ordinary_phase] }}"

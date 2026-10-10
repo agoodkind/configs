@@ -21,12 +21,12 @@
         - probe_targets
       entries:
         tunnels:
-          keys: [id, connection, protocol, mtu, inner_prefix_length, local, remote]
+          keys: [id, connection, protocol, mtu, outer_ttl, inner_prefix_length, local, remote]
           nested:
             local: [node, interface, outer_ipv4, inner_ipv6]
             remote: [node, interface, outer_ipv4, inner_ipv6]
         sessions:
-          keys: [id, address_family, hops, multihop_ttl, local, remote, policy]
+          keys: [id, address_family, hops, multihop_ttl, keepalive_seconds, hold_seconds, local, remote, policy]
           nested:
             local: [node, asn, address]
             remote: [node, asn, address]

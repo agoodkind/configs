@@ -1,0 +1,23 @@
+---
+# dpkg-query exits with status 1 when one package is absent.
+- name: Read the installed packages
+  ansible.builtin.command:
+    argv: >-
+      {{ ['pct', 'exec', rsim_package_vmid | string, '--', 'dpkg-query', '--show',
+      '--showformat', '${db:Status-Abbrev}${Package}\n'] + rsim_package_names }}
+  register: rsim_package_read
+  changed_when: false
+  failed_when: rsim_package_read.rc not in [0, 1]
+
+- name: Install the missing packages
+  ansible.builtin.command:
+    cmd: >-
+      pct exec {{ rsim_package_vmid }} -- sh -c
+      'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+      -o Dpkg::Options::=--force-confold {{ rsim_missing_packages | join(" ") }}'
+  vars:
+    rsim_missing_packages: >-
+      {{ rsim_package_names | difference(rsim_package_read.stdout_lines | select('match', 'ii ')
+      | map('regex_replace', '^ii +', '') | list) }}
+  when: rsim_missing_packages != []
+  changed_when: true

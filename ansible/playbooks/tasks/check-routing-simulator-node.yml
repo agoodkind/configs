@@ -1,0 +1,139 @@
+---
+- name: Read the routing simulator node configuration
+  ansible.builtin.import_tasks: routing-simulator-node-facts.yml
+
+- name: Read the guest status
+  ansible.builtin.command:
+    argv: [pct, status, "{{ rsim.vmid }}"]
+  register: rsim_status
+  changed_when: false
+
+- name: Require a running guest
+  ansible.builtin.assert:
+    that:
+      - "'running' in rsim_status.stdout"
+    fail_msg: "{{ rsim.name }}: guest {{ rsim.vmid }} is not running"
+
+- name: Read the guest addresses
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, ip, -j, addr, show]
+  register: rsim_addresses
+  changed_when: false
+
+- name: Require the declared interface and tunnel addresses
+  ansible.builtin.assert:
+    that:
+      - rsim_expected_addresses | difference(rsim_actual_addresses) == []
+    fail_msg: >-
+      {{ rsim.name }}: missing addresses
+      {{ rsim_expected_addresses | difference(rsim_actual_addresses) }}
+  vars:
+    rsim_actual_addresses: >-
+      {{ rsim_addresses.stdout | from_json | map(attribute='addr_info') | flatten
+      | map(attribute='local') | list }}
+    rsim_expected_addresses: >-
+      {{ (rsim.interfaces | map(attribute='ipv4') | reject('equalto', '') | list)
+      + (rsim.interfaces | map(attribute='ipv6') | reject('equalto', '') | list)
+      + (rsim.tunnels | map(attribute='remote.inner_ipv6') | list) }}
+
+- name: Read each tunnel device
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ rsim.vmid }}", --, ip, -j, -d, link, show, dev, "{{ item.remote.interface }}"]
+  loop: "{{ rsim.tunnels }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: rsim_tunnel_links
+  changed_when: false
+
+- name: Require the declared tunnel endpoints and MTU
+  ansible.builtin.assert:
+    that:
+      - rsim_link.mtu == item.item.mtu
+      - rsim_link.linkinfo.info_kind == item.item.protocol
+      - rsim_link.linkinfo.info_data.local == item.item.remote.outer_ipv4
+      - rsim_link.linkinfo.info_data.remote == item.item.local.outer_ipv4
+    fail_msg: "{{ rsim.name }}: tunnel {{ item.item.id }} differs from the inventory"
+  vars:
+    rsim_link: "{{ (item.stdout | from_json)[0] }}"
+  loop: "{{ rsim_tunnel_links.results }}"
+  loop_control:
+    label: "{{ item.item.id }}"
+
+- name: Read each configured route
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ rsim.vmid }}"
+      - --
+      - ip
+      - -j
+      - "{{ (item.family == 'ipv6') | ternary('-6', '-4') }}"
+      - route
+      - show
+      - exact
+      - "{{ item.destination }}"
+  loop: "{{ rsim.static_routes }}"
+  loop_control:
+    label: "{{ item.destination }}"
+  register: rsim_route_reads
+  changed_when: false
+
+- name: Require each configured route
+  ansible.builtin.assert:
+    that:
+      - item.item.gateway in (item.stdout | from_json | map(attribute='gateway') | list)
+    fail_msg: "{{ rsim.name }}: no route to {{ item.item.destination }} through {{ item.item.gateway }}"
+  loop: "{{ rsim_route_reads.results }}"
+  loop_control:
+    label: "{{ item.item.destination }}"
+
+- name: Read the unreachable IPv4 routes and IPv6 rules
+  ansible.builtin.command:
+    argv: "{{ ['pct', 'exec', rsim.vmid | string, '--', 'ip'] + item }}"
+  loop:
+    - ["-4", route, show, type, unreachable]
+    - ["-6", rule, show]
+  register: rsim_unreachable
+  changed_when: false
+
+- name: Require the unreachable management prefixes
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((':' in item) | ternary('to ' ~ item ~ ' unreachable', 'unreachable ' ~ item))
+        in (rsim_unreachable.results | map(attribute='stdout') | join('\n'))
+    fail_msg: "{{ rsim.name }}: prefix {{ item }} is not unreachable"
+  loop: "{{ testbed_routing_management_unreachable_prefixes }}"
+
+- name: Read the forwarding state, the firewall, and the FRR state
+  ansible.builtin.command:
+    argv: "{{ ['pct', 'exec', rsim.vmid | string, '--'] + item }}"
+  loop:
+    - [sysctl, -n, net.ipv6.conf.all.forwarding]
+    - [nft, list, ruleset]
+    - [systemctl, is-active, frr.service]
+    - [sha256sum, /etc/nftables.conf]
+  register: rsim_state
+  changed_when: false
+  failed_when: rsim_state.rc != 0 and item[0] != 'systemctl'
+
+- name: Require the declared forwarding, firewall, and BGP state
+  ansible.builtin.assert:
+    that:
+      - (rsim_state.results[0].stdout == '1') == rsim.forwarding
+      - (rsim_masquerade_rules != []) == (rsim.uplink_sources != [])
+      - >-
+        rsim_masquerade_rules | reject('search', 'oifname "' ~ rsim.management_interface ~ '"') | list == []
+      - "'snat' not in rsim_state.results[1].stdout"
+      - "'dnat' not in rsim_state.results[1].stdout"
+      - (rsim_state.results[2].rc == 0) == rsim.bgp
+    fail_msg: "{{ rsim.name }}: forwarding, translation, or FRR state differs from the inventory"
+  vars:
+    rsim_masquerade_rules: "{{ rsim_state.results[1].stdout_lines | select('search', 'masquerade') | list }}"
+
+- name: Record the node check
+  ansible.builtin.set_fact:
+    routing_check_results: "{{ routing_check_results + ['node ' ~ rsim.name] }}"
+    routing_check_hashes: >-
+      {{ routing_check_hashes + [rsim.name ~ ' ' ~ rsim_state.results[3].stdout] }}

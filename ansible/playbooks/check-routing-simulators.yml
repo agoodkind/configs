@@ -1,0 +1,96 @@
+---
+# Run
+#   ./configsctl deploy check-routing-simulators --limit suburban \
+#     -e routing_scenario=all -e routing_check_mode=infrastructure
+# Run
+#   ./configsctl deploy check-routing-simulators --limit suburban \
+#     -e routing_scenario=astound_static -e routing_check_mode=mwan
+
+- name: Validate the routing simulator check request
+  hosts: suburban_servers
+  gather_facts: false
+  become: false
+  pre_tasks:
+    - name: Require a merged controller checkout
+      ansible.builtin.import_tasks: tasks/require-merged-checkout.yml
+  tasks:
+    - name: Require a supported scenario and check mode
+      ansible.builtin.assert:
+        that:
+          - routing_check_mode in routing_check_modes
+          - routing_scenario in (testbed_routing_scenarios.keys() | list) + routing_check_all_scenarios[routing_check_mode]
+          - mwan_environment == 'testbed'
+        fail_msg: >-
+          The check accepts routing_check_mode infrastructure or mwan, and
+          routing_scenario as one scenario key. Infrastructure mode also
+          accepts all. The request is {{ routing_scenario }} in mode
+          {{ routing_check_mode }} for environment {{ mwan_environment }}.
+      vars:
+        routing_check_modes: [infrastructure, mwan]
+        routing_check_all_scenarios:
+          infrastructure: [all]
+          mwan: []
+
+    - name: Validate the routing simulator inventory
+      ansible.builtin.import_tasks: tasks/validate-routing-simulators.yml
+
+- name: Check the routing simulators
+  hosts: suburban_servers
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Read the hypervisor user
+      ansible.builtin.command:
+        argv: [id, -u]
+      register: routing_check_user
+      changed_when: false
+
+    - name: Require the privilege to run commands in the guests
+      ansible.builtin.assert:
+        that:
+          - routing_check_user.stdout == '0'
+        fail_msg: The checks run pct on the hypervisor and require the root user.
+
+    - name: Read the controller revision
+      ansible.builtin.command:
+        argv: [git, rev-parse, HEAD]
+        chdir: "{{ playbook_dir | dirname | dirname }}"
+      delegate_to: localhost
+      register: routing_check_revision
+      changed_when: false
+
+    - name: Collect the check inputs
+      ansible.builtin.set_fact:
+        routing_check_report: []
+        routing_check_scenarios: >-
+          {{ (routing_scenario == 'all')
+          | ternary(testbed_routing_scenarios.keys() | list, [routing_scenario]) }}
+        routing_node_vmids: >-
+          {{ dict(testbed_routing_nodes.keys() | zip(testbed_routing_nodes.values()
+          | map(attribute='service') | map('extract', service_mapping) | map(attribute='vmid'))) }}
+
+    - name: Check each selected scenario
+      ansible.builtin.include_tasks:
+        file: tasks/check-routing-scenario.yml
+      vars:
+        routing_scenario_mode: "{{ routing_check_mode }}"
+      loop: "{{ routing_check_scenarios }}"
+      loop_control:
+        loop_var: routing_scenario_name
+
+    - name: Check faults and recovery for each selected scenario
+      ansible.builtin.include_tasks:
+        file: tasks/check-routing-recovery.yml
+      loop: "{{ routing_check_scenarios }}"
+      loop_control:
+        loop_var: routing_scenario_name
+      when: routing_check_mode == 'mwan'
+
+    - name: Report the routing simulator checks
+      ansible.builtin.debug:
+        msg:
+          configs_revision: "{{ routing_check_revision.stdout }}"
+          mwan_release: "{{ mwan_release_tag }}"
+          requested_scenario: "{{ routing_scenario }}"
+          mode: "{{ routing_check_mode }}"
+          results: "{{ routing_check_report }}"

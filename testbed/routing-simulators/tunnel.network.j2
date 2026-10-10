@@ -1,0 +1,12 @@
+[Match]
+Name={{ rsim_tunnel.remote.interface }}
+
+[Network]
+IPv6AcceptRA=no
+Address={{ rsim_tunnel.remote.inner_ipv6 }}/{{ rsim_tunnel.inner_prefix_length }}
+{% for route in rsim.static_routes if route.gateway == rsim_tunnel.local.inner_ipv6 %}
+
+[Route]
+Destination={{ route.destination }}
+Gateway={{ route.gateway }}
+{% endfor %}

@@ -1,0 +1,102 @@
+---
+- name: Check each node of the scenario
+  ansible.builtin.include_tasks:
+    file: check-routing-simulator-node.yml
+  vars:
+    rsim_name: "{{ routing_check_node }}"
+  loop: "{{ routing_check.nodes }}"
+  loop_control:
+    loop_var: routing_check_node
+
+- name: Send outer packets from each tunnel endpoint to its transport simulator
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.remote.node] }}"
+      - --
+      - ping
+      - "-4"
+      - -c
+      - "{{ testbed_routing_checks.ping_count }}"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - -I
+      - "{{ item.remote.outer_ipv4 }}"
+      - "{{ testbed_routing_connections[item.connection].simulator_outer_ipv4 }}"
+  loop: "{{ routing_check.scenario.tunnels }}"
+  loop_control:
+    label: "{{ item.id }}"
+  changed_when: false
+
+- name: Wait for each session between two simulator nodes
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.local.node] }}"
+      - --
+      - vtysh
+      - -c
+      - show bgp ipv6 unicast summary json
+  loop: "{{ routing_check.remote_sessions }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: routing_remote_summary
+  changed_when: false
+  until: >-
+    (routing_remote_summary.stdout | from_json).ipv6Unicast.peers[item.remote.address].state == 'Established'
+  retries: "{{ testbed_routing_checks.session_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+- name: Read the routes each simulator session installs
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.0.local.node] }}"
+      - --
+      - ip
+      - -j
+      - "-6"
+      - route
+      - show
+      - exact
+      - "{{ item.1 }}"
+      - proto
+      - bgp
+  loop: "{{ routing_check.remote_sessions | subelements('policy.import_prefixes') }}"
+  loop_control:
+    label: "{{ item.0.id }} {{ item.1 }}"
+  register: routing_remote_routes
+  changed_when: false
+  until: routing_remote_routes.stdout | from_json != []
+  retries: "{{ testbed_routing_checks.session_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+- name: Send packets from each remote client to its configured gateway
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.node] }}"
+      - --
+      - ping
+      - "-6"
+      - -c
+      - "{{ testbed_routing_checks.ping_count }}"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - "{{ item.gateway }}"
+  loop: "{{ routing_check.client_routes }}"
+  loop_control:
+    label: "{{ item.node }}"
+  changed_when: false
+
+- name: Record the infrastructure checks
+  ansible.builtin.set_fact:
+    routing_check_results: >-
+      {{ routing_check_results
+      + (routing_check.scenario.tunnels | map(attribute='id') | map('regex_replace', '^', 'outer transport ') | list)
+      + (routing_check.remote_sessions | map(attribute='id') | map('regex_replace', '^', 'session ') | list)
+      + ['remote client gateway'] }}

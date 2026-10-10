@@ -1,0 +1,88 @@
+---
+# The check reads only the captured echo request because the tunnel endpoint
+# has no return route to the provider link address.
+- name: Start a capture of the provider link source on each tunnel endpoint
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.remote.node] }}"
+      - --
+      - timeout
+      - "{{ testbed_routing_checks.capture_timeout_seconds }}"
+      - tcpdump
+      - -n
+      - -i
+      - "{{ routing_endpoint_interface }}"
+      - -c
+      - "1"
+      - >-
+        icmp and src host {{ testbed_routing_connections[item.connection].simulator_link_ipv4 }}
+        and dst host {{ item.remote.outer_ipv4 }}
+  vars:
+    routing_endpoint_interface: >-
+      {{ (service_mapping[testbed_routing_nodes[item.remote.node].service].routing_interfaces.values()
+      | selectattr('ipv4', 'equalto', item.remote.outer_ipv4) | map(attribute='name') | list)[0] }}
+  loop: "{{ routing_check.transport_tunnels }}"
+  loop_control:
+    label: "{{ item.id }}"
+  async: "{{ testbed_routing_checks.capture_timeout_seconds * 2 }}"
+  poll: 0
+  register: routing_source_jobs
+  changed_when: false
+
+- name: Wait for the source captures to open their interfaces
+  ansible.builtin.pause:
+    seconds: "{{ testbed_routing_checks.ping_timeout_seconds }}"
+
+- name: Send echo requests from each provider link address to the tunnel endpoint
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[testbed_routing_connections[item.connection].simulator] }}"
+      - --
+      - ping
+      - "-4"
+      - -c
+      - "{{ testbed_routing_checks.ping_count }}"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - -I
+      - "{{ testbed_routing_connections[item.connection].simulator_link_ipv4 }}"
+      - "{{ item.remote.outer_ipv4 }}"
+  loop: "{{ routing_check.transport_tunnels }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: routing_source_pings
+  changed_when: false
+  failed_when: routing_source_pings.rc not in [0, 1]
+
+- name: Wait for each source capture
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ routing_source_jobs.results }}"
+  loop_control:
+    label: "{{ item.item.id }}"
+  register: routing_source_results
+  until: routing_source_results.finished
+  retries: "{{ testbed_routing_checks.capture_timeout_seconds }}"
+  delay: 2
+  failed_when: false
+
+- name: Require the unchanged provider link source on the outer network
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }}: tunnel {{ item.item.item.id }}
+      received no packet with the provider link source address.
+  loop: "{{ routing_source_results.results }}"
+  loop_control:
+    label: "{{ item.item.item.id }}"
+
+- name: Record the transport source checks
+  ansible.builtin.set_fact:
+    routing_check_results: >-
+      {{ routing_check_results
+      + (routing_check.transport_tunnels | map(attribute='id') | map('regex_replace', '^', 'transport source ') | list) }}

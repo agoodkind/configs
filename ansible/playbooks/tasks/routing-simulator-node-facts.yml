@@ -1,0 +1,67 @@
+---
+- name: Collect the routing simulator node configuration
+  ansible.builtin.set_fact:
+    rsim:
+      name: "{{ rsim_name }}"
+      role: "{{ rsim_node.role }}"
+      router_id: "{{ rsim_node.router_id }}"
+      scenario: "{{ rsim_node.scenario }}"
+      kind: "{{ rsim_scenario.kind }}"
+      vmid: "{{ rsim_service.vmid }}"
+      hostname: "{{ rsim_service.hostname }}"
+      bgp: "{{ rsim_node.router_id != '' }}"
+      forwarding: "{{ rsim_node.role in rsim_forwarding_roles }}"
+      transfer_server: "{{ rsim_node.role == 'remote_client' }}"
+      management_interface: >-
+        {{ (rsim_service.routing_interfaces.values() | selectattr('network', 'equalto', 'management')
+        | map(attribute='name') | list)[0] }}
+      interfaces: >-
+        {{ rsim_service.routing_interfaces.values() | rejectattr('network', 'equalto', 'management')
+        | sort(attribute='name') }}
+      tunnels: "{{ rsim_scenario.tunnels | selectattr('remote.node', 'equalto', rsim_name) | list }}"
+      static_routes: >-
+        {{ rsim_scenario.routes | selectattr('node', 'equalto', rsim_name)
+        | rejectattr('destination', 'in', rsim_tracked_destinations) | list }}
+      tracked_routes: >-
+        {{ rsim_scenario.routes | selectattr('node', 'equalto', rsim_name)
+        | selectattr('destination', 'in', rsim_tracked_destinations) | list }}
+      sessions: >-
+        {{ (rsim_scenario.sessions | selectattr('local.node', 'equalto', rsim_name) | list)
+        + (rsim_scenario.sessions | selectattr('remote.node', 'equalto', rsim_name) | list) }}
+      packages: "{{ rsim_base_packages + (rsim_bgp_packages if rsim_node.router_id != '' else []) }}"
+      home_prefixes: "{{ rsim_scenario.home_prefixes }}"
+      remote_prefixes: "{{ rsim_scenario.remote_prefixes }}"
+      uplink_interfaces: "{{ rsim_provider_links | map(attribute='name') | list }}"
+      uplink_sources: >-
+        {{ rsim_provider_links | map(attribute='network') | map('extract', testbed_routing_networks)
+        | map(attribute='ipv4_net') | list }}
+  vars:
+    rsim_base_packages: [nftables, tcpdump, iperf3, iputils-ping]
+    rsim_bgp_packages: [frr]
+    # Transport simulators and existing ISP simulators masquerade their
+    # provider link networks on their uplinks.
+    rsim_provider_links: >-
+      {{ (rsim_service.routing_interfaces.values()
+      | selectattr('ipv4', 'in', testbed_routing_connections.values() | map(attribute='simulator_link_ipv4') | list)
+      | list) if rsim_node.role == 'transport' else [] }}
+    rsim_node: "{{ testbed_routing_nodes[rsim_name] }}"
+    rsim_service: "{{ service_mapping[rsim_node.service] }}"
+    rsim_shared_scenario:
+      kind: shared
+      tunnels: []
+      routes: []
+      sessions: []
+      home_prefixes: []
+      remote_prefixes: []
+    rsim_scenario: >-
+      {{ (testbed_routing_scenarios | combine({'': rsim_shared_scenario}))[rsim_node.scenario] }}
+    rsim_forwarding_roles:
+      - transport
+      - tunnel_endpoint
+      - provider_router
+      - vps
+      - upstream_router
+    # The home route tracker installs the routes to these destinations.
+    rsim_tracked_destinations: >-
+      {{ rsim_scenario.home_prefixes
+      if (rsim_scenario.kind == 'tunnel_configured_home' and rsim_node.role == 'vps') else [] }}

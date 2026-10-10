@@ -1,0 +1,99 @@
+{% set bgp = namespace(asn=0, peers=[], learned=[], connected={}, networks=[], tracked=[], default_origin=false) %}
+{% for interface in rsim.interfaces if testbed_routing_networks[interface.network].ipv6_net %}
+{% set _ = bgp.connected.update({testbed_routing_networks[interface.network].ipv6_net: interface.name}) %}
+{% endfor %}
+{% for session in rsim.sessions %}
+{% if session.local.node == rsim.name %}
+{% set peer = {'session': session, 'own': session.local, 'remote': session.remote,
+               'imports': session.policy.import_prefixes, 'exports': session.policy.export_prefixes} %}
+{% else %}
+{% set peer = {'session': session, 'own': session.remote, 'remote': session.local,
+               'imports': session.policy.export_prefixes, 'exports': session.policy.import_prefixes} %}
+{% endif %}
+{% set bgp.asn = peer.own.asn %}
+{% set _ = bgp.peers.append(peer) %}
+{% set _ = bgp.learned.extend(peer.imports) %}
+{% endfor %}
+{% for peer in bgp.peers %}
+{% for prefix in peer.exports if prefix not in bgp.learned %}
+{% if prefix in bgp.connected %}
+{% if prefix not in bgp.networks %}
+{% set _ = bgp.networks.append(prefix) %}
+{% endif %}
+{% elif prefix in (rsim.tracked_routes | map(attribute='destination') | list) %}
+{% for route in rsim.tracked_routes if route.destination == prefix %}
+{% for tunnel in rsim.tunnels if tunnel.local.inner_ipv6 == route.gateway %}
+{% set _ = bgp.tracked.append({'prefix': prefix, 'interface': tunnel.remote.interface}) %}
+{% endfor %}
+{% endfor %}
+{% elif prefix in routing_simulator_default_routes %}
+{% set bgp.default_origin = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+frr defaults traditional
+hostname {{ rsim.hostname.split('.')[0] }}
+log syslog informational
+!
+{% for peer in bgp.peers %}
+{% for prefix in peer.imports %}
+ipv6 prefix-list PL-{{ peer.session.id }}-IN permit {{ prefix }}
+{% endfor %}
+{% for prefix in peer.exports %}
+ipv6 prefix-list PL-{{ peer.session.id }}-OUT permit {{ prefix }}
+{% endfor %}
+{% endfor %}
+{% for tracked in bgp.tracked %}
+ipv6 prefix-list PL-TRACKED-{{ tracked.interface }} permit {{ tracked.prefix }}
+{% endfor %}
+!
+{% if bgp.default_origin %}
+! zebra installs this route only while the service interface is up. bgpd
+! announces the default network only while import-check finds this route.
+{% for prefix in bgp.networks %}
+{% for default_route in routing_simulator_default_routes %}
+ipv6 route {{ default_route }} {{ bgp.connected[prefix] }}
+{% endfor %}
+{% endfor %}
+!
+{% endif %}
+{% for tracked in bgp.tracked %}
+! The interface match excludes every other kernel route to the prefix.
+route-map RM-TRACKED permit {{ loop.index * 10 }}
+ match ipv6 address prefix-list PL-TRACKED-{{ tracked.interface }}
+ match interface {{ tracked.interface }}
+!
+{% endfor %}
+router bgp {{ bgp.asn }}
+ bgp router-id {{ rsim.router_id }}
+ no bgp default ipv4-unicast
+ bgp network import-check
+{% for peer in bgp.peers %}
+ neighbor {{ peer.remote.address }} remote-as {{ peer.remote.asn }}
+ neighbor {{ peer.remote.address }} description {{ peer.session.id }}
+ neighbor {{ peer.remote.address }} update-source {{ peer.own.address }}
+ neighbor {{ peer.remote.address }} timers {{ peer.session.keepalive_seconds }} {{ peer.session.hold_seconds }}
+{% if peer.session.multihop_ttl > 0 %}
+ neighbor {{ peer.remote.address }} ebgp-multihop {{ peer.session.multihop_ttl }}
+{% endif %}
+{% endfor %}
+ !
+ address-family ipv6 unicast
+{% for prefix in bgp.networks %}
+  network {{ prefix }}
+{% endfor %}
+{% if bgp.default_origin %}
+{% for default_route in routing_simulator_default_routes %}
+  network {{ default_route }}
+{% endfor %}
+{% endif %}
+{% if bgp.tracked != [] %}
+  redistribute kernel route-map RM-TRACKED
+{% endif %}
+{% for peer in bgp.peers %}
+  neighbor {{ peer.remote.address }} activate
+  neighbor {{ peer.remote.address }} prefix-list PL-{{ peer.session.id }}-IN in
+  neighbor {{ peer.remote.address }} prefix-list PL-{{ peer.session.id }}-OUT out
+{% endfor %}
+ exit-address-family
+!

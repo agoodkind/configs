@@ -1,0 +1,107 @@
+---
+- name: Start the bounded packet captures
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ item.2 }}"
+      - --
+      - timeout
+      - "{{ testbed_routing_checks.capture_timeout_seconds }}"
+      - tcpdump
+      - -n
+      - -i
+      - "{{ item.3 }}"
+      - -c
+      - "1"
+      - "{{ item.4 }}"
+  loop: "{{ routing_captures }}"
+  loop_control:
+    label: "{{ item.0 }} {{ item.1 }}"
+  async: "{{ testbed_routing_checks.capture_timeout_seconds * 2 }}"
+  poll: 0
+  register: routing_capture_jobs
+  changed_when: false
+
+- name: Wait for the captures to open their interfaces
+  ansible.builtin.pause:
+    seconds: "{{ testbed_routing_checks.ping_timeout_seconds }}"
+
+- name: Send ICMP echo requests from the downstream client to the remote client
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_check.downstream.vmid }}"
+      - --
+      - ping
+      - "-6"
+      - -c
+      - "{{ testbed_routing_checks.ping_count }}"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - -I
+      - "{{ routing_check.downstream.ipv6 }}"
+      - "{{ routing_check.remote_client_address }}"
+  changed_when: false
+
+- name: Send ICMP echo requests from the remote client to the downstream client
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[routing_check.remote_client_node] }}"
+      - --
+      - ping
+      - "-6"
+      - -c
+      - "{{ testbed_routing_checks.ping_count }}"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - -I
+      - "{{ routing_check.remote_client_address }}"
+      - "{{ routing_check.downstream.ipv6 }}"
+  changed_when: false
+
+- name: Record the ICMP check
+  ansible.builtin.set_fact:
+    routing_check_results: "{{ routing_check_results + ['icmp both directions'] }}"
+
+- name: Wait for each packet capture
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ routing_capture_jobs.results }}"
+  loop_control:
+    label: "{{ item.item.0 }} {{ item.item.1 }}"
+  register: routing_capture_results
+  until: routing_capture_results.finished
+  retries: "{{ testbed_routing_checks.capture_timeout_seconds }}"
+  delay: 2
+  failed_when: false
+
+# A scenario with several tunnels passes when one tunnel shows every packet.
+- name: Require every packet capture on one path
+  ansible.builtin.assert:
+    that:
+      - routing_capture_complete_paths != ''
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }}: no path shows the expected
+      packets. Failed captures: {{ routing_capture_failures }}
+  vars:
+    routing_capture_failures: >-
+      {{ routing_capture_results.results | rejectattr('rc', 'equalto', 0)
+      | map(attribute='item.item') | map('join', ' ') | list }}
+    routing_capture_complete_paths: >-
+      {%- set complete = [] -%}
+      {%- for path in routing_captures | map(attribute=1) | unique -%}
+      {%- set failed = routing_capture_results.results | selectattr('item.item.1', 'equalto', path)
+      | rejectattr('rc', 'equalto', 0) | list -%}
+      {%- if failed == [] -%}
+      {%- set _ = complete.append(path) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ complete | join(',') }}
+
+- name: Record the packet captures
+  ansible.builtin.set_fact:
+    routing_check_results: "{{ routing_check_results + ['packet captures'] }}"

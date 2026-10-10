@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+echo "$*" >>"${FAKE_IP_LOG}"
+
+case "$3" in
+replace)
+    echo "$4 via $6 dev $8" >"${FAKE_IP_ROUTE}"
+    ;;
+del)
+    rm "${FAKE_IP_ROUTE}"
+    ;;
+show)
+    if [[ -f "${FAKE_IP_ROUTE}" ]]; then
+        cat "${FAKE_IP_ROUTE}"
+    fi
+    ;;
+*)
+    echo "unexpected ip arguments: $*" >&2
+    exit 2
+    ;;
+esac

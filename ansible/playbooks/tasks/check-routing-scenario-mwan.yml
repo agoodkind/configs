@@ -1,0 +1,22 @@
+---
+- name: Collect the packet captures and require the tools
+  ansible.builtin.import_tasks: check-routing-mwan-captures.yml
+
+- name: Send ordinary IPv4 packets before the IPv6 checks
+  ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
+  vars:
+    routing_ordinary_phase: before
+
+- name: Capture and send packets through the gateway
+  ansible.builtin.import_tasks: check-routing-mwan-packets.yml
+
+- name: Transfer TCP data and check the packet size
+  ansible.builtin.import_tasks: check-routing-mwan-transfer.yml
+
+- name: Check the gateway sessions and routes
+  ansible.builtin.import_tasks: check-routing-mwan-sessions.yml
+
+- name: Send ordinary IPv4 packets after the IPv6 checks
+  ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
+  vars:
+    routing_ordinary_phase: after

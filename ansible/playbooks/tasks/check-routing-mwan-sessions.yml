@@ -1,0 +1,81 @@
+---
+- name: Wait for each gateway session on the remote peer
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.remote.node] }}"
+      - --
+      - vtysh
+      - -c
+      - show bgp ipv6 unicast summary json
+  loop: "{{ routing_check.gateway_sessions }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: routing_gateway_summary
+  changed_when: false
+  until: >-
+    (routing_gateway_summary.stdout | from_json).ipv6Unicast.peers[item.local.address].state == 'Established'
+  retries: "{{ testbed_routing_checks.session_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+- name: Read the routes each remote peer accepts from the gateway
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.remote.node] }}"
+      - --
+      - vtysh
+      - -c
+      - "show bgp ipv6 unicast neighbors {{ item.local.address }} routes json"
+  loop: "{{ routing_check.gateway_sessions }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: routing_gateway_routes
+  changed_when: false
+
+- name: Require exactly the permitted gateway announcements
+  ansible.builtin.assert:
+    that:
+      - ((item.stdout | from_json).routes | list | sort) == (item.item.policy.export_prefixes | sort)
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }}: session {{ item.item.id }}
+      accepts {{ (item.stdout | from_json).routes | list }} from the gateway.
+  loop: "{{ routing_gateway_routes.results }}"
+  loop_control:
+    label: "{{ item.item.id }}"
+
+- name: Record the gateway sessions
+  ansible.builtin.set_fact:
+    routing_check_results: >-
+      {{ routing_check_results
+      + (routing_check.gateway_sessions | map(attribute='id') | map('regex_replace', '^', 'gateway session ') | list) }}
+
+- name: Wait for the home route on each upstream router
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.0] }}"
+      - --
+      - ip
+      - -j
+      - "-6"
+      - route
+      - show
+      - exact
+      - "{{ item.1 }}"
+      - proto
+      - bgp
+  loop: "{{ routing_check.upstream_nodes | product(routing_check.scenario.home_prefixes) | list }}"
+  register: routing_upstream_home
+  changed_when: false
+  until: routing_upstream_home.stdout | from_json != []
+  retries: "{{ testbed_routing_checks.session_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+- name: Record the upstream home route
+  ansible.builtin.set_fact:
+    routing_check_results: "{{ routing_check_results + ['home route on upstream'] }}"
+  when: routing_check.scenario.sessions != []

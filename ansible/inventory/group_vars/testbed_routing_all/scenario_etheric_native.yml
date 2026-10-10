@@ -17,6 +17,8 @@ testbed_routing_scenario_etheric_native:
       address_family: ipv6_unicast
       hops: 1
       multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
       local:
         node: mwan
         asn: 64512
@@ -27,12 +29,14 @@ testbed_routing_scenario_etheric_native:
         address: >-
           {{ service_mapping.routing_etheric_native_router_suburban.routing_interfaces.provider.ipv6 }}
       policy:
-        import_prefixes: ["{{ testbed_routing_networks.etheric_native_remote.ipv6_net }}"]
+        import_prefixes: ["{{ testbed_routing_networks.etheric_native_remote.ipv6_net }}", "::/0"]
         export_prefixes: ["{{ testbed_routing_home_prefix }}"]
     - id: etheric_native_upstream
       address_family: ipv6_unicast
       hops: 1
       multihop_ttl: 0
+      keepalive_seconds: 3
+      hold_seconds: 9
       local:
         node: etheric_native_router
         asn: 64520
@@ -44,7 +48,7 @@ testbed_routing_scenario_etheric_native:
         address: >-
           {{ service_mapping.routing_etheric_native_upstream_suburban.routing_interfaces.transit.ipv6 }}
       policy:
-        import_prefixes: ["{{ testbed_routing_networks.etheric_native_remote.ipv6_net }}"]
+        import_prefixes: ["{{ testbed_routing_networks.etheric_native_remote.ipv6_net }}", "::/0"]
         export_prefixes: ["{{ testbed_routing_home_prefix }}"]
   probe_targets:
     - id: provider_router
