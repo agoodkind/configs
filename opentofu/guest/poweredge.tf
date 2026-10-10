@@ -33,7 +33,7 @@ locals {
   poweredge_gateway_release_version   = "202610101541-d2-4aa6e92"
   poweredge_gateway_network_json_path = "${path.module}/poweredge/network.json"
   poweredge_gateway_config_toml_path  = "${path.module}/poweredge/config.toml"
-  poweredge_gateway_excluded_units    = toset(["nghttpx-wanconfig.service"])
+  poweredge_gateway_excluded_units    = toset(["nghttpx-wanconfig.service", "rousette.service"])
 
   poweredge_template_file_id = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
   poweredge_datastore_id     = "vmdata"
@@ -222,8 +222,10 @@ resource "pveguest_container_power" "poweredge_gateway" {
   vmid    = proxmox_virtual_environment_container.poweredge_gateway.vm_id
   running = true
 
+  # A restart clears rules loaded before nftables.service was masked.
   restart_on = {
     options = jsonencode(pveguest_container_options.poweredge_gateway.options)
+    release = local.poweredge_gateway_release_version
   }
 
   depends_on = [
