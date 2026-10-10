@@ -541,14 +541,24 @@
             timeout: 360
 
         - name: Read the post-reboot boot identity
+          vars:
+            ansible_ssh_retries: 17
           ansible.builtin.command:
             argv: [cat, /proc/sys/kernel/random/boot_id]
           register: mwan_post_reboot_boot_id
           changed_when: false
+          until:
+            - mwan_post_reboot_boot_id.rc == 0
+            - mwan_post_reboot_boot_id.stdout | trim != mwan_pre_reboot_boot_id.stdout | trim
+          retries: 72
+          delay: 5
+          ignore_unreachable: true
 
         - name: Require an actual gateway reboot
           ansible.builtin.assert:
             that:
+              - mwan_post_reboot_boot_id is reachable
+              - mwan_post_reboot_boot_id is success
               - mwan_post_reboot_boot_id.stdout | trim != mwan_pre_reboot_boot_id.stdout | trim
             fail_msg: The gateway boot identity did not change after scheduling its reboot.
 
@@ -582,6 +592,7 @@
                 executable: /bin/bash
               changed_when: true
               timeout: 60
+              ignore_unreachable: true
 
             - name: Copy the gateway journal to the controller
               ansible.builtin.fetch:
@@ -589,6 +600,7 @@
                 dest: "{{ mwan_controller_artifact_root }}/failed-boot-journal-{{ mwan_deploy_trace_id }}.gz"
                 flat: true
               timeout: 60
+              ignore_unreachable: true
           rescue:
             - name: Continue to the restore without the gateway journal
               ansible.builtin.debug:
