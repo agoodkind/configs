@@ -36,6 +36,35 @@ RSpec.describe 'routing simulator checks' do
     expect(RoutingSimulatorConfig.required_checks_valid?(inventory, 'astound_static', 'infrastructure', results)).to be(true)
   end
 
+  def unreachable?(prefix, routes, rules)
+    assertion = RoutingSimulatorConfig.task('Require the unreachable management prefixes',
+                                            'tasks', 'check-routing-simulator-node.yml')
+    results = [routes, rules].map { |stdout| TaskExpressions.command_result(0, stdout, '') }
+    variables = { 'item' => prefix, 'rsim_unreachable' => { 'results' => results } }
+    RoutingSimulatorConfig.assertion_valid?(inventory, assertion, variables, [])
+  end
+
+  it 'accepts the unreachable rule that systemd-networkd installs with the main table', :aggregate_failures do
+    home_prefix = inventory.fetch('testbed_routing_home_prefix')
+    outer_net = RoutingSimulatorConfig.network(inventory, 'outer', 'ipv4')
+    routes = "unreachable #{outer_net} proto static metric 65000"
+    rules = "0:\tfrom all lookup local\n32766:\tfrom all lookup main\n" \
+            "32800:\tfrom all to #{home_prefix} lookup main unreachable proto static"
+
+    expect(unreachable?(home_prefix, routes, rules)).to be(true)
+    expect(unreachable?(home_prefix, routes, "32800:\tfrom all to #{home_prefix} unreachable")).to be(true)
+    expect(unreachable?(outer_net, routes, rules)).to be(true)
+  end
+
+  it 'rejects a guest without the unreachable rule or route', :aggregate_failures do
+    home_prefix = inventory.fetch('testbed_routing_home_prefix')
+    outer_net = RoutingSimulatorConfig.network(inventory, 'outer', 'ipv4')
+    rules = "32766:\tfrom all lookup main\n32800:\tfrom all to #{home_prefix} lookup 100"
+
+    expect(unreachable?(home_prefix, "unreachable #{outer_net}", rules)).to be(false)
+    expect(unreachable?(outer_net, '', rules)).to be(false)
+  end
+
   it 'captures protocol 41 on both sides of the provider and the inner packet at the endpoint' do
     addresses = [{ 'ifname' => 'eth1', 'addr_info' => [{ 'local' => '198.51.100.2' }] },
                  { 'ifname' => 'eth2', 'addr_info' => [{ 'local' => '10.240.209.1' }] }]
