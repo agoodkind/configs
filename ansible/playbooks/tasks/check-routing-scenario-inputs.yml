@@ -1,0 +1,50 @@
+---
+- name: Collect the scenario check inputs
+  ansible.builtin.set_fact:
+    routing_check_results: []
+    routing_check_hashes: []
+    routing_check:
+      name: "{{ routing_scenario_name }}"
+      mode: "{{ routing_scenario_mode }}"
+      scenario: "{{ routing_check_scenario }}"
+      nodes: >-
+        {{ routing_check_scenario.nodes
+        + (routing_check_scenario.connections | map('extract', testbed_routing_connections)
+        | map(attribute='simulator') | unique
+        | select('in', routing_check_guest_nodes) | reject('in', routing_check_scenario.nodes) | list) }}
+      transport_tunnels: >-
+        {{ routing_check_scenario.tunnels | selectattr('connection', 'in', routing_check_guest_connections) | list }}
+      remote_sessions: >-
+        {{ routing_check_scenario.sessions | rejectattr('local.node', 'in', routing_check_gateway_nodes) | list }}
+      gateway_sessions: >-
+        {{ routing_check_scenario.sessions | selectattr('local.node', 'in', routing_check_gateway_nodes) | list }}
+      client_routes: >-
+        {{ routing_check_scenario.routes | selectattr('node', 'in', routing_check_client_nodes) | list }}
+      upstream_nodes: >-
+        {{ routing_check_scenario.nodes | select('in', routing_check_upstream_nodes) | list }}
+      remote_client_address: >-
+        {{ (routing_check_scenario.probe_targets | selectattr('id', 'equalto', 'remote_client')
+        | map(attribute='address') | list)[0] }}
+      remote_client_node: >-
+        {{ (routing_check_scenario.nodes | select('in', routing_check_client_nodes) | list)[0] }}
+      mtu: >-
+        {{ (routing_check_scenario.tunnels | map(attribute='mtu') | list
+        + [testbed_routing_checks.native_mtu]) | min }}
+      downstream: "{{ service_mapping[testbed_routing_checks.downstream_client] }}"
+  vars:
+    routing_check_scenario: "{{ testbed_routing_scenarios[routing_scenario_name] }}"
+    routing_check_gateway_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'gateway')
+      | map(attribute='key') | list }}
+    routing_check_client_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'remote_client')
+      | map(attribute='key') | list }}
+    routing_check_upstream_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'upstream_router')
+      | map(attribute='key') | list }}
+    routing_check_guest_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.service', 'in', testbed_routing_guests)
+      | map(attribute='key') | list }}
+    routing_check_guest_connections: >-
+      {{ testbed_routing_connections | dict2items | selectattr('value.simulator', 'in', routing_check_guest_nodes)
+      | map(attribute='key') | list }}

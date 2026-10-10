@@ -1,0 +1,31 @@
+---
+- name: Collect the simulator files
+  ansible.builtin.set_fact:
+    rsim_files: "{{ rsim_file_lines.split(';') | map('split', '|') | list }}"
+  vars:
+    rsim_file_lines: >-
+      {%- set lines = ['nftables.conf|/etc/nftables.conf.candidate|0644|nftables',
+      'sysctl.conf|/etc/sysctl.d/90-routing-simulator.conf|0644|sysctl',
+      'networkd.conf|/etc/systemd/networkd.conf.d/routing-simulator.conf|0644|network'] -%}
+      {%- for interface in rsim.interfaces -%}
+      {%- set _ = lines.append(interface.name ~ '.network|/etc/systemd/network/50-rsim-' ~ interface.name
+      ~ '.network|0644|network') -%}
+      {%- endfor -%}
+      {%- for tunnel in rsim.tunnels -%}
+      {%- for kind in ['netdev', 'network'] -%}
+      {%- set _ = lines.append(tunnel.remote.interface ~ '.' ~ kind ~ '|/etc/systemd/network/40-rsim-'
+      ~ tunnel.remote.interface ~ '.' ~ kind ~ '|0644|network') -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- if rsim.bgp -%}
+      {%- set _ = lines.append('frr.conf|/etc/frr/frr.conf.candidate|0640|frr') -%}
+      {%- set _ = lines.append('daemons|/etc/frr/daemons|0640|frr') -%}
+      {%- endif -%}
+      {%- for route in rsim.tracked_routes -%}
+      {%- if loop.first -%}
+      {%- set _ = lines.append('home-route-tracker.sh|/usr/local/sbin/routing-home-route-tracker|0755|tracker') -%}
+      {%- endif -%}
+      {%- set _ = lines.append('routing-home-route-' ~ loop.index0 ~ '.service|/etc/systemd/system/routing-home-route-'
+      ~ loop.index0 ~ '.service|0644|tracker') -%}
+      {%- endfor -%}
+      {{ lines | join(';') }}

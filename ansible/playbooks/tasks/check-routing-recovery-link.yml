@@ -1,0 +1,97 @@
+---
+- name: Check link loss and recovery
+  block:
+    - name: Read the clock before the link loss
+      ansible.builtin.command:
+        argv: [date, +%s]
+      register: routing_link_loss_start
+      changed_when: false
+
+    - name: Set each scenario link down
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, ip, link, set, dev, "{{ item.1 }}", down]
+      loop: "{{ routing_recovery_links }}"
+      changed_when: true
+
+    - name: Wait until packets routed by the scenario fail
+      ansible.builtin.command:
+        argv: "{{ routing_recovery_probe }}"
+      register: routing_link_loss_probe
+      changed_when: false
+      failed_when: false
+      until: routing_link_loss_probe.rc != 0
+      retries: "{{ routing_recovery.wait_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+    - name: Require failed packets after the link loss
+      ansible.builtin.assert:
+        that:
+          - routing_link_loss_probe.rc != 0
+        fail_msg: "Routing scenario {{ routing_recovery.name }}: packets still pass after the link loss"
+
+    - name: Wait until each upstream router has no BGP route to the home prefix
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ routing_node_vmids[item.0] }}"
+          - --
+          - ip
+          - -j
+          - "-6"
+          - route
+          - show
+          - exact
+          - "{{ item.1 }}"
+          - proto
+          - bgp
+      loop: "{{ routing_recovery.upstream_nodes | product(routing_recovery.scenario.home_prefixes) | list }}"
+      register: routing_link_loss_withdrawal
+      changed_when: false
+      until: routing_link_loss_withdrawal.stdout | from_json == []
+      retries: "{{ routing_recovery.wait_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+    - name: Check the configuration and sessions of another scenario during the link loss
+      ansible.builtin.include_tasks:
+        file: check-routing-scenario.yml
+      vars:
+        routing_scenario_name: "{{ routing_recovery.witness }}"
+        routing_scenario_mode: infrastructure
+  always:
+    - name: Set each scenario link up
+      ansible.builtin.import_tasks: run-routing-restore-commands.yml
+      vars:
+        routing_restore_commands: "{{ routing_link_restore_lines.split(';') }}"
+        routing_link_restore_lines: >-
+          {%- set commands = [] -%}
+          {%- for link in routing_recovery_links -%}
+          {%- set _ = commands.append('pct exec ' ~ routing_node_vmids[link[0]] ~ " -- sh -c 'ip link set dev "
+          ~ link[1] ~ ' up && networkctl reconfigure ' ~ link[1] ~ "'") -%}
+          {%- endfor -%}
+          {{ commands | join(';') }}
+
+# The recovery probe runs only after every restore command succeeds.
+- name: Wait until packets routed by the scenario pass again
+  ansible.builtin.command:
+    argv: "{{ routing_recovery_probe }}"
+  register: routing_link_recovery_probe
+  changed_when: false
+  until: routing_link_recovery_probe.rc == 0
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+- name: Read the clock after the link recovery
+  ansible.builtin.command:
+    argv: [date, +%s]
+  register: routing_link_loss_end
+  changed_when: false
+
+- name: Record the link loss check
+  ansible.builtin.set_fact:
+    routing_recovery_results: >-
+      {{ routing_recovery_results + [{
+        'fault': 'link loss',
+        'seconds_from_fault_to_recovery':
+          routing_link_loss_end.stdout | int - routing_link_loss_start.stdout | int
+      }] }}

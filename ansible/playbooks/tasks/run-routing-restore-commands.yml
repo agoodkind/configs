@@ -1,0 +1,23 @@
+---
+# Ansible runs every loop item after one item exhausts its retries.
+# ignore_errors defers the failure to the assertion, which reports every
+# failed command.
+- name: Run each restore command
+  ansible.builtin.command:
+    cmd: "{{ item }}"
+  loop: "{{ routing_restore_commands }}"
+  register: routing_restore_runs
+  changed_when: true
+  until: routing_restore_runs is success
+  retries: "{{ testbed_routing_checks.restore_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+  ignore_errors: true
+
+- name: Require every restore command to succeed
+  ansible.builtin.assert:
+    that:
+      - routing_restore_failures == []
+    fail_msg: "Failed restore commands: {{ routing_restore_failures }}"
+  vars:
+    routing_restore_failures: >-
+      {{ routing_restore_runs.results | selectattr('failed') | map(attribute='item') | list }}

@@ -10,6 +10,7 @@ testbed_routing_scenario_tunnel_upstream:
       connection: sonic_2
       protocol: sit
       mtu: 1480
+      outer_ttl: 64
       inner_prefix_length: 64
       local:
         node: mwan
@@ -60,6 +61,8 @@ testbed_routing_scenario_tunnel_upstream:
       address_family: ipv6_unicast
       hops: 2
       multihop_ttl: 2
+      keepalive_seconds: 3
+      hold_seconds: 9
       local:
         node: mwan
         asn: 64512
@@ -70,7 +73,7 @@ testbed_routing_scenario_tunnel_upstream:
         address: >-
           {{ service_mapping.routing_tunnel_upstream_upstream_suburban.routing_interfaces.transit.ipv6 }}
       policy:
-        import_prefixes: ["{{ testbed_routing_networks.tunnel_upstream_remote.ipv6_net }}"]
+        import_prefixes: ["{{ testbed_routing_networks.tunnel_upstream_remote.ipv6_net }}", "::/0"]
         export_prefixes: ["{{ testbed_routing_home_prefix }}"]
   probe_targets:
     - id: tunnel_remote

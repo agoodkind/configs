@@ -1,0 +1,19 @@
+---
+- name: Run the routing restore commands on the controller
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Restore after a fault check
+      block:
+        - name: Report the fault check
+          ansible.builtin.debug:
+            msg: The fault check ran.
+      always:
+        - name: Run the restore commands
+          ansible.builtin.import_tasks: ../../../ansible/playbooks/tasks/run-routing-restore-commands.yml
+
+    - name: Run the recovery probe
+      ansible.builtin.command:
+        cmd: "{{ routing_recovery_probe_command }}"
+      changed_when: false

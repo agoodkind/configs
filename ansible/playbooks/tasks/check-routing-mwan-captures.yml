@@ -1,0 +1,63 @@
+---
+- name: Read the addresses of each transport simulator
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[testbed_routing_connections[item].simulator] }}"
+      - --
+      - ip
+      - -j
+      - addr
+      - show
+  loop: "{{ routing_check.scenario.connections }}"
+  register: routing_transport_addresses
+  changed_when: false
+
+- name: Collect the packet captures
+  ansible.builtin.set_fact:
+    routing_captures: "{{ routing_capture_lines.split(';') | map('split', '|') | list }}"
+  vars:
+    routing_capture_lines: >-
+      {%- set lines = [] -%}
+      {%- set interfaces = {} -%}
+      {%- for read in routing_transport_addresses.results -%}
+      {%- for link in read.stdout | from_json -%}
+      {%- for address in link.addr_info -%}
+      {%- set _ = interfaces.update({read.item ~ ' ' ~ address.local: link.ifname}) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- set inner = 'icmp6 and src host ' ~ routing_check.downstream.ipv6 ~ ' and dst host '
+      ~ routing_check.remote_client_address -%}
+      {%- for tunnel in routing_check.scenario.tunnels -%}
+      {%- set connection = testbed_routing_connections[tunnel.connection] -%}
+      {%- set transport = routing_node_vmids[connection.simulator] -%}
+      {%- set outbound = 'ip proto 41 and src host ' ~ tunnel.local.outer_ipv4 ~ ' and dst host '
+      ~ tunnel.remote.outer_ipv4 -%}
+      {%- set inbound = 'ip proto 41 and src host ' ~ tunnel.remote.outer_ipv4 ~ ' and dst host '
+      ~ tunnel.local.outer_ipv4 -%}
+      {%- set link = interfaces[tunnel.connection ~ ' ' ~ connection.simulator_link_ipv4] -%}
+      {%- set outer = interfaces[tunnel.connection ~ ' ' ~ connection.simulator_outer_ipv4] -%}
+      {%- set _ = lines.append(['before provider', tunnel.id, transport, link, outbound] | join('|')) -%}
+      {%- set _ = lines.append(['after provider', tunnel.id, transport, outer, outbound] | join('|')) -%}
+      {%- set _ = lines.append(['return through provider', tunnel.id, transport, link, inbound] | join('|')) -%}
+      {%- set _ = lines.append(['inner at endpoint', tunnel.id, routing_node_vmids[tunnel.remote.node],
+      tunnel.remote.interface, inner] | join('|')) -%}
+      {%- endfor -%}
+      {%- if routing_check.scenario.tunnels == [] -%}
+      {%- for name in routing_check.scenario.connections -%}
+      {%- set connection = testbed_routing_connections[name] -%}
+      {%- set _ = lines.append(['native at provider', 'native', routing_node_vmids[connection.simulator],
+      interfaces[name ~ ' ' ~ connection.simulator_link_ipv4], inner] | join('|')) -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {{ lines | join(';') }}
+
+- name: Require the capture and transfer tools
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ item.0 }}", --, "{{ item.1 }}", --version]
+  loop: >-
+    {{ (routing_captures | map(attribute=2) | unique | product(['tcpdump']) | list)
+    + [[routing_check.downstream.vmid, 'iperf3']] }}
+  changed_when: false

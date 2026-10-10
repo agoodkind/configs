@@ -16,3 +16,6 @@
 
 - name: Validate the routing simulator addresses
   ansible.builtin.import_tasks: validate-routing-addresses.yml
+
+- name: Validate the routing simulator service interfaces
+  ansible.builtin.import_tasks: validate-routing-service-interfaces.yml

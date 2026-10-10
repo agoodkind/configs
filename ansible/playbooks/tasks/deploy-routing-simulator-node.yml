@@ -1,0 +1,15 @@
+---
+- name: Read the routing simulator node configuration
+  ansible.builtin.import_tasks: routing-simulator-node-facts.yml
+
+- name: Install the missing simulator packages
+  ansible.builtin.import_tasks: deploy-routing-simulator-packages.yml
+  vars:
+    rsim_package_vmid: "{{ rsim.vmid }}"
+    rsim_package_names: "{{ rsim.packages }}"
+
+- name: Render and push the simulator configuration
+  ansible.builtin.import_tasks: deploy-routing-simulator-files.yml
+
+- name: Apply the simulator configuration
+  ansible.builtin.import_tasks: deploy-routing-simulator-services.yml
