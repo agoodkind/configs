@@ -4,13 +4,20 @@ require 'json'
 require 'tmpdir'
 require_relative '../support/ansible_render'
 require_relative '../support/command_runner'
+require_relative '../support/tack_search_outage_compose'
 
-# Each example runs the playbook in check mode against a temporary inventory with one local host.
 module TackSearchOutageDrill
   PLAYBOOK_FILE = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'tack-search-outage-drill.yml')
   REFUSAL_TASK = 'TASK [Refuse a search outage drill outside the QA search members or the outage range]'
   REFUSAL_MESSAGE = 'The playbook rejects an outage request'
   STOP_TASK = 'TASK [Stop the OpenSearch member]'
+  EXIT_WAIT_TASK = 'TASK [Wait for the OpenSearch container to exit]'
+  START_TASK = 'TASK [Start the OpenSearch member]'
+  HEALTH_TASK = 'TASK [Wait until the OpenSearch cluster health is green or yellow]'
+  TASK_RESULT = /^(?<status>ok|changed|skipping|fatal): \[search-member\]/
+  # One health attempt ends the play after the start because the Compose project serves no OpenSearch endpoint.
+  SINGLE_HEALTH_ATTEMPT = { 'tack_search_outage_health_retries' => 1, 'tack_search_outage_health_delay_seconds' => 1,
+                            'tack_search_outage_health_request_timeout_seconds' => 1 }.freeze
   SEARCH_GROUP = 'tack_search1_suburban_servers'
   QA_GROUP = 'tack_qa_all'
   PRODUCTION_GROUP = 'tack_prod_all'
@@ -36,15 +43,29 @@ module TackSearchOutageDrill
 
   def run_drill(seconds:, member_groups:)
     Dir.mktmpdir('search-outage-drill') do |directory|
-      inventory = File.join(directory, 'inventory.ini')
-      File.write(inventory, inventory_text(member_groups))
-      password = File.join(directory, 'vault-password')
-      File.write(password, AnsibleRender::VAULT_PASSWORD_PLACEHOLDER, perm: AnsibleRender::SECRET_FILE_MODE)
-      argv = [AnsibleRender::PLAYBOOK_COMMAND, '--check', '--inventory', inventory, PLAYBOOK_FILE,
-              '--extra-vars', JSON.generate(variables(directory, seconds))]
-      CommandRunner.run({ AnsibleRender::VAULT_PASSWORD_ENV => password }, argv,
-                        chdir: AnsibleRender::ANSIBLE_DIRECTORY, timeout_seconds: RUN_TIMEOUT_SECONDS)
+      run_playbook(directory, member_groups, ['--check'], variables(directory, seconds))
     end
+  end
+
+  def run_container_drill(directory, container)
+    overrides = SINGLE_HEALTH_ATTEMPT.merge('tack_search_outage_container' => container)
+    run_playbook(directory, [QA_GROUP], [], variables(directory, 30).merge(overrides))
+  end
+
+  def run_playbook(directory, member_groups, options, extra_variables)
+    inventory = File.join(directory, 'inventory.ini')
+    File.write(inventory, inventory_text(member_groups))
+    password = File.join(directory, 'vault-password')
+    File.write(password, AnsibleRender::VAULT_PASSWORD_PLACEHOLDER, perm: AnsibleRender::SECRET_FILE_MODE)
+    argv = [AnsibleRender::PLAYBOOK_COMMAND, *options, '--inventory', inventory, PLAYBOOK_FILE,
+            '--extra-vars', JSON.generate(extra_variables)]
+    CommandRunner.run({ AnsibleRender::VAULT_PASSWORD_ENV => password }, argv,
+                      chdir: AnsibleRender::ANSIBLE_DIRECTORY, timeout_seconds: RUN_TIMEOUT_SECONDS)
+  end
+
+  def task_status(output, task)
+    section = output.split(task, 2).fetch(1)
+    section.match(TASK_RESULT)[:status]
   end
 end
 
@@ -61,6 +82,19 @@ RSpec.describe TackSearchOutageDrill do
     expect(result.exit_status.success?).to be(true), result.output
     expect(result.output).to include(TackSearchOutageDrill::STOP_TASK)
     expect(result.output).not_to include(TackSearchOutageDrill::REFUSAL_MESSAGE)
+  end
+
+  it 'waits for a container that ignores the stop signal to exit before starting the container', :aggregate_failures do
+    TackSearchOutageCompose.with_project do |directory, container|
+      output = described_class.run_container_drill(directory, container).output
+
+      expect(described_class.task_status(output, TackSearchOutageDrill::STOP_TASK)).to eq('changed'), output
+      expect(described_class.task_status(output, TackSearchOutageDrill::EXIT_WAIT_TASK)).to eq('ok'), output
+      expect(described_class.task_status(output, TackSearchOutageDrill::START_TASK)).to eq('changed'), output
+      expect(output.index(TackSearchOutageDrill::EXIT_WAIT_TASK)).to be < output.index(TackSearchOutageDrill::START_TASK)
+      expect(output).to include(TackSearchOutageDrill::HEALTH_TASK)
+      expect(TackSearchOutageCompose.running?(directory, container)).to be(true)
+    end
   end
 
   it 'refuses a search member in tack_prod_all', :aggregate_failures do
