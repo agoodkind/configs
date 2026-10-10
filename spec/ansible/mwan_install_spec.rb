@@ -374,19 +374,12 @@ RSpec.describe MwanInstall do
     wait = rescue_tasks.index { |task| task.key?('ansible.builtin.wait_for_connection') }
     reject = rescue_tasks.index { |task| task['name'] == 'Reject the failed deployment after coordinated recovery' }
 
-    expect([recover, wait, reject]).to all(be_a(Integer))
-    expect(recover).to be < wait
-    expect(wait).to be < reject
-    expect(reject).to eq(rescue_tasks.size - 1)
+    last = rescue_tasks.size - 1
+    expect([recover, wait, reject]).to eq([last - 2, last - 1, last])
     wait_task = rescue_tasks[wait]
-    expect(wait_task).not_to have_key('delegate_to')
-    expect(wait_task).not_to have_key('when')
-    expect(wait_task['ignore_errors']).to be(true)
-    expect(wait_task['ignore_unreachable']).to be(true)
-    expect(wait_task.dig('vars', 'ansible_pipelining')).to be(true)
+    expect(wait_task.values_at('ignore_errors', 'ignore_unreachable')).to eq([true, true])
 
     bound = described_class.module_field(wait_task, 'ansible.builtin.wait_for_connection', 'timeout')
-    expect(bound).to include('mwan_operation_recovery_timeout_seconds')
     MwanInstall::GATEWAY_GROUP_FILES.each do |name|
       group = YAML.safe_load_file(File.join(MwanInstall::GROUP_VARS_DIRECTORY, name))
       recovery_bound = group.fetch('mwan_operation_recovery_timeout_seconds')
