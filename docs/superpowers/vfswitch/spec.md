@@ -162,13 +162,16 @@ delegated.
 
 ## Not tested yet
 
-- The VF setup applied through OpenTofu. The recorded tests used a
-  hand-edited host network file.
-- A healthy provider verdict in the container, with policy rules and the
-  provider default route installed.
-- The gateway with the narrow BPF delegation and with the mount made by
-  Proxmox at container start.
-- The MWAN deploy for a container. The deploy supports only a VM.
+- The VF setup through OpenTofu remains untested. The recorded tests used a
+  host network file edited by hand.
+- Proxmox operations through the automation token with scoped overlay
+  privileges remain untested.
+- A healthy provider verdict with policy rules and the provider default
+  route installed remains untested in the container.
+- The gateway remains untested with narrow BPF delegation and a mount made
+  by Proxmox at container start.
+- MWAN deployment for a container remains untested. The deploy supports only
+  a VM.
 
 ## Limits
 
