@@ -10,6 +10,9 @@ locals {
       commit         = "dafd0319fda87ee71694d371213531d151ba9249"
       guest_api      = true
       kernel_modules = null
+
+      grub_cmdline_linux_default = null
+      network_interfaces_file    = null
     }
     poweredge = {
       ssh_host  = "poweredge.home.goodkind.io"
@@ -38,6 +41,8 @@ locals {
           "8021q",
         ]
       }
+      grub_cmdline_linux_default = "systemd.show_status=1"
+      network_interfaces_file    = "${path.module}/overlay/files/poweredge/interfaces"
     }
     vault = {
       ssh_host       = "hypervisor.home.goodkind.io"
@@ -45,6 +50,9 @@ locals {
       commit         = "662112b62488c8acab16cfe26c7297b6c8f95093"
       guest_api      = true
       kernel_modules = null
+
+      grub_cmdline_linux_default = null
+      network_interfaces_file    = null
     }
   }
 }
@@ -61,6 +69,9 @@ module "overlay" {
   kernel_modules  = each.value.kernel_modules
   acme_account    = local.acme_account
   acme_plugin     = local.acme_plugin
+
+  grub_cmdline_linux_default = each.value.grub_cmdline_linux_default
+  network_interfaces_file    = each.value.network_interfaces_file
 }
 
 moved {
