@@ -1,0 +1,84 @@
+{
+  "ietf-interfaces:interfaces": {
+    "goodkind-mwan-steering:guest-type": "lxc",
+    "interface": [
+      {
+        "name": "wan",
+        "type": "iana-if-type:other",
+        "goodkind-mwan-steering:connection-id": "etheric",
+        "goodkind-mwan-steering:owner": "mwan",
+        "goodkind-mwan-steering:link": {
+          "match": { "hardware-address": "d0:46:0c:62:36:84" }
+        },
+        "ietf-ip:ipv4": {
+          "forwarding": true,
+          "goodkind-mwan-steering:dhcp": true,
+          "goodkind-mwan-steering:route-metric": 10,
+          "goodkind-mwan-steering:translation": { "mode": "ietf-nat:napt44" }
+        },
+        "ietf-ip:ipv6": {
+          "goodkind-mwan-steering:accept-ra": false,
+          "goodkind-mwan-steering:translation": { "mode": "native" }
+        },
+        "goodkind-mwan-steering:wan": {
+          "name": "etheric",
+          "table-id": 800,
+          "fw-mark": 6,
+          "fw-mark-prio": 600,
+          "from-prio": 60,
+          "health": {
+            "enabled": true,
+            "ping-count": 3,
+            "success-threshold": 2,
+            "failure-threshold": 2,
+            "recovery-threshold": 2,
+            "check-interval": 10,
+            "targets-v4": ["1.1.1.1", "8.8.8.8"],
+            "targets-v6": [],
+            "http-urls": ["https://ifconfig.co/ip"]
+          }
+        },
+        "goodkind-mwan-steering:steering": {
+          "tier": 0,
+          "weight": 1
+        }
+      },
+      {
+        "name": "mwanbr",
+        "type": "iana-if-type:other",
+        "goodkind-mwan-steering:connection-id": "mwanbr",
+        "goodkind-mwan-steering:owner": "mwan",
+        "goodkind-mwan-steering:link": {
+          "match": { "hardware-address": "02:57:50:04:01:00" }
+        },
+        "ietf-ip:ipv4": {
+          "forwarding": true,
+          "address": [{ "ip": "10.230.230.2", "prefix-length": 29 }]
+        },
+        "ietf-ip:ipv6": {
+          "forwarding": true,
+          "address": [{ "ip": "3d06:bad:b01:3f0::2", "prefix-length": 64 }],
+          "goodkind-mwan-steering:accept-ra": false
+        }
+      }
+    ],
+    "goodkind-mwan-steering:steering-group": {
+      "hash-mode": "random",
+      "reserved-tables": [400, 500],
+      "translation": {
+        "internal-prefix": "3d06:bad:b01:300::/60",
+        "opnsense-edge-v6": "3d06:bad:b01:3f0::1",
+        "mwanbr-edge-v6": "3d06:bad:b01:3f0::2"
+      },
+      "routes": {
+        "internal-iface": "mwanbr",
+        "internal-net-v4": "10.230.230.0/29"
+      },
+      "firewall": {
+        "pinned-set-v4-name": "etheric_pinned_v4",
+        "pinned-set-v6-name": "etheric_pinned_v6"
+      },
+      "health": { "probe-timeout": 2000 }
+    }
+  }
+}
