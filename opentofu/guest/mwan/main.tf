@@ -51,6 +51,10 @@ variable "role" {
   type = string
 }
 
+variable "excluded_units" {
+  type = set(string)
+}
+
 data "mwan_release" "this" {
   version = var.release_version
 }
@@ -68,6 +72,12 @@ locals {
 
   files = { for file in data.mwan_role.this.files : file.path => file }
   units = { for unit in data.mwan_role.this.units : unit.name => unit }
+
+  managed_units = {
+    for name, unit in local.units : name => unit if !contains(var.excluded_units, name)
+  }
+
+  unknown_excluded_units = setsubtract(var.excluded_units, toset(keys(local.units)))
 
   yang_modules = {
     for module in data.mwan_role.this.yang_modules : split("@", module.file)[0] => module
@@ -447,6 +457,11 @@ resource "pveguest_file" "network" {
 
   lifecycle {
     precondition {
+      condition     = length(local.unknown_excluded_units) == 0
+      error_message = "The role's unit list does not include these names from excluded_units: ${join(", ", sort(tolist(local.unknown_excluded_units)))}"
+    }
+
+    precondition {
       condition     = length(local.disallowed_interfaces) == 0
       error_message = "The following network.json interfaces use roles other than provider, parent, internal, or management: ${join(", ", sort(tolist(local.disallowed_interfaces)))}"
     }
@@ -500,7 +515,7 @@ resource "mwan_network_config" "gateway" {
 }
 
 resource "pveguest_systemd_unit" "role" {
-  for_each = local.units
+  for_each = local.managed_units
 
   node = var.node
   vmid = var.vmid

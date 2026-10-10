@@ -33,6 +33,7 @@ locals {
   poweredge_gateway_release_version   = "202610100223-cc-27e698c"
   poweredge_gateway_network_json_path = "${path.module}/poweredge/network.json"
   poweredge_gateway_config_toml_path  = "${path.module}/poweredge/config.toml"
+  poweredge_gateway_excluded_units    = toset(["nghttpx-wanconfig.service"])
 
   poweredge_template_file_id = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
   poweredge_datastore_id     = "vmdata"
@@ -258,6 +259,7 @@ module "poweredge_gateway_mwan" {
   role            = local.poweredge_gateway_role
   architecture    = local.poweredge_gateway_architecture
   release_version = local.poweredge_gateway_release_version
+  excluded_units  = local.poweredge_gateway_excluded_units
 
   network_json_path          = local.poweredge_gateway_network_json_path
   config_toml_path           = local.poweredge_gateway_config_toml_path
