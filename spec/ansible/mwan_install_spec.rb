@@ -27,6 +27,10 @@ module MwanInstall
   SCHEMA_DIRECTORY = '/usr/local/share/wanconfig/yang'
   UNIT_SUFFIX = '.service'
   TEMPLATE_MARKER = '{{'
+  # configsctl enforces the maximum duration for lock extend.
+  LOCK_EXTEND_CAP_SECONDS = 900
+  # The offset includes 60 seconds between renewals and 61 seconds before expiry.
+  LOCK_LOSS_OFFSET_SECONDS = 121
 
   # Text that only a copy of a file the verb owns, or a schema read from this
   # repository instead of the release, would carry.
@@ -390,6 +394,37 @@ RSpec.describe MwanInstall do
       expect(recovery_bound).to be_a(Integer).and(be_positive), name
       expect(rendered).to eq(recovery_bound), name
     end
+  end
+
+  it 'extends the gateway lock directly before scheduling the reboot and not in rescue' do
+    playbook = YAML.safe_load_file(described_class.file_path('deploy-mwan.yml'))
+    play_vars = playbook.find { |candidate| candidate['name'] == 'Configure MWAN VM' }.fetch('vars')
+    tasks = described_class.role_tasks(file: 'deploy-mwan.yml', play: 'Configure MWAN VM')
+    extends = tasks.each_index.select { |index| Array(described_class.command_argv(tasks[index])).include?('extend') }
+    schedule = tasks.index { |task| task['name'] == 'Schedule the reboot independently of the SSH connection' }
+    reconnect = described_class.module_field(tasks[schedule + 1], 'ansible.builtin.wait_for_connection', 'timeout') +
+                described_class.module_field(tasks[schedule + 1], 'ansible.builtin.wait_for_connection', 'delay')
+    deployment = tasks.find { |task| task['name'] == 'Write the release and reboot the gateway' }
+    rescue_tasks = described_class.flatten(deployment.fetch('rescue'), MwanInstall::PLAYBOOK_DIRECTORY)
+    rescue_extends = rescue_tasks.select { |task| Array(described_class.command_argv(task)).include?('extend') }
+
+    expect(extends).to eq([schedule - 1])
+    expect(rescue_extends).to be_empty
+    task = tasks[extends.first]
+    seconds = play_vars.fetch('mwan_reboot_lock_extend_seconds')
+    rendered = TaskExpressions.evaluate(
+      variables: { 'inventory_hostname' => 'gateway.example', 'mwan_reboot_lock_extend_seconds' => seconds },
+      facts: [], renders: [TaskExpressions.render_task(task, 'argv' => described_class.command_argv(task))]
+    )['renders'][0]
+
+    expect(task['delegate_to']).to eq('localhost')
+    expect(task['when']).to eq('not ansible_check_mode')
+    expect(task).not_to have_key('loop')
+    expect(task).not_to have_key('ignore_errors')
+    expect(rendered.fetch('argv').map(&:to_s)).to eq(
+      ['./configsctl', 'lock', 'extend', '--host', 'gateway.example', '--seconds', seconds.to_s]
+    )
+    expect(seconds).to be_between(reconnect + MwanInstall::LOCK_LOSS_OFFSET_SECONDS, MwanInstall::LOCK_EXTEND_CAP_SECONDS)
   end
 
   it 'accepts both gateway renders through the compatible mwan validators' do
