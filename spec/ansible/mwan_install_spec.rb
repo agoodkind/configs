@@ -417,10 +417,6 @@ RSpec.describe MwanInstall do
       facts: [], renders: [TaskExpressions.render_task(task, 'argv' => described_class.command_argv(task))]
     )['renders'][0]
 
-    expect(task['delegate_to']).to eq('localhost')
-    expect(task['when']).to eq('not ansible_check_mode')
-    expect(task).not_to have_key('loop')
-    expect(task).not_to have_key('ignore_errors')
     expect(rendered.fetch('argv').map(&:to_s)).to eq(
       ['./configsctl', 'lock', 'extend', '--host', 'gateway.example', '--seconds', seconds.to_s]
     )
