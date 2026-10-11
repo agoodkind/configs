@@ -15,7 +15,8 @@
   register: routing_gateway_summary
   changed_when: false
   until: >-
-    (routing_gateway_summary.stdout | from_json).ipv6Unicast.peers[item.local.address].state == 'Established'
+    (routing_gateway_summary.stdout | from_json).get('peers', {}).get(item.local.address, {}).get('state')
+    == 'Established'
   retries: "{{ testbed_routing_checks.session_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
 

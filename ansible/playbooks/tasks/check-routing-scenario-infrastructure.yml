@@ -45,7 +45,8 @@
   register: routing_remote_summary
   changed_when: false
   until: >-
-    (routing_remote_summary.stdout | from_json).ipv6Unicast.peers[item.remote.address].state == 'Established'
+    (routing_remote_summary.stdout | from_json).get('peers', {}).get(item.remote.address, {}).get('state')
+    == 'Established'
   retries: "{{ testbed_routing_checks.session_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
 
