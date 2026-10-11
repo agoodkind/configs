@@ -25,6 +25,8 @@ tofu:
           poweredge: poweredge
           vault: vault
     opentofu/guest:
+      lock_free_types:
+        - mwan_network_config
       # Keys are pveguest_* resource node values. The node is the second label
       # of the guest hostname, not a Proxmox node name.
       node_hosts:
