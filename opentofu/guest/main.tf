@@ -7,7 +7,12 @@ locals {
     file("${local.group_vars}/all/service_mapping.yml")
   ).service_mapping
 
-  enrolled = toset(["clyde_suburban", "mwan_suburban"])
+  enrolled = toset([
+    "clyde_suburban",
+    "dns64_suburban",
+    "mwan_suburban",
+    "seaweedfs_suburban",
+  ])
 
   smtp2go_access = var.vault_smtp2go_api_key
 
@@ -68,7 +73,7 @@ locals {
     }
   }
 
-  mail_relay_guests = toset(["clyde_suburban"])
+  mail_relay_guests = toset(["clyde_suburban", "dns64_suburban", "seaweedfs_suburban"])
 
   default_mail_password_version = 1
 

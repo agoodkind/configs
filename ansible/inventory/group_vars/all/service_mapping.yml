@@ -171,6 +171,7 @@ service_mapping:
     vmid: 224
     ipv6: "3d06:bad:b01:210::224"
     mac_address: "BC:24:11:04:02:24"
+    mail_password_version: 2
   mwan_test_client_a_suburban:
     inventory: false
     hostname: mwan-client-a.suburban.goodkind.io

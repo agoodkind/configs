@@ -37,7 +37,9 @@ tofu:
       # Keys use "<node>/<vmid>". Each value is the guest's inventory host
       # from the service_mapping inventory.
       guest_hosts:
+        suburban/203: dns64.suburban.goodkind.io
         suburban/213: mwan.suburban.goodkind.io
+        suburban/218: seaweedfs.suburban.goodkind.io
         suburban/224: clyde.suburban.goodkind.io
 deploy:
   # For non-check deploys, `./configsctl deploy` reads each declared variable
