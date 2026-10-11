@@ -464,11 +464,6 @@ resource "pveguest_file" "locale_gen" {
   depends_on = [pveguest_apt_packages.base]
 }
 
-moved {
-  from = pveguest_file.locale["locale_gen"]
-  to   = pveguest_file.locale_gen
-}
-
 resource "pveguest_locales" "generated" {
   node = var.node
   vmid = var.vmid
@@ -492,17 +487,6 @@ resource "pveguest_file" "locale_conf" {
   content = file("${path.module}/files/locale.conf")
 
   depends_on = [pveguest_apt_packages.base]
-}
-
-# OpenTofu v1.12.6 rejects instance keys in removed blocks.
-# The old file resource can delete the replacement link during an unordered destroy.
-# Maintainers can delete this block after every guest workspace forgets pveguest_file.locale.
-removed {
-  from = pveguest_file.locale
-
-  lifecycle {
-    destroy = false
-  }
 }
 
 resource "pveguest_link" "default_locale" {

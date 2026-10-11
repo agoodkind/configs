@@ -2,8 +2,9 @@
 Description=Run scripts-updater daily
 
 [Timer]
+OnActiveSec=60
 OnCalendar=daily
-RandomizedDelaySec=3600
+RandomizedDelaySec=300
 Persistent=true
 
 [Install]
