@@ -19,6 +19,8 @@ terraform {
 
 provider "pveguest" {
   nodes = local.nodes
+
+  smtp2go_api_key = local.smtp2go_access
 }
 
 provider "proxmox" {
