@@ -32,6 +32,8 @@
     tack_search_outage_container: tack-opensearch-1
     tack_search_outage_exit_retries: 30
     tack_search_outage_exit_delay_seconds: 2
+    tack_search_outage_kill_exit_code: 137
+    tack_search_outage_exit_code: "{{ (tack_search_outage_container_state.stdout | from_json)[0].State.ExitCode }}"
     tack_search_outage_block_failed: false
     tack_search_outage_failed_task: ""
   tasks:
@@ -88,6 +90,15 @@
           delay: "{{ tack_search_outage_exit_delay_seconds }}"
           when: not ansible_check_mode
 
+        - name: "Print the stopped container exit code"
+          ansible.builtin.debug:
+            msg: >-
+              The stopped container name, host name, and exit code are {{ tack_search_outage_container }}
+              {{ inventory_hostname }} {{ tack_search_outage_exit_code }}
+          when:
+            - not ansible_check_mode
+            - tack_search_outage_container_state is not failed
+
         - name: Start the OpenSearch member
           ansible.builtin.command:
             cmd: docker compose start opensearch
@@ -115,6 +126,7 @@
       retries: "{{ tack_search_outage_health_retries }}"
       delay: "{{ tack_search_outage_health_delay_seconds }}"
       no_log: true
+      ignore_errors: true
 
     - name: Read the guest clock after the health check
       ansible.builtin.command:
@@ -127,7 +139,7 @@
       ansible.builtin.debug:
         msg: >-
           OpenSearch on {{ inventory_hostname }} reported cluster health
-          {{ tack_search_outage_health.json.status | default('not read in check mode') }} at
+          {{ tack_search_outage_health.json.status | default('not read') }} at
           {{ tack_search_outage_health_clock.stdout }} guest time.
 
     - name: Fail after recovery if an outage task failed
@@ -144,3 +156,18 @@
           or the container still ran after retries. The play started the OpenSearch member and waited for
           cluster health before reporting the exit wait failure.
       when: tack_search_outage_container_state is failed
+
+    - name: "Fail after recovery if Docker sent signal 9"
+      ansible.builtin.fail:
+        msg: >-
+          Docker sent signal 9 before the OpenSearch member exited. The container name, host name, and exit code are {{ tack_search_outage_container }}
+          {{ inventory_hostname }} {{ tack_search_outage_exit_code }}
+      when:
+        - not ansible_check_mode
+        - tack_search_outage_container_state is not failed
+        - tack_search_outage_exit_code | int == tack_search_outage_kill_exit_code
+
+    - name: "Fail after recovery if the cluster health wait failed"
+      ansible.builtin.fail:
+        msg: "Cluster health was not green or yellow after the retries on {{ inventory_hostname }}"
+      when: tack_search_outage_health is failed
