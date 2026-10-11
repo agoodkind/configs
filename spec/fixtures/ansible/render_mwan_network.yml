@@ -10,6 +10,15 @@
     - "{{ repository_root }}/ansible/inventory/group_vars/all/vars.yml"
     - "{{ repository_root }}/ansible/inventory/group_vars/all/service_mapping.yml"
     - "{{ repository_root }}/ansible/inventory/group_vars/mwan_suburban_servers.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/testbed_routing_all/connections.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/testbed_routing_all/prefixes.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/testbed_routing_all/scenario_astound_static.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/testbed_routing_all/scenario_etheric_native.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/testbed_routing_all/scenario_tunnel_static.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/testbed_routing_all/scenario_tunnel_upstream.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/testbed_routing_all/scenario_tunnel_vps.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/testbed_routing_all/scenarios.yml"
+    - "{{ repository_root }}/ansible/inventory/group_vars/testbed_routing_all/selection.yml"
   tasks:
     - name: Render the MWAN network configuration
       ansible.builtin.template:

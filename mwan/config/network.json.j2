@@ -62,7 +62,40 @@
   }
 } %}
 {% if provider.forced_dscp is defined %}
-{% set wan = wan | combine({"forced-dscp": provider.forced_dscp}) %}
+{% set wan = wan | combine({"forced-dscp": provider.forced_dscp | int}) %}
+{% endif %}
+{% if provider.bgp_sessions is defined %}
+{% set sessions = [] %}
+{% for session in provider.bgp_sessions %}
+{% set imports = [] %}
+{% for prefix in session.import_prefixes %}
+{% set prefix_length = prefix.split("/")[1] | int %}
+{% set _ = imports.append({"prefix": prefix, "min-length": prefix_length, "max-length": prefix_length}) %}
+{% endfor %}
+{% set exports = [] %}
+{% for prefix in session.export_prefixes %}
+{% set _ = exports.append({"prefix": prefix, "mode": session.export_mode, "next-hop": session.export_next_hop}) %}
+{% endfor %}
+{% set rendered_session = {
+  "name": session.name,
+  "peer-address": session.peer_address,
+  "local-address": session.local_address,
+  "local-as": session.local_as | int,
+  "remote-as": session.remote_as | int,
+  "router-id": session.router_id,
+  "keepalive": session.keepalive | int,
+  "hold": session.hold | int,
+  "connect-retry": session.connect_retry | int,
+  "route-metric": session.route_metric | int,
+  "import": imports,
+  "export": exports
+} %}
+{% if session.multihop_ttl | int > 0 %}
+{% set _ = rendered_session.update({"multihop-ttl": session.multihop_ttl | int}) %}
+{% endif %}
+{% set _ = sessions.append(rendered_session) %}
+{% endfor %}
+{% set wan = wan | combine({"bgp-session": sessions}) %}
 {% endif %}
 {% set entry = {
   "name": iface_name,
@@ -95,6 +128,19 @@
 {% endif %}
 {% if provider.link.vlan is defined %}
 {% set _ = link.update({"vlan": {"parent": provider.link.vlan.parent, "id": provider.link.vlan.id}}) %}
+{% endif %}
+{% if provider.link.mtu is defined %}
+{% set _ = link.update({"mtu": provider.link.mtu | int}) %}
+{% endif %}
+{% if provider.link.tunnel is defined %}
+{% set _ = link.update({"tunnel": {
+  "protocol": provider.link.tunnel.protocol,
+  "underlay": provider.link.tunnel.underlay,
+  "remote-address": provider.link.tunnel.remote_address,
+  "local-address": provider.link.tunnel.local_address,
+  "ttl": provider.link.tunnel.ttl | int
+}}) %}
+{% set _ = entry.update({"type": "iana-if-type:tunnel"}) %}
 {% endif %}
 {% set _ = entry.update({"goodkind-mwan-steering:link": link}) %}
 {% endif %}
@@ -141,6 +187,15 @@
 {% if provider.ipv6.address is defined %}
 {% set address_parts = provider.ipv6.address.split("/") %}
 {% set _ = ipv6.update({"address": [{"ip": address_parts[0], "prefix-length": address_parts[1] | int}]}) %}
+{% endif %}
+{% if provider.ipv6.routes is defined %}
+{% set routes = [] %}
+{% for route in provider.ipv6.routes %}
+{% set _ = routes.append({"destination": route.destination, "gateway": route.gateway}) %}
+{% endfor %}
+{% if routes %}
+{% set _ = ipv6.update({"goodkind-mwan-steering:route": routes}) %}
+{% endif %}
 {% endif %}
 {% if provider.ipv6.delegation is defined %}
 {% set delegation = {} %}

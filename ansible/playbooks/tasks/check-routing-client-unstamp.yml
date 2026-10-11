@@ -1,0 +1,8 @@
+---
+- name: Delete the stamp table on the downstream client
+  ansible.builtin.import_tasks: run-routing-restore-commands.yml
+  vars:
+    routing_restore_commands:
+      - >-
+        pct exec {{ service_mapping[testbed_routing_checks.downstream_client].vmid }}
+        -- nft delete table ip6 {{ testbed_routing_stamp_table }}
