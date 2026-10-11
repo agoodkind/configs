@@ -7,7 +7,7 @@ locals {
     file("${local.group_vars}/all/service_mapping.yml")
   ).service_mapping
 
-  enrolled = toset(["clyde_suburban"])
+  enrolled = toset(["clyde_suburban", "mwan_suburban"])
 
   proxmox_token_principal = "${local.shared_vars.proxmox_api_user}!${local.shared_vars.proxmox_token_id}"
 
