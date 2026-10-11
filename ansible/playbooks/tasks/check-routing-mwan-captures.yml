@@ -28,7 +28,7 @@
       {%- endfor -%}
       {%- endfor -%}
       {%- endfor -%}
-      {%- set inner = 'icmp6 and src host ' ~ routing_check.downstream.ipv6 ~ ' and dst host '
+      {%- set inner = 'icmp6 and ip6[40] == 128 and src host ' ~ routing_check.downstream.ipv6 ~ ' and dst host '
       ~ routing_check.remote_client_address -%}
       {%- for tunnel in routing_check.scenario.tunnels -%}
       {%- set connection = testbed_routing_connections[tunnel.connection] -%}
