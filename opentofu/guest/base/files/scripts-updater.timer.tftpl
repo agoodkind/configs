@@ -2,8 +2,11 @@
 Description=Run scripts-updater daily
 
 [Timer]
+%{ if activation_run ~}
+OnActiveSec=60
+%{ endif ~}
 OnCalendar=daily
-RandomizedDelaySec=3600
+RandomizedDelaySec=${randomized_delay_seconds}
 Persistent=true
 
 [Install]

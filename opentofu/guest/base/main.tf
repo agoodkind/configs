@@ -124,6 +124,16 @@ variable "mail_relay" {
   default = null
 }
 
+variable "scripts_updater_activation_run" {
+  description = "The scripts updater timer includes OnActiveSec=60 when this value is true."
+  type        = bool
+}
+
+variable "scripts_updater_randomized_delay_seconds" {
+  description = "The scripts updater timer uses this value for RandomizedDelaySec, in seconds."
+  type        = number
+}
+
 variable "revision" {
   description = "Guest preparation revision that the Ansible service deploys require."
   type        = string
@@ -195,9 +205,12 @@ locals {
       mode = "0644"
     }
     timer = {
-      path    = "/etc/systemd/system/scripts-updater.timer"
-      content = file("${path.module}/files/scripts-updater.timer")
-      mode    = "0644"
+      path = "/etc/systemd/system/scripts-updater.timer"
+      content = templatefile("${path.module}/files/scripts-updater.timer.tftpl", {
+        activation_run           = var.scripts_updater_activation_run
+        randomized_delay_seconds = var.scripts_updater_randomized_delay_seconds
+      })
+      mode = "0644"
     }
     profile_path = {
       path    = "/etc/profile.d/opt-scripts.sh"
@@ -464,11 +477,6 @@ resource "pveguest_file" "locale_gen" {
   depends_on = [pveguest_apt_packages.base]
 }
 
-moved {
-  from = pveguest_file.locale["locale_gen"]
-  to   = pveguest_file.locale_gen
-}
-
 resource "pveguest_locales" "generated" {
   node = var.node
   vmid = var.vmid
@@ -492,17 +500,6 @@ resource "pveguest_file" "locale_conf" {
   content = file("${path.module}/files/locale.conf")
 
   depends_on = [pveguest_apt_packages.base]
-}
-
-# OpenTofu v1.12.6 rejects instance keys in removed blocks.
-# The old file resource can delete the replacement link during an unordered destroy.
-# Maintainers can delete this block after every guest workspace forgets pveguest_file.locale.
-removed {
-  from = pveguest_file.locale
-
-  lifecycle {
-    destroy = false
-  }
 }
 
 resource "pveguest_link" "default_locale" {
