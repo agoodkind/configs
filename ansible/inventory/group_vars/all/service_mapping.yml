@@ -35,6 +35,7 @@ service_mapping:
   freebsd_dev_home:
     hostname: freebsd-dev.home.goodkind.io
     vmid: 108
+    kind: qemu
     ipv6: "3d06:bad:b01::108"
   mc:
     hostname: mc.home.goodkind.io
@@ -52,6 +53,7 @@ service_mapping:
   mwan:
     hostname: mwan.home.goodkind.io
     vmid: 113
+    kind: qemu
     ipv6: "3d06:bad:b01::113"
   mwan_failover:
     hostname: mwan-failover.home.goodkind.io
@@ -208,6 +210,7 @@ service_mapping:
   mwan_suburban:
     hostname: mwan.suburban.goodkind.io
     vmid: 213
+    kind: qemu
     ipv6: "3d06:bad:b01:210::213"
     # eth1 on the OPNsense transit link, where it peers BGP with the router.
     ipv4_transit: "10.240.240.3"
@@ -255,10 +258,12 @@ service_mapping:
   opnsense:
     hostname: router.home.goodkind.io
     vmid: 101
+    kind: qemu
     ipv6: "3d06:bad:b01::1"
   opnsense_suburban:
     hostname: router.suburban.goodkind.io
     vmid: 201
+    kind: qemu
     # The router's addresses on VMNET, the guest segment. Both families are
     # first-class; anything reaching a testbed guest routes via one of them.
     # Keeps prod's ::1 gateway suffix rather than taking its VMID suffix,
