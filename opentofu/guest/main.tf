@@ -31,6 +31,10 @@ locals {
   # service mapping name of the guest.
   authorized_key_lines_overrides = {}
 
+  scripts_updater_activation_run_overrides = {
+    mwan_suburban = false
+  }
+
   proxmox_token_secrets = {
     suburban  = var.vault_suburban_testbed_pve_token_secret
     poweredge = var.vault_poweredge_pve_token_secret
@@ -49,6 +53,10 @@ locals {
       kind                 = local.guest_kinds[name]
       node                 = local.guest_sites[name]
       authorized_key_lines = try(local.authorized_key_lines_overrides[name], null)
+      scripts_updater_activation_run = try(
+        local.scripts_updater_activation_run_overrides[name],
+        true,
+      )
     }
   }
 
@@ -142,4 +150,6 @@ module "base" {
   login_dir            = local.shared_vars.login_dir
   revision             = local.shared_vars.guest_prep_revision
   revision_file        = local.shared_vars.guest_prep_revision_file
+
+  scripts_updater_activation_run = each.value.scripts_updater_activation_run
 }

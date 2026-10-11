@@ -124,6 +124,12 @@ variable "mail_relay" {
   default = null
 }
 
+variable "scripts_updater_activation_run" {
+  description = "The scripts updater runs once after each timer activation when true. The false value retains the upstream daily timer without activation runs."
+  type        = bool
+  default     = true
+}
+
 variable "revision" {
   description = "Guest preparation revision that the Ansible service deploys require."
   type        = string
@@ -180,6 +186,8 @@ locals {
   scripts_dir           = "/opt/scripts"
   scripts_update_script = "/usr/local/sbin/scripts-update.sh"
 
+  scripts_updater_randomized_delay_seconds = var.scripts_updater_activation_run ? 300 : 3600
+
   scripts_updater_files = {
     script = {
       path    = local.scripts_update_script
@@ -195,9 +203,12 @@ locals {
       mode = "0644"
     }
     timer = {
-      path    = "/etc/systemd/system/scripts-updater.timer"
-      content = file("${path.module}/files/scripts-updater.timer")
-      mode    = "0644"
+      path = "/etc/systemd/system/scripts-updater.timer"
+      content = templatefile("${path.module}/files/scripts-updater.timer.tftpl", {
+        activation_run           = var.scripts_updater_activation_run
+        randomized_delay_seconds = local.scripts_updater_randomized_delay_seconds
+      })
+      mode = "0644"
     }
     profile_path = {
       path    = "/etc/profile.d/opt-scripts.sh"
