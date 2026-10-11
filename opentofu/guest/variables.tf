@@ -17,3 +17,10 @@ variable "vault_poweredge_pve_token_secret" {
   type        = string
   sensitive   = true
 }
+
+variable "vault_smtp2go_api_key" {
+  description = "The pveguest provider authenticates to SMTP2GO with this ephemeral, sensitive API key. ./configsctl tofu guest reads the value from the vault key vault_smtp2go_api_key."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}

@@ -1,0 +1,9 @@
+[Unit]
+Description=Update /opt/scripts from git
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${update_script} ${scripts_dir}
+TimeoutStartSec=300

@@ -9,6 +9,8 @@ locals {
 
   enrolled = toset(["clyde_suburban", "mwan_suburban"])
 
+  smtp2go_access = var.vault_smtp2go_api_key
+
   proxmox_token_principal = "${local.shared_vars.proxmox_api_user}!${local.shared_vars.proxmox_token_id}"
 
   # The site is the second label of the guest hostname, for example "suburban"
@@ -47,6 +49,23 @@ locals {
       kind                 = local.guest_kinds[name]
       node                 = local.guest_sites[name]
       authorized_key_lines = try(local.authorized_key_lines_overrides[name], null)
+    }
+  }
+
+  mail_relay_guests = toset(["clyde_suburban"])
+
+  default_mail_password_version = 1
+
+  mail_relays = {
+    for name in local.mail_relay_guests : name => {
+      username = "host-${trim(replace(lower(local.service_mapping[name].hostname), "/[^a-z0-9]+/", "-"), "-")}"
+      host     = local.shared_vars.smtp_host
+      port     = tonumber(local.shared_vars.smtp_port)
+      from     = "${split(".", local.service_mapping[name].hostname)[0]}@${local.shared_vars.smtp_from_domain}"
+      password_version = try(
+        local.service_mapping[name].mail_password_version,
+        local.default_mail_password_version,
+      )
     }
   }
 
@@ -119,6 +138,7 @@ module "base" {
   authorized_key_lines = each.value.authorized_key_lines
   public_keys          = each.value.authorized_key_lines == null ? local.github_keys : []
   restricted_key_lines = each.value.authorized_key_lines == null ? local.sshpiper_lines : []
+  mail_relay           = try(local.mail_relays[each.key], null)
   login_dir            = local.shared_vars.login_dir
   revision             = local.shared_vars.guest_prep_revision
   revision_file        = local.shared_vars.guest_prep_revision_file

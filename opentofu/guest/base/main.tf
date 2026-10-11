@@ -94,18 +94,6 @@ variable "login_dir" {
   type        = string
 }
 
-variable "scripts_installer" {
-  description = "The install-updater download uses this agoodkind/scripts commit and SHA-256 checksum. The module downloads the installer without running it."
-  type = object({
-    commit = string
-    sha256 = string
-  })
-  default = {
-    commit = "73a3121464cba781dae2e435ce03da69613ae235"
-    sha256 = "9a807dbfd3c2dfeecf91f85fe6e221f0245ec09872e97b29e380a0b20ea53d31"
-  }
-}
-
 variable "debug_command_file" {
   description = "The module installs the generic debug helper at this path. The default is /usr/local/bin/debug."
   type        = string
@@ -122,6 +110,18 @@ variable "timezone" {
   description = "The guest timezone uses this zoneinfo name for the /etc/localtime link. Null omits the link resource."
   type        = string
   default     = null
+}
+
+variable "mail_relay" {
+  description = "The guest mail relay uses this username, host, port, from address, and password_version. A null value omits the mail relay resource."
+  type = object({
+    username         = string
+    host             = string
+    port             = number
+    from             = string
+    password_version = number
+  })
+  default = null
 }
 
 variable "revision" {
@@ -141,6 +141,13 @@ locals {
   common_dir = "${path.module}/../../../common"
 
   timezones = var.timezone == null ? toset([]) : toset([var.timezone])
+
+  locale_gen_content = file("${path.module}/files/locale.gen")
+
+  locale_entries = toset([
+    for line in split("\n", local.locale_gen_content) : trimspace(line)
+    if trimspace(line) != "" && !startswith(trimspace(line), "#")
+  ])
 
   kind_packages = var.kind == "qemu" ? toset(["qemu-guest-agent"]) : toset([])
 
@@ -164,6 +171,42 @@ locals {
     timer = {
       path    = "/etc/systemd/system/package-updater.timer"
       content = file("${local.common_dir}/timers/package-updater.timer")
+      mode    = "0644"
+    }
+  }
+
+  mail_relays = { for relay in var.mail_relay[*] : "smtp2go" => relay }
+
+  scripts_dir           = "/opt/scripts"
+  scripts_update_script = "/usr/local/sbin/scripts-update.sh"
+
+  scripts_updater_files = {
+    script = {
+      path    = local.scripts_update_script
+      content = file("${path.module}/files/scripts-update.sh")
+      mode    = "0755"
+    }
+    service = {
+      path = "/etc/systemd/system/scripts-updater.service"
+      content = templatefile("${path.module}/files/scripts-updater.service.tftpl", {
+        update_script = local.scripts_update_script
+        scripts_dir   = local.scripts_dir
+      })
+      mode = "0644"
+    }
+    timer = {
+      path    = "/etc/systemd/system/scripts-updater.timer"
+      content = file("${path.module}/files/scripts-updater.timer")
+      mode    = "0644"
+    }
+    profile_path = {
+      path    = "/etc/profile.d/opt-scripts.sh"
+      content = file("${path.module}/files/opt-scripts.sh")
+      mode    = "0644"
+    }
+    systemd_path = {
+      path    = "/etc/systemd/system.conf.d/path.conf"
+      content = file("${path.module}/files/systemd-path.conf")
       mode    = "0644"
     }
   }
@@ -309,17 +352,38 @@ resource "pveguest_file" "login_dir" {
   })
 }
 
-resource "pveguest_download" "scripts_installer" {
+resource "pveguest_file" "scripts_updater" {
+  for_each = local.scripts_updater_files
+
   node = var.node
   vmid = var.vmid
   kind = var.kind
 
-  url    = "https://raw.githubusercontent.com/agoodkind/scripts/${var.scripts_installer.commit}/install-updater"
-  sha256 = var.scripts_installer.sha256
-  path   = "/usr/local/sbin/install-updater"
-  mode   = "0755"
+  path    = each.value.path
+  content = each.value.content
+  mode    = each.value.mode
+}
 
-  depends_on = [pveguest_apt_packages.base]
+resource "pveguest_systemd_unit" "scripts_updater_timer" {
+  node = var.node
+  vmid = var.vmid
+  kind = var.kind
+
+  name    = "scripts-updater.timer"
+  enabled = true
+  active  = true
+
+  # The systemd PATH file triggers a unit update because unit updates run systemctl daemon-reload.
+  restart_on = {
+    service      = pveguest_file.scripts_updater["service"].write_id
+    timer        = pveguest_file.scripts_updater["timer"].write_id
+    systemd_path = pveguest_file.scripts_updater["systemd_path"].write_id
+  }
+
+  depends_on = [
+    pveguest_file.scripts_updater,
+    pveguest_apt_packages.base,
+  ]
 }
 
 resource "pveguest_systemd_unit" "networkd_wait_online" {
@@ -395,7 +459,7 @@ resource "pveguest_file" "locale_gen" {
   kind = var.kind
 
   path    = "/etc/locale.gen"
-  content = file("${path.module}/files/locale.gen")
+  content = local.locale_gen_content
 
   depends_on = [pveguest_apt_packages.base]
 }
@@ -403,6 +467,20 @@ resource "pveguest_file" "locale_gen" {
 moved {
   from = pveguest_file.locale["locale_gen"]
   to   = pveguest_file.locale_gen
+}
+
+resource "pveguest_locales" "generated" {
+  node = var.node
+  vmid = var.vmid
+  kind = var.kind
+
+  locales = local.locale_entries
+
+  generate_on = {
+    locale_gen = pveguest_file.locale_gen.write_id
+  }
+
+  depends_on = [pveguest_apt_packages.base]
 }
 
 resource "pveguest_file" "locale_conf" {
@@ -480,6 +558,22 @@ resource "pveguest_systemd_unit" "package_updater_timer" {
   depends_on = [pveguest_file.package_updater]
 }
 
+resource "pveguest_mail_relay" "smtp" {
+  for_each = local.mail_relays
+
+  node = var.node
+  vmid = var.vmid
+  kind = var.kind
+
+  username         = each.value.username
+  host             = each.value.host
+  port             = each.value.port
+  from             = each.value.from
+  password_version = each.value.password_version
+
+  depends_on = [pveguest_apt_packages.base]
+}
+
 # The Ansible service deploys read this file until the last guest is enrolled.
 resource "pveguest_file" "revision" {
   node = var.node
@@ -499,7 +593,8 @@ resource "pveguest_file" "revision" {
     pveguest_systemd_unit.rsyslog,
     pveguest_file.systemd_timeout,
     pveguest_file.login_dir,
-    pveguest_download.scripts_installer,
+    pveguest_file.scripts_updater,
+    pveguest_systemd_unit.scripts_updater_timer,
     pveguest_systemd_unit.networkd_wait_online,
     pveguest_file.debug_command,
     pveguest_file.console_autologin,
@@ -507,10 +602,12 @@ resource "pveguest_file" "revision" {
     pveguest_file.environment,
     pveguest_file.pip,
     pveguest_file.locale_gen,
+    pveguest_locales.generated,
     pveguest_file.locale_conf,
     pveguest_link.default_locale,
     pveguest_link.localtime,
     pveguest_file.package_updater,
     pveguest_systemd_unit.package_updater_timer,
+    pveguest_mail_relay.smtp,
   ]
 }
