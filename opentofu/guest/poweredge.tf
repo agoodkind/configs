@@ -130,6 +130,7 @@ resource "proxmox_virtual_environment_container" "poweredge_gateway" {
   lifecycle {
     ignore_changes = [
       operating_system[0].template_file_id,
+      started,
     ]
 
     postcondition {
@@ -178,6 +179,7 @@ resource "proxmox_virtual_environment_container" "poweredge_lan" {
   lifecycle {
     ignore_changes = [
       operating_system[0].template_file_id,
+      started,
     ]
 
     postcondition {
