@@ -45,9 +45,23 @@
   register: routing_remote_summary
   changed_when: false
   until: >-
-    (routing_remote_summary.stdout | from_json).ipv6Unicast.peers[item.remote.address].state == 'Established'
+    (routing_remote_summary.stdout | from_json).get('peers', {}).get(item.remote.address, {}).get('state')
+    == 'Established'
   retries: "{{ testbed_routing_checks.session_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+  ignore_errors: true
+
+- name: Require each session between two simulator nodes
+  ansible.builtin.assert:
+    that:
+      - item is success
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }}: session {{ item.item.id }} is
+      not established on {{ item.item.local.node }}. vtysh prints
+      {{ item.stdout }} {{ item.stderr }}
+  loop: "{{ routing_remote_summary.results }}"
+  loop_control:
+    label: "{{ item.item.id }}"
 
 - name: Read the routes each simulator session installs
   ansible.builtin.command:
