@@ -95,7 +95,7 @@ mapping. A guest joins through an explicit enrolled set.
 | Base packages, `qemu-guest-agent` on VMs | `pveguest_apt_packages` |
 | Package updater script, unit, and timer | `pveguest_file` and `pveguest_systemd_unit` |
 | rsyslog, timeout, getty, login profile, debug helper | `pveguest_file`, with `restart_on` where a unit reads the file |
-| Locale and timezone | `pveguest_file` for `/etc/locale.gen` and `/etc/default/locale`, `pveguest_link` for `/etc/localtime` |
+| Locale and timezone | `pveguest_file` for `/etc/locale.gen` and `/etc/locale.conf`, `pveguest_link` for `/etc/default/locale` and `/etc/localtime` |
 | `systemd-networkd-wait-online` disabled | `pveguest_systemd_unit` |
 | `/root/.bashrc` line edits | A `/etc/profile.d` file |
 | `EXTERNALLY-MANAGED` removal | `pveguest_file` for `/etc/pip.conf` |

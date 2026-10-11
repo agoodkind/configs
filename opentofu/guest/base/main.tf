@@ -140,17 +140,6 @@ locals {
 
   common_dir = "${path.module}/../../../common"
 
-  locale_files = {
-    locale_gen = {
-      path    = "/etc/locale.gen"
-      content = file("${path.module}/files/locale.gen")
-    }
-    default_locale = {
-      path    = "/etc/default/locale"
-      content = file("${path.module}/files/default-locale")
-    }
-  }
-
   timezones = var.timezone == null ? toset([]) : toset([var.timezone])
 
   kind_packages = var.kind == "qemu" ? toset(["qemu-guest-agent"]) : toset([])
@@ -400,17 +389,53 @@ resource "pveguest_file" "pip" {
   content = file("${path.module}/files/pip.conf")
 }
 
-resource "pveguest_file" "locale" {
-  for_each = local.locale_files
-
+resource "pveguest_file" "locale_gen" {
   node = var.node
   vmid = var.vmid
   kind = var.kind
 
-  path    = each.value.path
-  content = each.value.content
+  path    = "/etc/locale.gen"
+  content = file("${path.module}/files/locale.gen")
 
   depends_on = [pveguest_apt_packages.base]
+}
+
+moved {
+  from = pveguest_file.locale["locale_gen"]
+  to   = pveguest_file.locale_gen
+}
+
+resource "pveguest_file" "locale_conf" {
+  node = var.node
+  vmid = var.vmid
+  kind = var.kind
+
+  path    = "/etc/locale.conf"
+  content = file("${path.module}/files/locale.conf")
+
+  depends_on = [pveguest_apt_packages.base]
+}
+
+# OpenTofu v1.12.6 rejects instance keys in removed blocks.
+# The old file resource can delete the replacement link during an unordered destroy.
+# Maintainers can delete this block after every guest workspace forgets pveguest_file.locale.
+removed {
+  from = pveguest_file.locale
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+resource "pveguest_link" "default_locale" {
+  node = var.node
+  vmid = var.vmid
+  kind = var.kind
+
+  path   = "/etc/default/locale"
+  target = "../locale.conf"
+
+  depends_on = [pveguest_file.locale_conf]
 }
 
 resource "pveguest_link" "localtime" {
@@ -481,7 +506,9 @@ resource "pveguest_file" "revision" {
     pveguest_systemd_unit.console_getty,
     pveguest_file.environment,
     pveguest_file.pip,
-    pveguest_file.locale,
+    pveguest_file.locale_gen,
+    pveguest_file.locale_conf,
+    pveguest_link.default_locale,
     pveguest_link.localtime,
     pveguest_file.package_updater,
     pveguest_systemd_unit.package_updater_timer,
