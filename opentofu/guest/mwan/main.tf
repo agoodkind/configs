@@ -125,6 +125,10 @@ locals {
     ])
   }
 
+  excluded_owned_units = toset([
+    for name in var.excluded_units : name if lookup(local.owned_units, name, false)
+  ])
+
   runtime_write_ids = merge(
     { binary = pveguest_download.mwan.write_id },
     { for name, deb in pveguest_download.stack_deb : "deb-${name}" => deb.write_id },
@@ -534,6 +538,20 @@ resource "mwan_network_config" "gateway" {
   depends_on = [pveguest_file.network]
 }
 
+resource "pveguest_systemd_unit" "excluded_stopped" {
+  for_each = local.excluded_owned_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = each.key
+  enabled = false
+  active  = false
+
+  depends_on = [pveguest_file.role]
+}
+
 resource "pveguest_systemd_unit" "role" {
   for_each = local.managed_units
 
@@ -556,6 +574,7 @@ resource "pveguest_systemd_unit" "role" {
     pveguest_file.runtime_config,
     pveguest_sysrepo_data.role,
     pveguest_link.mask,
+    pveguest_systemd_unit.excluded_stopped,
     pveguest_download.mwan,
     pveguest_deb_packages.stack,
   ]
