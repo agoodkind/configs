@@ -65,6 +65,33 @@ RSpec.describe 'routing simulator checks' do
     expect(unreachable?(outer_net, '', rules)).to be(false)
   end
 
+  def session_established?(file, name, result, summary)
+    wait = RoutingSimulatorConfig.task(name, 'tasks', file)
+    session = { 'local' => { 'address' => '2001:db8:2ff:10::1' }, 'remote' => { 'address' => '2001:db8:2ff:10::2' } }
+    stdout = JSON.generate(summary)
+    TaskExpressions.evaluate(
+      variables: { 'item' => session, result => TaskExpressions.command_result(0, stdout, '') }, facts: [],
+      conditions: { 'established' => TaskExpressions.condition_list(wait.fetch('until')) }
+    ).fetch('conditions').fetch('established')
+  end
+
+  {
+    'check-routing-scenario-infrastructure.yml' =>
+      ['Wait for each session between two simulator nodes', 'routing_remote_summary', '2001:db8:2ff:10::2'],
+    'check-routing-mwan-sessions.yml' =>
+      ['Wait for each gateway session on the remote peer', 'routing_gateway_summary', '2001:db8:2ff:10::1']
+  }.each do |file, (name, result, peer)|
+    it "reads the session state from the FRR address family summary in #{file}", :aggregate_failures do
+      summary = { 'routerId' => '192.0.2.12', 'as' => 64_520, 'peers' => { peer => { 'state' => 'Established' } } }
+      idle = summary.merge('peers' => { peer => { 'state' => 'Active' } })
+
+      expect(session_established?(file, name, result, summary)).to be(true)
+      expect(session_established?(file, name, result, idle)).to be(false)
+      expect(session_established?(file, name, result, summary.merge('peers' => {}))).to be(false)
+      expect(session_established?(file, name, result, {})).to be(false)
+    end
+  end
+
   it 'captures protocol 41 on both sides of the provider and the inner packet at the endpoint' do
     addresses = [{ 'ifname' => 'eth1', 'addr_info' => [{ 'local' => '198.51.100.2' }] },
                  { 'ifname' => 'eth2', 'addr_info' => [{ 'local' => '10.240.209.1' }] }]
