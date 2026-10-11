@@ -35,10 +35,16 @@ locals {
     vault     = var.vault_proxmox_token_secret
   }
 
+  guest_kind_values = ["lxc", "qemu"]
+
+  guest_kinds = {
+    for name in local.enrolled : name => try(local.service_mapping[name].kind, "lxc")
+  }
+
   guests = {
     for name in local.enrolled : name => {
       vmid                 = local.service_mapping[name].vmid
-      kind                 = "lxc"
+      kind                 = local.guest_kinds[name]
       node                 = local.guest_sites[name]
       authorized_key_lines = try(local.authorized_key_lines_overrides[name], null)
     }
@@ -87,6 +93,13 @@ data "http" "github_ssh_keys" {
   url = "https://github.com/${local.shared_vars.github_ssh_keys_user}.keys"
 
   lifecycle {
+    precondition {
+      condition = alltrue([
+        for kind in values(local.guest_kinds) : contains(local.guest_kind_values, kind)
+      ])
+      error_message = "Enrolled guest kinds must be lxc or qemu."
+    }
+
     postcondition {
       condition     = self.status_code == 200
       error_message = "GitHub returned ${self.status_code} for the SSH keys of ${local.shared_vars.github_ssh_keys_user}."
