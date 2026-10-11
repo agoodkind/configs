@@ -93,8 +93,7 @@
         - name: "Print the stopped container exit code"
           ansible.builtin.debug:
             msg: >-
-              The stopped container name, host name, and exit code are {{ tack_search_outage_container }}
-              {{ inventory_hostname }} {{ tack_search_outage_exit_code }}
+              Container {{ tack_search_outage_container }} exited on {{ inventory_hostname }} with exit code {{ tack_search_outage_exit_code }}.
           when:
             - not ansible_check_mode
             - tack_search_outage_container_state is not failed
