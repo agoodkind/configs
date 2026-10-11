@@ -49,19 +49,6 @@
     == 'Established'
   retries: "{{ testbed_routing_checks.session_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
-  ignore_errors: true
-
-- name: Require each session between two simulator nodes
-  ansible.builtin.assert:
-    that:
-      - item is success
-    fail_msg: >-
-      Routing scenario {{ routing_check.name }}: session {{ item.item.id }} is
-      not established on {{ item.item.local.node }}. vtysh prints
-      {{ item.stdout }} {{ item.stderr }}
-  loop: "{{ routing_remote_summary.results }}"
-  loop_control:
-    label: "{{ item.item.id }}"
 
 - name: Read the routes each simulator session installs
   ansible.builtin.command:
