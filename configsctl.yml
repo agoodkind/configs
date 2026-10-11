@@ -7,6 +7,8 @@ tofu:
   # `./configsctl tofu` exports a vault key <env_key_prefix><NAME> as the
   # environment variable <NAME>.
   env_key_prefix: vault_tofu_env_
+  # The deploy gate requires zero guest plan changes for hosts in `guest_hosts`.
+  guest_module: module.base
   # Keys are workspace paths relative to the repository root.
   # An apply of a saved plan locks the hosts declared for its changes.
   # A change with no declaration locks every host in proxmox_servers and
