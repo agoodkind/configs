@@ -125,9 +125,13 @@ variable "mail_relay" {
 }
 
 variable "scripts_updater_activation_run" {
-  description = "The scripts updater runs once after each timer activation when true. The false value retains the upstream daily timer without activation runs."
+  description = "The scripts updater timer includes OnActiveSec=60 when this value is true."
   type        = bool
-  default     = true
+}
+
+variable "scripts_updater_randomized_delay_seconds" {
+  description = "The scripts updater timer uses this value for RandomizedDelaySec, in seconds."
+  type        = number
 }
 
 variable "revision" {
@@ -186,8 +190,6 @@ locals {
   scripts_dir           = "/opt/scripts"
   scripts_update_script = "/usr/local/sbin/scripts-update.sh"
 
-  scripts_updater_randomized_delay_seconds = var.scripts_updater_activation_run ? 300 : 3600
-
   scripts_updater_files = {
     script = {
       path    = local.scripts_update_script
@@ -206,7 +208,7 @@ locals {
       path = "/etc/systemd/system/scripts-updater.timer"
       content = templatefile("${path.module}/files/scripts-updater.timer.tftpl", {
         activation_run           = var.scripts_updater_activation_run
-        randomized_delay_seconds = local.scripts_updater_randomized_delay_seconds
+        randomized_delay_seconds = var.scripts_updater_randomized_delay_seconds
       })
       mode = "0644"
     }

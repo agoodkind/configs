@@ -31,8 +31,16 @@ locals {
   # service mapping name of the guest.
   authorized_key_lines_overrides = {}
 
-  scripts_updater_activation_run_overrides = {
-    mwan_suburban = false
+  scripts_updater_timer_default = {
+    activation_run           = true
+    randomized_delay_seconds = 300
+  }
+
+  scripts_updater_timer_overrides = {
+    mwan_suburban = {
+      activation_run           = false
+      randomized_delay_seconds = 3600
+    }
   }
 
   proxmox_token_secrets = {
@@ -53,9 +61,9 @@ locals {
       kind                 = local.guest_kinds[name]
       node                 = local.guest_sites[name]
       authorized_key_lines = try(local.authorized_key_lines_overrides[name], null)
-      scripts_updater_activation_run = try(
-        local.scripts_updater_activation_run_overrides[name],
-        true,
+      scripts_updater_timer = try(
+        local.scripts_updater_timer_overrides[name],
+        local.scripts_updater_timer_default,
       )
     }
   }
@@ -151,5 +159,6 @@ module "base" {
   revision             = local.shared_vars.guest_prep_revision
   revision_file        = local.shared_vars.guest_prep_revision_file
 
-  scripts_updater_activation_run = each.value.scripts_updater_activation_run
+  scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
+  scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
 }
