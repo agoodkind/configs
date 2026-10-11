@@ -3,6 +3,6 @@
 tofu.home.arpa/agoodkind/mwan agoodkind/mwan 202610101541-d2-4aa6e92 0.1.0 darwin_arm64 b3bcb0ff4dbcbf534b273e530b908317b610f090f10dc6c625b2178974059d67
 tofu.home.arpa/agoodkind/mwan agoodkind/mwan 202610101541-d2-4aa6e92 0.1.0 linux_amd64 728547d0ed0a74da928f9b6d0afe9afe8e80341189574733956f48feea3398ee
 tofu.home.arpa/agoodkind/mwan agoodkind/mwan 202610101541-d2-4aa6e92 0.1.0 linux_arm64 0bf4989afd128e72dc849068da4cadfff0ed427d423538e66ee84ded3c2db5a4
-tofu.home.arpa/agoodkind/pveguest agoodkind/terraform-provider-pveguest 202610090546-b-c1ec2a3 0.1.0 darwin_arm64 0504de749f6342b2eec23a8928a1ab6a27ce6b37c727bb253219ee44aba27002
-tofu.home.arpa/agoodkind/pveguest agoodkind/terraform-provider-pveguest 202610090546-b-c1ec2a3 0.1.0 linux_amd64 e4f111de74e1951234eb77830fb4507de5d47c7ab09a93d01e6da2e0b4e7714d
-tofu.home.arpa/agoodkind/pveguest agoodkind/terraform-provider-pveguest 202610090546-b-c1ec2a3 0.1.0 linux_arm64 bd1251101c6018e745d7094cb3b9cfc1d8bc277da773865897abed08145019d6
+tofu.home.arpa/agoodkind/pveguest agoodkind/terraform-provider-pveguest 202610110554-d-7267cbc 0.1.0 darwin_arm64 87b674ee41941560e151277168d1ae93cdb62e46c079468278c7331bcc7676a4
+tofu.home.arpa/agoodkind/pveguest agoodkind/terraform-provider-pveguest 202610110554-d-7267cbc 0.1.0 linux_amd64 c68d5039e1899f175c18ccb313065cc2ddc361ab0c3186499be2fd0ff1b7d429
+tofu.home.arpa/agoodkind/pveguest agoodkind/terraform-provider-pveguest 202610110554-d-7267cbc 0.1.0 linux_arm64 742a7bb3a210a7d994fa1475e9ead07b83b2f72c59bfeaad41306ae71dab989e
