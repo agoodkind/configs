@@ -54,6 +54,9 @@
     # The controller renders one network document per host. The released loader
     # validates these exact bytes before the deploy installs the MWAN management stack.
     mwan_network_json_local: "{{ mwan_controller_artifact_root }}/network-{{ inventory_hostname }}.json"
+    # The extension must cover the reboot wait, one renewal interval, and
+    # configsctl's early cancellation offset.
+    mwan_reboot_lock_extend_seconds: 540
 
   tasks:
     - name: Generate deploy trace ID (early)

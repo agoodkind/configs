@@ -5,6 +5,23 @@
   register: mwan_pre_reboot_boot_id
   changed_when: false
 
+# The extension must succeed while the gateway still answers SSH.
+- name: Extend the gateway deploy lock before scheduling the reboot
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - ./configsctl
+      - lock
+      - extend
+      - --host
+      - "{{ inventory_hostname }}"
+      - --seconds
+      - "{{ mwan_reboot_lock_extend_seconds }}"
+    chdir: "{{ repo_root }}"
+  changed_when: false
+  when: not ansible_check_mode
+
 - name: Schedule the reboot independently of the SSH connection
   ansible.builtin.command:
     argv: [systemd-run, --on-active=5, /usr/sbin/reboot]
