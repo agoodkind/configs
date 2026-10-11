@@ -160,8 +160,7 @@
         - name: "Fail after recovery if Docker sent signal 9"
           ansible.builtin.fail:
             msg: >-
-              Docker sent signal 9 before the OpenSearch member exited. The container name, host name, and exit code are {{ tack_search_outage_container }}
-              {{ inventory_hostname }} {{ tack_search_outage_exit_code }}
+              Docker sent signal 9 before the OpenSearch member exited. Container {{ tack_search_outage_container }} on {{ inventory_hostname }} exited with code {{ tack_search_outage_exit_code }}.
           when:
             - not ansible_check_mode
             - tack_search_outage_container_state is not failed
