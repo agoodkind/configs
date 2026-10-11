@@ -21,6 +21,12 @@ iface nic1 inet manual
 	post-up echo 2 > /sys/class/net/nic1/device/sriov_numvfs
 	post-up ip link set nic1 vf 0 mac 02:57:50:04:01:00
 	post-up ip link set nic1 vf 1 mac 02:57:50:04:01:01
+	# The driver reads the administrative address when it binds.
+	# mwan matches links only by permanent hardware address.
+	post-up basename "$(readlink /sys/class/net/nic1/device/virtfn0)" > /sys/class/net/nic1/device/virtfn0/driver/unbind
+	post-up basename "$(readlink /sys/class/net/nic1/device/virtfn0)" > /sys/bus/pci/drivers_probe
+	post-up basename "$(readlink /sys/class/net/nic1/device/virtfn1)" > /sys/class/net/nic1/device/virtfn1/driver/unbind
+	post-up basename "$(readlink /sys/class/net/nic1/device/virtfn1)" > /sys/bus/pci/drivers_probe
 	post-up ip link set nic1 vf 0 state enable
 	post-up ip link set nic1 vf 1 state enable
 	pre-down echo 0 > /sys/class/net/nic1/device/sriov_numvfs
