@@ -10,7 +10,6 @@
 
 mwan_environment: "testbed"
 mwan_bootstrap_guest: false
-# Under the repository root, where .gitignore already excludes .make.
 mwan_controller_artifact_root: "{{ playbook_dir | dirname | dirname }}/.make/mwan-controller/{{ mwan_environment }}"
 mwan_operation_armed: false
 mwan_operation_duration_seconds: 7200
@@ -140,8 +139,7 @@ mwan_monkeybrains_iface: "enmbrains0"
 mwan_astound_iface: "enastound0"
 mwan_routed_iface: "enrouted0"
 
-# The daemon owns both links. The served configuration rejects a false IPv6
-# dhcp leaf on a daemon-owned link. Each IPv6 family omits that leaf.
+# Do not set `dhcp: false` under ipv6 here. mwan rejects it on a link it owns.
 mwan_non_provider_connections:
   - name: "{{ mwan_internal_iface }}"
     connection_id: enmwanbr0
@@ -152,8 +150,7 @@ mwan_non_provider_connections:
     ipv4:
       address: "{{ mwan_internal_ipv4 }}"
       forwarding: true
-    # networkd accepted no router advertisement on this forwarding link. The
-    # sysctl file sets accept_ra to 2 for this link when the leaf is absent.
+    # Do not remove accept_ra. Without it the sysctl file sets accept_ra=2.
     ipv6:
       address: "{{ mwan_internal_ipv6 }}"
       forwarding: true
@@ -181,12 +178,6 @@ mwan_non_provider_connections:
         dns: "{{ mwan_dns_servers.split() | ansible.utils.ipv6('address') }}"
         search: ["{{ mwan_dns_domain }}"]
 
-# The deploy writes the two AT&T unit files from mwan/networkd/testbed/, a direct
-# link with no VLAN and no 802.1X. systemd-networkd owns the AT&T link; the
-# daemon owns every other testbed link. The AT&T name file matches by
-# MACAddress. The daemon's startup conflict check accepts a name file with a MAC
-# key that differs from every owned link's address. The transit link has no
-# deployed file.
 mwan_networkd_files:
   - testbed/20-att.link
   - testbed/20-att.network
@@ -258,8 +249,7 @@ mwan_static_internal_hosts:
 mwan_internal_ipv4: "{{ service_mapping.mwan_suburban.ipv4_transit }}/29"
 mwan_internal_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}/64"
 mwan_internal_net_v4: "{{ service_mapping.opnsense_suburban.transit_v4_net }}"
-# The OPNsense end of that link. The firewall section of network.json pins the
-# router's WireGuard control plane to one WAN by this source address.
+# OPNsense address on the transit link.
 mwan_opnsense_internal_v4: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
 mwan_mwanbr_edge_ipv6: "{{ service_mapping.mwan_suburban.ipv6_transit }}"
 mwan_internal_prefix: "3d06:bad:b01:210::/60"
@@ -317,23 +307,16 @@ mwan_monkeybrains_pd_prefix: "3d06:bad:b01:2400::/56"
 
 # The existing provider entries use the simulated ISPs' addresses. The routed
 # entry tests native IPv4 and IPv6. Production routing numbers stay the same
-# in the matching entries. The testbed's links are virtio devices. Each entry
-# matches its device by the address Proxmox assigned.
+# in the matching entries.
 #
-# The AT&T link stays under systemd-networkd with the deployed unit files, as in
-# production. The daemon owns every other testbed link. Each simulated ISP
-# delegates from a pool of one prefix, and Kea stores a lease under the client's
-# DUID and IAID. A daemon-owned delegation sets the DUID and the IAID that
-# systemd-networkd sent on that link. networkd derives the IAID from the link's
-# slot name.
+# Do not change a `duid` or `iaid` below. Each is the value networkd sent, and
+# the simulated ISP gives the prefix only to that DUID and IAID.
 mwan_providers:
   - name: att
     connection_id: att
     owner: networkd
     iface: "{{ mwan_att_iface }}"
     vlan_id: "{{ mwan_att_vlan_id }}"
-    # Hand-authored as in production. The testbed exercises the same exemption.
-    # Its two direct-link unit files stay under mwan/networkd/testbed/.
     link_files: hand-authored
     ipv4:
       translation:
@@ -442,9 +425,6 @@ mwan_providers:
       forwarding: true
       dhcp: true
       route_metric: 5000
-    # The DUID is the link-layer-time value networkd built from an empty raw
-    # value: a zero time and the link address. The route metric applies to the
-    # default route from the router advertisement.
     ipv6:
       translation:
         mode: ietf-nat:nptv6

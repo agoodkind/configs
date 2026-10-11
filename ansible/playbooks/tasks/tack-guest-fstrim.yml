@@ -9,7 +9,7 @@
     argv: [lvs, --noheadings, -o, discards, "{{ tack_thin_pool }}"]
   register: tack_thin_pool_discards_now
   changed_when: false
-  # Read-only. It runs under --check because the next task's `when` needs its stdout.
+  # The next task's `when` needs this output under --check.
   check_mode: false
 
 # The pool frees and reuses the chunks either way. passdown also sends one
