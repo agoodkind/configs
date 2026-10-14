@@ -159,27 +159,30 @@ Rollback target order is: latest `pre-deploy-*`, then most recent
 4. At least `MIN_SNAPSHOT_INTERVAL_SECONDS` (default 300s) since the previous
    snapshot.
 
-Watchdogs built from mwan commit `92e1a93` or later run `pruneSnapshots`
+Watchdog builds that include mwan commit `92e1a93` delete excess snapshots
 after each successful `known-good-*` snapshot. The pass first deletes the
-oldest `known-good-*` snapshots above `max_known_good_snapshots`, which is
-`2` on both `vault` and `suburban`. When `max_total_snapshots` is greater
-than `0` and the combined count of `pre-deploy-*` and `known-good-*`
-snapshots exceeds that limit, the pass deletes the oldest `pre-deploy-*`
-snapshots up to the excess. The pass never deletes the newest `pre-deploy-*`
-snapshot and deletes `known-good-*` snapshots for any remaining excess. The
-pass logs failed deletions without retrying them; a failed deletion leaves
-the count above the limit until a later pass. The total limit is `15` on
-`vault` and `0` on `suburban`; `0` disables total-count deletion. Watchdogs
-built before `92e1a93` delete only `known-good-*` snapshots to meet the
-total limit.
+oldest `known-good-*` snapshots above `max_known_good_snapshots`.
 
-Deploy tasks do not delete `pre-deploy-*` snapshots from committed deploys.
-Recovery deletes `pre-deploy-*` and `known-good-*` snapshots newer than the
-snapshot that recovery restores. A deploy deletes its own snapshot only
-when the arm command fails before the Proxmox host records the operation.
-Committed deploys accumulate `pre-deploy-*` snapshots on `suburban` and on
-any hypervisor with a watchdog built before `92e1a93` until an operator
-deletes those snapshots.
+When `max_total_snapshots` is greater than 0, the pass compares the combined
+count of `pre-deploy-*` and `known-good-*` snapshots with that limit. If the
+count exceeds the limit, the pass deletes the oldest `pre-deploy-*`
+snapshots up to the excess. It never deletes the newest `pre-deploy-*`
+snapshot. After a failed `pre-deploy-*` deletion, it tries the next
+`pre-deploy-*` snapshot. It then deletes the oldest `known-good-*` snapshots
+for any remaining excess. The pass logs each failed deletion and does not
+retry it. The count stays above the limit only when a `known-good-*`
+deletion fails or no candidate remains.
+
+Watchdog builds that predate `92e1a93` delete only `known-good-*` snapshots
+to meet the total limit.
+
+A value of 0 for `max_total_snapshots` disables total-count deletion. The
+testbed hypervisor `suburban` disables this deletion.
+
+A committed deploy keeps its `pre-deploy-*` snapshot until an operator
+deletes it, unless a watchdog that includes `92e1a93` deletes it under a
+total limit greater than 0. A recovery deletes every `pre-deploy-*` and
+`known-good-*` snapshot newer than the snapshot it restores.
 
 Proxmox snapshot names are capped at 40 characters and longer names truncate
 silently. Put the full intent in `--description` and keep the name short. Do

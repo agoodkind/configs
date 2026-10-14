@@ -5,9 +5,8 @@ require 'tmpdir'
 require 'yaml'
 require_relative '../support/tack_search_inventory'
 
-# The committed inventory defines shared defaults and testbed overrides.
-# Rendering with that inventory verifies that vault uses the production
-# limit and suburban disables total-count deletion.
+# The spec checks the rendered limits to detect a missing testbed inventory
+# override.
 module MwanHostRuntimeRender
   TEMPLATE = 'mwan/config/config-host.toml.j2'
   TEMPLATE_NAME = 'config-host.toml'

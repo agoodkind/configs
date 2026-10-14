@@ -53,9 +53,7 @@ mwan_watchdog_connectivity_timeout: 60
 mwan_watchdog_check_interval_healthy: 30
 mwan_watchdog_check_interval_degraded: 10
 mwan_watchdog_alert_cooldown: 300
-# The hypervisor runs mwan watchdog with the rendered configuration.
-# The production limit covers both pre-deploy-* and known-good-* snapshots
-# of the gateway VM.
+# Production uses this value to preserve the previous fixed snapshot limit.
 mwan_watchdog_max_total_snapshots: 15
 mwan_watchdog_log_file: "/var/log/mwan-watchdog.log"
 mwan_watchdog_json_log_file: "/var/log/mwan-watchdog.jsonl"

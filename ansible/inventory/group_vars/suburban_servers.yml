@@ -83,9 +83,8 @@ mwan_watchdog_lock_file: "/run/mwan-watchdog-testbed-rollback.lock"
 mwan_watchdog_pve_token_id: "root@pam!watchdog-test2"
 mwan_watchdog_service_name: "mwan-watchdog-testbed"
 mwan_watchdog_unit_description: "MWAN Testbed Watchdog"
-# Disable total-count deletion on suburban. Committed deploys accumulate
-# pre-deploy-* snapshots until an operator deletes them.
-# The watchdog applies max_known_good_snapshots to known-good-* snapshots.
+# Each testbed pre-deploy-* snapshot records the state before one deploy.
+# The testbed keeps these snapshots for rollback and comparison.
 mwan_watchdog_max_total_snapshots: 0
 
 # Same out-of-band role as the production hypervisor, on the Monkeybrains
