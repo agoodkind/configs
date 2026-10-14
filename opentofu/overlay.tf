@@ -7,7 +7,7 @@ locals {
     suburban = {
       ssh_host       = local.suburban_hypervisor.ipv6
       node_name      = "hypervisor"
-      commit         = "dafd0319fda87ee71694d371213531d151ba9249"
+      commit         = "290b0bd481d5607b72f580daeebb7bab15abff55"
       guest_api      = true
       kernel_modules = null
 

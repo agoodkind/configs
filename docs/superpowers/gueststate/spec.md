@@ -95,12 +95,12 @@ mapping. A guest joins through an explicit enrolled set.
 | Base packages, `qemu-guest-agent` on VMs | `pveguest_apt_packages` |
 | Package updater script, unit, and timer | `pveguest_file` and `pveguest_systemd_unit` |
 | rsyslog, timeout, getty, login profile, debug helper | `pveguest_file`, with `restart_on` where a unit reads the file |
-| Locale and timezone | `pveguest_file` for `/etc/locale.gen` and `/etc/default/locale`, `pveguest_link` for `/etc/localtime` |
+| Locale and timezone | The module uses `pveguest_locales` for generated locales, `pveguest_file` for `/etc/locale.gen` and `/etc/locale.conf`, and `pveguest_link` for `/etc/default/locale` and `/etc/localtime`. |
 | `systemd-networkd-wait-online` disabled | `pveguest_systemd_unit` |
-| `/root/.bashrc` line edits | A `/etc/profile.d` file |
+| `/root/.bashrc` line edits | The module uses `pveguest_file` for `/etc/profile.d/98-prep-guests-environment.sh`, which login shells read. |
 | `EXTERNALLY-MANAGED` removal | `pveguest_file` for `/etc/pip.conf` |
-| `/opt/scripts` installer | The installer file pinned to a commit, as in the overlay module |
-| Mail relay file | `pveguest_file` with `content_wo` |
+| `/opt/scripts` installer | The module declares the update script, service, timer, and both PATH files with `pveguest_file`. The module enables and starts `scripts-updater.timer` with `pveguest_systemd_unit`. |
+| Mail relay file | The module uses `pveguest_mail_relay` for the SMTP2GO user and `/etc/msmtprc` on `clyde_suburban`. |
 | Hostname | Already declared by the Proxmox provider for containers |
 
 The guest module uses the declared timezone instead of the deployment
@@ -111,8 +111,8 @@ machine's timezone.
 Each guest has one SMTP2GO user. The password is generated once and stays the
 same across applies. A declared version number per guest rotates it: a higher
 number creates a new password, updates the SMTP2GO user, and rewrites the
-file. A `check` block reads the SMTP2GO user and warns when it is missing or
-blocked.
+file. The `pveguest_mail_relay` resource Read warns when the SMTP2GO user is
+missing or blocked.
 
 ### 8. Readiness gate
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=Run scripts-updater daily
+
+[Timer]
+%{ if activation_run ~}
+OnActiveSec=60
+%{ endif ~}
+OnCalendar=daily
+RandomizedDelaySec=${randomized_delay_seconds}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

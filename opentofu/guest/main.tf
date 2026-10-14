@@ -7,7 +7,14 @@ locals {
     file("${local.group_vars}/all/service_mapping.yml")
   ).service_mapping
 
-  enrolled = toset(["clyde_suburban"])
+  enrolled = toset([
+    "clyde_suburban",
+    "dns64_suburban",
+    "mwan_suburban",
+    "seaweedfs_suburban",
+  ])
+
+  smtp2go_access = var.vault_smtp2go_api_key
 
   proxmox_token_principal = "${local.shared_vars.proxmox_api_user}!${local.shared_vars.proxmox_token_id}"
 
@@ -29,18 +36,57 @@ locals {
   # service mapping name of the guest.
   authorized_key_lines_overrides = {}
 
+  scripts_updater_timer_default = {
+    activation_run           = true
+    randomized_delay_seconds = 300
+  }
+
+  scripts_updater_timer_overrides = {
+    mwan_suburban = {
+      activation_run           = false
+      randomized_delay_seconds = 3600
+    }
+  }
+
   proxmox_token_secrets = {
     suburban  = var.vault_suburban_testbed_pve_token_secret
     poweredge = var.vault_poweredge_pve_token_secret
     vault     = var.vault_proxmox_token_secret
   }
 
+  guest_kind_values = ["lxc", "qemu"]
+
+  guest_kinds = {
+    for name in local.enrolled : name => try(local.service_mapping[name].kind, "lxc")
+  }
+
   guests = {
     for name in local.enrolled : name => {
       vmid                 = local.service_mapping[name].vmid
-      kind                 = "lxc"
+      kind                 = local.guest_kinds[name]
       node                 = local.guest_sites[name]
       authorized_key_lines = try(local.authorized_key_lines_overrides[name], null)
+      scripts_updater_timer = try(
+        local.scripts_updater_timer_overrides[name],
+        local.scripts_updater_timer_default,
+      )
+    }
+  }
+
+  mail_relay_guests = toset(["clyde_suburban", "dns64_suburban", "seaweedfs_suburban"])
+
+  default_mail_password_version = 1
+
+  mail_relays = {
+    for name in local.mail_relay_guests : name => {
+      username = "host-${trim(replace(lower(local.service_mapping[name].hostname), "/[^a-z0-9]+/", "-"), "-")}"
+      host     = local.shared_vars.smtp_host
+      port     = tonumber(local.shared_vars.smtp_port)
+      from     = "${split(".", local.service_mapping[name].hostname)[0]}@${local.shared_vars.smtp_from_domain}"
+      password_version = try(
+        local.service_mapping[name].mail_password_version,
+        local.default_mail_password_version,
+      )
     }
   }
 
@@ -87,6 +133,13 @@ data "http" "github_ssh_keys" {
   url = "https://github.com/${local.shared_vars.github_ssh_keys_user}.keys"
 
   lifecycle {
+    precondition {
+      condition = alltrue([
+        for kind in values(local.guest_kinds) : contains(local.guest_kind_values, kind)
+      ])
+      error_message = "Enrolled guest kinds must be lxc or qemu."
+    }
+
     postcondition {
       condition     = self.status_code == 200
       error_message = "GitHub returned ${self.status_code} for the SSH keys of ${local.shared_vars.github_ssh_keys_user}."
@@ -106,7 +159,11 @@ module "base" {
   authorized_key_lines = each.value.authorized_key_lines
   public_keys          = each.value.authorized_key_lines == null ? local.github_keys : []
   restricted_key_lines = each.value.authorized_key_lines == null ? local.sshpiper_lines : []
+  mail_relay           = try(local.mail_relays[each.key], null)
   login_dir            = local.shared_vars.login_dir
   revision             = local.shared_vars.guest_prep_revision
   revision_file        = local.shared_vars.guest_prep_revision_file
+
+  scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
+  scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
 }
