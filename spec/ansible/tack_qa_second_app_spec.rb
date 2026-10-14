@@ -44,6 +44,7 @@ module TackQaSecondApp
     end
     File.write(File.join(inventory_directory, TackSearchInventory::VAULT_FILE),
                YAML.dump(TackSearchInventory.placeholder_secrets))
+    TackSearchInventory.include_production_search_guest(inventory_directory)
     output_directory = File.join(work_directory, 'rendered')
     FileUtils.mkdir_p(output_directory)
     AnsibleRender.render(

@@ -77,7 +77,10 @@ module TackSearchInventory
     at_exit { FileUtils.remove_entry(work_directory) }
     inventory_directory = copy_inventory(work_directory)
     members = members_for(environment, member_count)
-    add_production_members(inventory_directory, members) if environment == :production
+    if environment == :production
+      include_production_search_guest(inventory_directory)
+      add_production_members(inventory_directory, members)
+    end
     output_directory = File.join(work_directory, 'rendered')
     FileUtils.mkdir_p(output_directory)
     result = Rendered.new(directory: output_directory, environment: environment, members: members)
@@ -113,6 +116,18 @@ module TackSearchInventory
     names = SHARED_SECRETS.dup
     SECRET_NAMES.each { |name| names.push("vault_tack_#{name}", "vault_tack_qa_#{name}") }
     names.to_h { |name| [name, "render-only-#{name}"] }
+  end
+
+  # The committed mapping sets inventory: false on the tack_search1 entry until
+  # guest 125 exists.
+  #
+  # This function deletes the inventory key from the tack_search1 entry in the
+  # temporary inventory copy used by the spec renders.
+  def include_production_search_guest(inventory_directory)
+    mapping_path = File.join(inventory_directory, MAPPING_FILE)
+    mapping = YAML.safe_load_file(mapping_path, aliases: true)
+    mapping.fetch('service_mapping').fetch('tack_search1').delete('inventory')
+    File.write(mapping_path, YAML.dump(mapping))
   end
 
   # The helper adds test-only production members after tack_search1. Each
