@@ -202,7 +202,7 @@
               "containerd-snapshotter": true
             }
           }
-      notify: Restart Docker
+      register: tack_docker_daemon_config
 
     - name: Enable and start Docker
       ansible.builtin.systemd:
@@ -245,10 +245,71 @@
         name: ndppd
         state: restarted
 
-    - name: Restart Docker
-      ansible.builtin.systemd:
-        name: docker
-        state: restarted
+# A Docker daemon restart stops every container on the guest. Restarting
+# Docker on every guest at once stops all three ledger nodes and every
+# product store process.
+#
+# This play restarts Docker one guest at a time. Before the next restart,
+# it waits for the services that ran before the restart to become healthy.
+# On a data guest, it also waits for the ledger node to become healthy
+# within its quorum.
+#
+# The play restarts Docker on a guest where daemon.json changed, or on
+# every guest when the run passes
+# --extra-var tack_docker_rolling_restart=true.
+- name: Restart Docker one guest at a time
+  hosts: tack_deploy_targets
+  become: true
+  serial: 1
+  any_errors_fatal: true
+
+  tasks:
+    - name: Restart Docker and wait for this guest's services
+      when: tack_docker_daemon_config is changed or tack_docker_rolling_restart | bool
+      block:
+        - name: Look for this guest's Tack compose file
+          ansible.builtin.stat:
+            path: "{{ tack_install_dir }}/docker-compose.yml"
+          register: tack_docker_restart_compose_file
+
+        - name: Record the Tack services running before the restart
+          ansible.builtin.command:
+            cmd: docker compose ps --services --status running
+            chdir: "{{ tack_install_dir }}"
+          register: tack_docker_restart_services
+          changed_when: false
+          check_mode: false
+          when: tack_docker_restart_compose_file.stat.exists
+
+        - name: Restart Docker
+          ansible.builtin.systemd:
+            name: docker
+            state: restarted
+
+        # Each service uses the unless-stopped restart policy. Docker starts each
+        # container again after the daemon starts.
+        # The fdb health check passes only while fdbcli status minimal reports the
+        # database as available.
+        - name: Wait until the services that ran before the restart are healthy
+          ansible.builtin.command:
+            cmd: >-
+              docker compose up -d --no-deps --no-recreate --wait --wait-timeout 600
+              {{ tack_docker_restart_services.stdout_lines | join(' ') }}
+            chdir: "{{ tack_install_dir }}"
+          changed_when: false
+          when:
+            - tack_docker_restart_services is not skipped
+            - tack_docker_restart_services.stdout_lines | length > 0
+
+        - name: Wait until the ledger node rejoins its quorum
+          ansible.builtin.command:
+            cmd: docker compose run --rm tack-ops ops ledger node-wait --execute {{ tack_ops_identity_flags }}
+            chdir: "{{ tack_install_dir }}"
+          changed_when: false
+          when:
+            - tack_cluster_role == 'data'
+            - tack_docker_restart_services is not skipped
+            - "'yugabyte' in tack_docker_restart_services.stdout_lines"
 
 - name: Provision Tack via Docker Compose
   hosts: tack_deploy_targets
