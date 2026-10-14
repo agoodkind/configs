@@ -110,6 +110,13 @@ service_mapping:
   tack_search1:
     hostname: tack-search1.home.goodkind.io
     vmid: 125
+    # Guest 125 does not exist yet. Every configsctl deploy run without --check
+    # locks each inventory host over SSH before the first task of a play over
+    # tack_prod_all. The lock fails on a guest that does not answer SSH.
+    #
+    # The change that turns on production search removes inventory: false
+    # after OpenTofu creates the guest.
+    inventory: false
     ipv6: "3d06:bad:b01::125"
     mac_address: "BC:24:11:A3:52:24"
     docker_v6_subnet: "3d06:bad:b01:0:7b1::/96"
@@ -323,9 +330,8 @@ service_mapping:
   # Simulated ISPs, testbed only. Each one terminates a WAN link for the MWAN VM.
   # Webpass, AT&T, and Monkeybrains serve DHCPv6-PD and RA. Astound is IPv4-only;
   # the routed simulator provides a statically addressed native IPv6 prefix
-  # without DHCPv6-PD or RA. These guests
-  # sit in 9xx and their addresses are gateways on their own simulated subnets
-  # that production never uses.
+  # without DHCPv6-PD or RA. These guests sit in 9xx and their addresses are
+  # gateways on their own simulated subnets that production never uses.
   #
   # The uplink addresses sit on vmbr1 behind suburban, which routes the sims'
   # internet traffic out to Comcast and returns tunnel and testbed traffic.

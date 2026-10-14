@@ -159,17 +159,30 @@ Rollback target order is: latest `pre-deploy-*`, then most recent
 4. At least `MIN_SNAPSHOT_INTERVAL_SECONDS` (default 300s) since the previous
    snapshot.
 
-Pruning keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 2) and
-`MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first. The total counts
-`pre-deploy-*` snapshots, and the watchdog deletes only `known-good-*`
-snapshots to meet it.
+Watchdog builds that include mwan commit `92e1a93` delete excess snapshots
+after each successful `known-good-*` snapshot. The pass first deletes the
+oldest `known-good-*` snapshots above `max_known_good_snapshots`.
 
-No deploy task and no watchdog pass deletes the `pre-deploy-*` snapshot of a
-committed deploy. A recovery deletes the `pre-deploy-*` and `known-good-*`
-snapshots taken after the snapshot it restores. The deploy removes its own
-snapshot only when the arm command fails before the Proxmox host has a record
-for the operation. Committed deploys therefore accumulate `pre-deploy-*`
-snapshots until an operator deletes them.
+When `max_total_snapshots` is greater than 0, the pass compares the combined
+count of `pre-deploy-*` and `known-good-*` snapshots with that limit. If the
+count exceeds the limit, the pass deletes the oldest `pre-deploy-*`
+snapshots up to the excess. It never deletes the newest `pre-deploy-*`
+snapshot. After a failed `pre-deploy-*` deletion, it tries the next
+`pre-deploy-*` snapshot. It then deletes the oldest `known-good-*` snapshots
+for any remaining excess. The pass logs each failed deletion and does not
+retry it. The count stays above the limit only when a `known-good-*`
+deletion fails or no candidate remains.
+
+Watchdog builds that predate `92e1a93` delete only `known-good-*` snapshots
+to meet the total limit.
+
+A value of 0 for `max_total_snapshots` disables total-count deletion. The
+testbed hypervisor `suburban` disables this deletion.
+
+A committed deploy keeps its `pre-deploy-*` snapshot until an operator
+deletes it, unless a watchdog that includes `92e1a93` deletes it under a
+total limit greater than 0. A recovery deletes every `pre-deploy-*` and
+`known-good-*` snapshot newer than the snapshot it restores.
 
 Proxmox snapshot names are capped at 40 characters and longer names truncate
 silently. Put the full intent in `--description` and keep the name short. Do
