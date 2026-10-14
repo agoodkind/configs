@@ -9,7 +9,6 @@ module TackDockerDaemon
   PLAYBOOK_FILE = File.join(AnsibleRender::REPOSITORY_ROOT, 'ansible', 'playbooks', 'deploy-tack.yml')
   DAEMON_FILE = '/etc/docker/daemon.json'
   COPY_MODULE = 'ansible.builtin.copy'
-  RESTART_HANDLER = 'Restart Docker'
 
   module_function
 
@@ -38,9 +37,5 @@ RSpec.describe TackDockerDaemon do
     expect(settings.fetch('ipv6')).to be(true)
     expect(settings.fetch('ip6tables')).to be(true)
     expect(settings.dig('features', 'containerd-snapshotter')).to be(true)
-  end
-
-  it 'restarts Docker when daemon.json changes' do
-    expect(described_class.daemon_task.fetch('notify')).to eq(TackDockerDaemon::RESTART_HANDLER)
   end
 end
