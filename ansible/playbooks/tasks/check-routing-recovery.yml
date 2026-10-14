@@ -1,18 +1,26 @@
 ---
-- name: Collect the fault inputs
-  ansible.builtin.import_tasks: check-routing-recovery-inputs.yml
+- name: Check faults and recovery with stamped client packets
+  block:
+    - name: Stamp the downstream client's packets for the scenario
+      ansible.builtin.import_tasks: check-routing-client-stamp.yml
 
-- name: Check link loss and recovery
-  ansible.builtin.import_tasks: check-routing-recovery-link.yml
+    - name: Collect the fault inputs
+      ansible.builtin.import_tasks: check-routing-recovery-inputs.yml
 
-- name: Check upstream loss and recovery
-  ansible.builtin.import_tasks: check-routing-recovery-upstream.yml
+    - name: Check link loss and recovery
+      ansible.builtin.import_tasks: check-routing-recovery-link.yml
 
-- name: Check the undeclared prefix
-  ansible.builtin.import_tasks: check-routing-recovery-undeclared.yml
+    - name: Check upstream loss and recovery
+      ansible.builtin.import_tasks: check-routing-recovery-upstream.yml
 
-- name: Check the home route tracker
-  ansible.builtin.import_tasks: check-routing-recovery-tracker.yml
+    - name: Check the undeclared prefix
+      ansible.builtin.import_tasks: check-routing-recovery-undeclared.yml
+
+    - name: Check the home route tracker
+      ansible.builtin.import_tasks: check-routing-recovery-tracker.yml
+  always:
+    - name: Remove the client stamp
+      ansible.builtin.import_tasks: check-routing-client-unstamp.yml
 
 - name: Require every required fault check
   ansible.builtin.assert:
