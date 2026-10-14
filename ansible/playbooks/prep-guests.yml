@@ -327,13 +327,8 @@
 
     - name: Configure rsyslog for local time
       ansible.builtin.copy:
+        src: "{{ playbook_dir | dirname | dirname }}/opentofu/guest/base/files/rsyslog-local-time.conf"
         dest: /etc/rsyslog.d/50-default-local.conf
-        content: |
-          # Use local time instead of UTC
-          $ActionFileDefaultTemplate RSYSLOG_TraditionalFileFormat
-          $template TraditionalFormatWithLocalTime, >-
-            "%timegenerated% %HOSTNAME% %syslogtag%%msg:::drop-last-lf%\n"
-          $ActionFileDefaultTemplate TraditionalFormatWithLocalTime
         mode: "0644"
       notify: Restart rsyslog
 
