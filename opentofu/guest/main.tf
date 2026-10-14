@@ -13,6 +13,12 @@ locals {
     "mwan_failover_suburban",
     "mwan_suburban",
     "seaweedfs_suburban",
+    "tack_app2_suburban",
+    "tack_data1_suburban",
+    "tack_data2_suburban",
+    "tack_data3_suburban",
+    "tack_qa_suburban",
+    "tack_search1_suburban",
   ])
 
   smtp2go_access = var.vault_smtp2go_api_key
