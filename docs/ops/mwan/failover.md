@@ -159,16 +159,20 @@ Rollback target order is: latest `pre-deploy-*`, then most recent
 4. At least `MIN_SNAPSHOT_INTERVAL_SECONDS` (default 300s) since the previous
    snapshot.
 
-Pruning keeps at most `MAX_KNOWN_GOOD_SNAPSHOTS` (default 2) and
-`MAX_TOTAL_SNAPSHOTS` (default 15), deleting oldest first. The total counts
-`pre-deploy-*` snapshots, and the watchdog deletes only `known-good-*`
-snapshots to meet it.
+After each `known-good-*` snapshot, the watchdog deletes the oldest
+`known-good-*` snapshots above `max_known_good_snapshots`, which is 2 on
+both hypervisors. On `vault`, `max_total_snapshots` is 15. The watchdog
+counts `pre-deploy-*` and `known-good-*` snapshots together against that
+limit. When the count exceeds 15, the watchdog deletes the oldest
+`pre-deploy-*` snapshots, except the newest `pre-deploy-*` snapshot, and
+then the oldest `known-good-*` snapshots until the count equals 15. On
+`suburban`, `max_total_snapshots` is 0, which disables total-count deletion.
 
-No deploy task and no watchdog pass deletes the `pre-deploy-*` snapshot of a
-committed deploy. A recovery deletes the `pre-deploy-*` and `known-good-*`
-snapshots taken after the snapshot it restores. The deploy removes its own
-snapshot only when the arm command fails before the Proxmox host has a record
-for the operation. Committed deploys therefore accumulate `pre-deploy-*`
+No deploy task deletes the `pre-deploy-*` snapshot of a committed deploy.
+A recovery deletes the `pre-deploy-*` and `known-good-*` snapshots taken
+after the snapshot it restores. The deploy removes its own snapshot only
+when the arm command fails before the Proxmox host has a record for the
+operation. On `suburban`, committed deploys accumulate `pre-deploy-*`
 snapshots until an operator deletes them.
 
 Proxmox snapshot names are capped at 40 characters and longer names truncate
