@@ -17,7 +17,7 @@
       tags: ["routing-simulators"]
   vars:
     rsim_package_vmid: "{{ item }}"
-    rsim_package_names: [tcpdump, iperf3]
+    rsim_package_names: [tcpdump, iperf3, nftables]
   loop:
     - "{{ service_mapping.isp_astound_suburban.vmid }}"
     - "{{ service_mapping[testbed_routing_checks.downstream_client].vmid }}"
