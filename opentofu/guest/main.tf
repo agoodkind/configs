@@ -10,6 +10,7 @@ locals {
   enrolled = toset([
     "clyde_suburban",
     "dns64_suburban",
+    "mwan_failover_suburban",
     "mwan_suburban",
     "seaweedfs_suburban",
   ])

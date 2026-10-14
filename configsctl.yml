@@ -39,6 +39,7 @@ tofu:
       guest_hosts:
         suburban/203: dns64.suburban.goodkind.io
         suburban/213: mwan.suburban.goodkind.io
+        suburban/216: mwan-failover.suburban.goodkind.io
         suburban/218: seaweedfs.suburban.goodkind.io
         suburban/224: clyde.suburban.goodkind.io
 deploy:
