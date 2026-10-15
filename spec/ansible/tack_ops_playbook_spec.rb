@@ -29,6 +29,7 @@ module TackOpsPlaybook
   # once-drop-killtest-schema (TACK-560; command removal day 2026-12-06).
   KILLTEST_COMMAND = 'ops backfill once-drop-killtest-schema'
   SUPERUSER_URL = 'render-only-superuser-url'
+  MANIFEST_ARGUMENT = '--manifest=/etc/tack/search-projections.json'
   OTHER_COMMANDS = ['ops deploy verify', 'ops audit prove-schema-guard', 'audit signers', 'audit query',
                     'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
                     'ops qa datagen search-load', 'ops qa datagen search-mixed',
@@ -136,7 +137,11 @@ module TackOpsPlaybook
     'two guests' => { 'ansible_play_hosts_all' => %w[tack-qa tack-data1-suburban] },
     'a short commit' => { 'tack_commit' => '66ef50f' },
     'an empty command' => { 'tack_ops_command' => '' },
-    'an argument to the killtest schema backfill' => { 'tack_ops_command' => KILLTEST_COMMAND, 'tack_ops_args' => ['--output=json'] }
+    'an argument to the killtest schema backfill' => { 'tack_ops_command' => KILLTEST_COMMAND, 'tack_ops_args' => ['--output=json'] },
+    'the search projection backfill on the production owner guest without the manifest argument' => {
+      'ansible_play_hosts_all' => ['tack'], 'tack_ops_command' => 'ops backfill once-search-projections',
+      'tack_ops_args' => ['--manifest=/etc/tack/other.json']
+    }
   }.freeze
 end
 
@@ -172,7 +177,8 @@ RSpec.describe TackOpsPlaybook do
 
   it 'accepts ops backfill once-search-projections on the production owner guest' do
     expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'],
-                                          'tack_ops_command' => 'ops backfill once-search-projections')).to be(true)
+                                          'tack_ops_command' => 'ops backfill once-search-projections',
+                                          'tack_ops_args' => [TackOpsPlaybook::MANIFEST_ARGUMENT])).to be(true)
   end
 
   it 'refuses every request outside the reviewed commands, guests, and arguments', :aggregate_failures do
