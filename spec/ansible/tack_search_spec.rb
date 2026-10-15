@@ -23,7 +23,6 @@ module TackSearchEnvironment
     OPENSEARCH_USERNAME
   ].freeze
   PUBLIC_SETTING_NAMES = (SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY]).sort.freeze
-  # PUBLIC turns on public search results.
   PUBLIC = { 'tack_search_public_enabled' => true }.freeze
 
   module_function
