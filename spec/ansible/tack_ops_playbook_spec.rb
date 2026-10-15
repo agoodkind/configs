@@ -170,6 +170,11 @@ RSpec.describe TackOpsPlaybook do
     expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'])).to be(true)
   end
 
+  it 'accepts ops backfill once-search-projections on the production owner guest' do
+    expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'],
+                                          'tack_ops_command' => 'ops backfill once-search-projections')).to be(true)
+  end
+
   it 'refuses every request outside the reviewed commands, guests, and arguments', :aggregate_failures do
     TackOpsPlaybook::REFUSED_REQUESTS.each do |label, overrides|
       expect(described_class.request_passes(**overrides.transform_keys(&:to_s))).to be(false), label
