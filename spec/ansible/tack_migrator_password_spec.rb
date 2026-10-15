@@ -32,8 +32,26 @@ RSpec.describe 'the tack_migrator password in the Tack environment file' do
     end
   end
 
-  it 'renders the production ops sidecar URL with the superuser', :aggregate_failures do
+  it 'renders the production ops sidecar URL with tack_migrator', :aggregate_failures do
     rendered = TackSearchInventory.rendered(:production)
+    url = rendered.settings(rendered.owner).fetch('TACK_OPS_DATABASE_URL')
+
+    expect(url).to include('user=tack_migrator', 'password=render-only-vault_tack_migrator_password')
+  end
+
+  it 'does not render superuser credentials for production', :aggregate_failures do
+    rendered = TackSearchInventory.rendered(:production)
+    hosts = [rendered.owner] + rendered.members.map { |member| rendered.member_host(member) }
+
+    hosts.each do |host|
+      expect(rendered.settings(host).keys).not_to include('YUGABYTE_PASSWORD', 'YUGABYTE_USER')
+      expect(rendered.file(host, 'env')).not_to include('render-only-vault_tack_yugabyte_password')
+    end
+  end
+
+  it 'renders the production ops sidecar URL with the superuser while tack_ops_migrator_login is false',
+     :aggregate_failures do
+    rendered = TackSearchInventory.rendered(:production, overrides: { 'tack_ops_migrator_login' => false })
     settings = rendered.settings(rendered.owner)
 
     expect(settings.fetch('TACK_OPS_DATABASE_URL'))
