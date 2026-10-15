@@ -23,9 +23,7 @@ module TackSearchEnvironment
     OPENSEARCH_USERNAME
   ].freeze
   PUBLIC_SETTING_NAMES = (SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY]).sort.freeze
-  # ENABLED turns on search. PUBLIC turns on search and public search results.
-  ENABLED = { 'tack_search_enabled' => true }.freeze
-  PUBLIC = ENABLED.merge('tack_search_public_enabled' => true).freeze
+  PUBLIC = { 'tack_search_public_enabled' => true }.freeze
 
   module_function
 
@@ -72,8 +70,8 @@ RSpec.describe TackSearchEnvironment do
   end
 
   it 'keeps one application endpoint while the production member count grows' do
-    one = TackSearchInventory.rendered(:production, member_count: 1, overrides: TackSearchEnvironment::ENABLED)
-    three = TackSearchInventory.rendered(:production, member_count: 3, overrides: TackSearchEnvironment::ENABLED)
+    one = TackSearchInventory.rendered(:production, member_count: 1)
+    three = TackSearchInventory.rendered(:production, member_count: 3)
 
     endpoint = one.settings(one.owner).fetch('OPENSEARCH_ENDPOINT')
 
@@ -99,8 +97,20 @@ RSpec.describe TackSearchEnvironment do
     expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::PUBLIC_SETTING_NAMES)
   end
 
-  it 'renders no production search setting while production search is off' do
-    expect(described_class.search_settings(TackSearchInventory.rendered(:production))).to be_empty
+  it 'the production configuration enables search with public search and model repair off' do
+    rendered = TackSearchInventory.rendered(:production)
+
+    expect(described_class.search_settings(rendered)).to eq(
+      'OPENSEARCH_ENDPOINT' => TackSearchEnvironment::PRODUCTION_ENDPOINT,
+      'OPENSEARCH_CA' => '/etc/tack/search-ca.crt',
+      'OPENSEARCH_USERNAME' => 'render-only-vault_tack_search_username',
+      'OPENSEARCH_PASSWORD' => 'render-only-vault_tack_search_password',
+      'OPENSEARCH_SHARDS' => '1',
+      'OPENSEARCH_ROUTING_SHARDS' => '8',
+      'OPENSEARCH_REPLICAS' => '0',
+      'OPENSEARCH_PUBLIC_ENABLED' => 'false',
+      'OPENSEARCH_MODEL_REPAIR_ENABLED' => 'false'
+    )
   end
 
   { production: 'false', qa: 'true' }.each do |environment, model_repair|

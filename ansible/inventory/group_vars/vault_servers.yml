@@ -88,7 +88,7 @@ tack_guest_fstrim_vmids:
   - "{{ service_mapping.tack_data2.vmid }}"
   - "{{ service_mapping.tack_data3.vmid }}"
   - "{{ service_mapping.tack_app2.vmid }}"
-# Add service_mapping.tack_search1.vmid when the production search guest exists.
+  - "{{ service_mapping.tack_search1.vmid }}"
 tack_thin_pool: "pve/data"
 
 # Slow storage tier (TACK-495): the Samsung 870 EVO directory storage beside
@@ -111,7 +111,7 @@ proxmox_slow_storage_scratch_mounts:
 # vault address, and the proxy certificate lists that address as an IP
 # subject alternative name. While tack_search_proxy_enabled is false,
 # deploy-proxmox installs neither the proxy nor the memory-map limit on vault.
-tack_search_proxy_enabled: false
+tack_search_proxy_enabled: true
 tack_search_proxy_bind_ipv6: "{{ service_mapping.vault_hypervisor.ipv6 }}"
 tack_search_proxy_members: "{{ tack_search_production_members }}"
 tack_search_proxy_callers:
