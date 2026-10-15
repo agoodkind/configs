@@ -702,6 +702,7 @@
             owner: root
             group: root
             mode: "0600"
+          diff: false
           notify: Restart Tack
 
         # Compose merges this rendered override over the fetched compose file.
@@ -884,6 +885,7 @@
             owner: root
             group: root
             mode: "0600"
+          diff: false
           notify: Restart Tack ledger node
 
         - name: Deploy Tack compose override (ledger node identity)
@@ -1294,6 +1296,7 @@
             owner: root
             group: root
             mode: "0600"
+          diff: false
 
         - name: Deploy Tack compose override (application-only guest)
           ansible.builtin.template:

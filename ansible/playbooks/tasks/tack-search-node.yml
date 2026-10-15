@@ -120,6 +120,7 @@
     owner: root
     group: root
     mode: "0600"
+  diff: false
   notify: Restart the OpenSearch member
 
 - name: Deploy Tack compose override (search member)
