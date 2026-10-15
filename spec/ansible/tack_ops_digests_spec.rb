@@ -10,7 +10,7 @@ module TackOpsDigests
   INVENTORY = "[tack_qa_all]\ntack-qa-test ansible_connection=local\n[tack_prod_all]\n" \
               "[tack_all:children]\ntack_qa_all\ntack_prod_all\n"
   REQUEST_TASK = 'TASK [Refuse a Tack ops request outside the reviewed commands, guests, or arguments]'
-  REQUEST_MESSAGE = 'tack-ops runs one reviewed Tack ops command on exactly one QA guest'
+  REQUEST_MESSAGE = 'tack_server_digest and tack_audit_consumer_digest are the CI index digests of the reviewed build'
   VERIFY_TASK = 'TASK [Verify that the guest runs the Tack images for tack_commit]'
   SERVER_DIGEST = "sha256:#{'a' * 64}".freeze
   CONSUMER_DIGEST = "sha256:#{'b' * 64}".freeze
