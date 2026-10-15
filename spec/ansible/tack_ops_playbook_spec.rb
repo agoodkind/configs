@@ -5,8 +5,8 @@ require_relative '../support/ansible_render'
 require_relative '../support/task_expressions'
 require_relative '../support/tack_ops_identity'
 
-# tack-ops runs one reviewed Tack ops command on one QA guest with the rendered
-# operator identity. These examples run the real playbook through its identity
+# tack-ops runs one reviewed Tack ops command on one QA guest or on the
+# production owner guest with the rendered operator identity. These examples run the real playbook through its identity
 # guard and evaluate the real playbook text: the request check, the task
 # order, and the rendered command lines.
 module TackOpsPlaybook
@@ -50,7 +50,7 @@ module TackOpsPlaybook
   def request(**overrides)
     { 'tack_commit' => COMMIT, 'tack_ops_command' => 'ops search verify', 'tack_ops_args' => [],
       'tack_server_digest' => SERVER_DIGEST, 'tack_audit_consumer_digest' => CONSUMER_DIGEST,
-      'ansible_play_hosts_all' => ['tack-qa'], 'groups' => GROUPS }.merge(overrides)
+      'ansible_play_hosts_all' => ['tack-qa'], 'tack_provision_owner' => true, 'groups' => GROUPS }.merge(overrides)
   end
 
   # Whether the request check passes for variables, from the real assert.
@@ -124,7 +124,10 @@ module TackOpsPlaybook
     'a positional argument' => { 'tack_ops_args' => ['SELECT'] },
     'an argument that adds --execute' => { 'tack_ops_args' => ['--execute'] },
     'an argument that sets an identity flag' => { 'tack_ops_args' => ['--operator-id=x'] },
-    'a production guest' => { 'ansible_play_hosts_all' => ['tack'] },
+    'a QA command on the production owner guest' => { 'ansible_play_hosts_all' => ['tack'],
+                                                       'tack_ops_command' => 'ops qa datagen seed' },
+    'a production data guest' => { 'ansible_play_hosts_all' => ['tack-data1'], 'tack_provision_owner' => false },
+    'a QA guest and a production guest' => { 'ansible_play_hosts_all' => %w[tack-qa tack] },
     'two guests' => { 'ansible_play_hosts_all' => %w[tack-qa tack-data1-suburban] },
     'a short commit' => { 'tack_commit' => '66ef50f' },
     'an empty command' => { 'tack_ops_command' => '' },
@@ -156,6 +159,10 @@ RSpec.describe TackOpsPlaybook do
                                           'tack_ops_args' => ['--rate=1000', '--commit'])).to be(true)
     expect(described_class.request_passes('tack_ops_command' => 'ops qa datagen search-mixed',
                                           'tack_ops_args' => ['--rate=1000', '--write-rate=60', '--commit'])).to be(true)
+  end
+
+  it 'accepts ops search verify on the production owner guest' do
+    expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'])).to be(true)
   end
 
   it 'refuses every request outside the reviewed commands, guests, and arguments', :aggregate_failures do
