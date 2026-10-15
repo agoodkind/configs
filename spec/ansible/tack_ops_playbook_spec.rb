@@ -6,9 +6,10 @@ require_relative '../support/task_expressions'
 require_relative '../support/tack_ops_identity'
 
 # tack-ops runs one reviewed Tack ops command on one QA guest or on the
-# production owner guest with the rendered operator identity. These examples run the real playbook through its identity
-# guard and evaluate the real playbook text: the request check, the task
-# order, and the rendered command lines.
+# production owner guest with the rendered operator identity.
+# These examples run the real playbook through its identity guard and
+# evaluate the real playbook text: the request check, the task order, and
+# the rendered command lines.
 module TackOpsPlaybook
   PLAYBOOKS = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks')
   PLAYBOOK_FILE = File.join(PLAYBOOKS, 'tack-ops.yml')
@@ -19,7 +20,7 @@ module TackOpsPlaybook
   EXECUTE_OUTPUT_TASK = 'Show the output of the --execute run'
   QA_HOSTS = %w[tack-qa tack-data1-suburban tack-data2-suburban tack-data3-suburban].freeze
   PRODUCTION_HOSTS = %w[tack tack-data1 tack-data2 tack-data3].freeze
-  GROUPS = { 'tack_qa_all' => QA_HOSTS, 'tack_prod_all' => PRODUCTION_HOSTS }.freeze
+  GROUPS = { 'tack_qa_all' => QA_HOSTS, 'tack_prod_all' => PRODUCTION_HOSTS, 'tack_servers' => ['tack'] }.freeze
   COMMIT = '66ef50f670fd1cd6a5f4dfe8f877af30ed6c2b51'
   SERVER_DIGEST = "sha256:#{'a' * 64}".freeze
   CONSUMER_DIGEST = "sha256:#{'b' * 64}".freeze
@@ -50,7 +51,7 @@ module TackOpsPlaybook
   def request(**overrides)
     { 'tack_commit' => COMMIT, 'tack_ops_command' => 'ops search verify', 'tack_ops_args' => [],
       'tack_server_digest' => SERVER_DIGEST, 'tack_audit_consumer_digest' => CONSUMER_DIGEST,
-      'ansible_play_hosts_all' => ['tack-qa'], 'tack_provision_owner' => true, 'groups' => GROUPS }.merge(overrides)
+      'ansible_play_hosts_all' => ['tack-qa'], 'groups' => GROUPS }.merge(overrides)
   end
 
   # Whether the request check passes for variables, from the real assert.
@@ -126,7 +127,11 @@ module TackOpsPlaybook
     'an argument that sets an identity flag' => { 'tack_ops_args' => ['--operator-id=x'] },
     'a QA command on the production owner guest' => { 'ansible_play_hosts_all' => ['tack'],
                                                        'tack_ops_command' => 'ops qa datagen seed' },
-    'a production data guest' => { 'ansible_play_hosts_all' => ['tack-data1'], 'tack_provision_owner' => false },
+    'a production data guest' => { 'ansible_play_hosts_all' => ['tack-data1'] },
+    'tack_provision_owner passed for a guest outside tack_servers' => {
+      'ansible_play_hosts_all' => ['tack'], 'tack_provision_owner' => true,
+      'groups' => GROUPS.merge('tack_servers' => [])
+    },
     'a QA guest and a production guest' => { 'ansible_play_hosts_all' => %w[tack-qa tack] },
     'two guests' => { 'ansible_play_hosts_all' => %w[tack-qa tack-data1-suburban] },
     'a short commit' => { 'tack_commit' => '66ef50f' },
