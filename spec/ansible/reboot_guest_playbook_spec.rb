@@ -6,9 +6,11 @@ require_relative '../support/ansible_render'
 require_relative '../support/command_runner'
 require_relative '../support/task_expressions'
 
-# reboot-guest reboots one QA Tack guest through the reboot tasks deploy-mwan
-# imports. These examples evaluate the real request check, read the real
-# second play, and run the real playbook in check mode on a local inventory.
+# reboot-guest.yml imports tasks/reboot-and-require-new-boot.yml.
+# The deploy-mwan playbook imports the same task file.
+# reboot-guest.yml reboots exactly one QA Tack guest.
+# These examples evaluate the request check of the first play, read the second play from the
+# playbook file, and run the playbook in check mode against a local inventory.
 module RebootGuestPlaybook
   PLAYBOOKS = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks')
   PLAYBOOK_FILE = File.join(PLAYBOOKS, 'reboot-guest.yml')
