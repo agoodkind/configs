@@ -19,6 +19,11 @@
 - name: Reboot the guest and require a new boot identity
   hosts: tack_all
   gather_facts: false
+  vars:
+    repo_root: "{{ playbook_dir | dirname | dirname }}"
+    # The extension must cover the reboot wait, one renewal interval, and
+    # configsctl's early cancellation offset.
+    mwan_reboot_lock_extend_seconds: 540
   tasks:
     - name: End a check run before the reboot
       ansible.builtin.meta: end_host
