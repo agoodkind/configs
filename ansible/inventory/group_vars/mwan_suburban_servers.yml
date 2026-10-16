@@ -610,7 +610,6 @@ mwan_providers:
     from_prio: 60
     tier: 3
     weight: 1
-    selection_enabled: false
     forced_dscp: "{{ testbed_routing_forced_dscp.sonic_1 }}"
     health:
       enabled: true
@@ -652,7 +651,6 @@ mwan_providers:
     from_prio: 61
     tier: 3
     weight: 1
-    selection_enabled: false
     forced_dscp: "{{ testbed_routing_forced_dscp.sonic_2 }}"
     health:
       enabled: true
@@ -714,7 +712,6 @@ mwan_providers:
     from_prio: 62
     tier: 3
     weight: 1
-    selection_enabled: false
     forced_dscp: "{{ testbed_routing_forced_dscp.etheric }}"
     health:
       enabled: true
@@ -757,7 +754,6 @@ mwan_providers:
     from_prio: 63
     tier: 3
     weight: 1
-    selection_enabled: false
     forced_dscp: "{{ testbed_routing_forced_dscp.astound_static_astound }}"
     health:
       enabled: true
@@ -800,7 +796,6 @@ mwan_providers:
     from_prio: 64
     tier: 3
     weight: 1
-    selection_enabled: false
     forced_dscp: "{{ testbed_routing_forced_dscp.tunnel_static_sonic_1 }}"
     health:
       enabled: true
@@ -857,7 +852,6 @@ mwan_providers:
     from_prio: 65
     tier: 3
     weight: 1
-    selection_enabled: false
     forced_dscp: "{{ testbed_routing_forced_dscp.tunnel_upstream_sonic_2 }}"
     health:
       enabled: true
@@ -914,7 +908,6 @@ mwan_providers:
     from_prio: 66
     tier: 3
     weight: 1
-    selection_enabled: false
     forced_dscp: "{{ testbed_routing_forced_dscp.tunnel_vps_sonic_1 }}"
     health:
       enabled: true
@@ -971,7 +964,6 @@ mwan_providers:
     from_prio: 67
     tier: 3
     weight: 1
-    selection_enabled: false
     forced_dscp: "{{ testbed_routing_forced_dscp.tunnel_vps_astound }}"
     health:
       enabled: true
