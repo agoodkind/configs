@@ -101,7 +101,7 @@ RSpec.describe TackSearchNode do
   end
 
   it 'seeds production from the member list and sets the initial cluster manager only on the first member', :aggregate_failures do
-    rendered = TackSearchInventory.rendered(:production, member_count: 3)
+    rendered = TackSearchInventory.rendered(:production, member_count: 3, overrides: { 'tack_search_bootstrap_cluster' => true })
     # OpenSearch 3.8.0 TcpTransport.parse refuses an unbracketed IPv6 seed host.
     seeds = '[3d06:bad:b01::125],[3d06:bad:b01::126],[3d06:bad:b01::127]'
 

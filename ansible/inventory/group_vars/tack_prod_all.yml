@@ -121,9 +121,9 @@ tack_search_single_node: false
 tack_search_cluster_name: tack-search-production
 
 # While this value is true, the env file of the first member sets that member
-# as the initial cluster manager. Set it to false after the cluster forms.
-# Later members discover the existing cluster.
-tack_search_bootstrap_cluster: true
+# as the initial cluster manager. The production cluster formed on 2026-10-15,
+# so the value is false. Every member discovers the existing cluster.
+tack_search_bootstrap_cluster: false
 
 tack_search_username: "{{ vault_tack_search_username }}"
 tack_search_password: "{{ vault_tack_search_password }}"
@@ -143,5 +143,5 @@ tack_search_cursor_key: "{{ vault_tack_search_cursor_key }}"
 tack_search_shards: 1
 tack_search_routing_shards: 8
 tack_search_replicas: 0
-tack_search_public_enabled: false
+tack_search_public_enabled: true
 tack_search_model_repair_enabled: false

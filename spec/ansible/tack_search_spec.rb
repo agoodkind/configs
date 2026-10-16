@@ -97,7 +97,7 @@ RSpec.describe TackSearchEnvironment do
     expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::PUBLIC_SETTING_NAMES)
   end
 
-  it 'the production configuration enables search with public search and model repair off' do
+  it 'the production configuration enables public search, keeps model repair off, and ends the bootstrap', :aggregate_failures do
     rendered = TackSearchInventory.rendered(:production)
 
     expect(described_class.search_settings(rendered)).to eq(
@@ -108,8 +108,12 @@ RSpec.describe TackSearchEnvironment do
       'OPENSEARCH_SHARDS' => '1',
       'OPENSEARCH_ROUTING_SHARDS' => '8',
       'OPENSEARCH_REPLICAS' => '0',
-      'OPENSEARCH_PUBLIC_ENABLED' => 'false',
-      'OPENSEARCH_MODEL_REPAIR_ENABLED' => 'false'
+      'OPENSEARCH_PUBLIC_ENABLED' => 'true',
+      'OPENSEARCH_MODEL_REPAIR_ENABLED' => 'false',
+      'OPENSEARCH_CURSOR_KEY' => 'render-only-vault_tack_search_cursor_key'
+    )
+    expect(rendered.settings(rendered.member_host('tack_search1'))).to include(
+      'TACK_SEARCH_INITIAL_CLUSTER_MANAGER_NODES' => ''
     )
   end
 
