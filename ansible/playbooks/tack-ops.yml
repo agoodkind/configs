@@ -57,6 +57,9 @@
             'ops search provision', 'ops search reindex', 'ops search verify']
           - tack_ops_args is sequence and tack_ops_args is not string and tack_ops_args is not mapping
           - tack_ops_command != 'ops backfill once-drop-killtest-schema' or tack_ops_args == []
+          - >-
+            tack_ops_command != 'ops backfill once-search-projections'
+            or tack_ops_args == ['--manifest=/etc/tack/search-projections.json']
           - tack_ops_args | reject('match', '--[a-z][a-z0-9-]*(=[A-Za-z0-9._/:@,\[\]-]+)?\Z') | list == []
           - tack_ops_args | select('match', '--(execute|operator-|deploy-commit)') | list == []
           - >-
@@ -82,7 +85,8 @@
           lowercase hex characters. Each extra argument is one --flag or
           --flag=value token and never --execute, --operator-*, or
           --deploy-commit. ops backfill once-drop-killtest-schema accepts no
-          extra argument. Command "{{ tack_ops_command }}", arguments
+          extra argument. ops backfill once-search-projections accepts only
+          the argument --manifest=/etc/tack/search-projections.json. Command "{{ tack_ops_command }}", arguments
           {{ tack_ops_args }}, commit "{{ tack_commit }}", tack-server digest
           "{{ tack_server_digest }}", tack-audit-consumer digest
           "{{ tack_audit_consumer_digest }}", guests
@@ -143,6 +147,23 @@
     - name: Refuse a search index build without a complete metadata name index
       ansible.builtin.include_tasks: tasks/tack-search-metadata-name-index.yml
       when: *tack_ops_index_build
+
+    # The app service mounts /etc/tack read-only. ops backfill
+    # once-search-projections reads its reviewed manifest from
+    # /etc/tack/search-projections.json. Only production has a reviewed
+    # manifest. The task also writes the file in check mode because the dry run
+    # reads it.
+    - name: Install the reviewed search projection manifest
+      ansible.builtin.copy:
+        src: "{{ playbook_dir | dirname | dirname }}/tack/search-projections/production.json"
+        dest: /etc/tack/search-projections.json
+        owner: root
+        group: root
+        mode: "0644"
+      check_mode: false
+      when:
+        - tack_ops_command == 'ops backfill once-search-projections'
+        - inventory_hostname in groups['tack_prod_all']
 
     - name: Print the dry run of the Tack ops command
       ansible.builtin.command:
