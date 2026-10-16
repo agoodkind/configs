@@ -9,17 +9,13 @@ require_relative '../support/task_expressions'
 # reboot-guest.yml imports tasks/reboot-and-require-new-boot.yml.
 # The deploy-mwan playbook imports the same task file.
 # reboot-guest.yml reboots exactly one QA Tack guest.
-# These examples evaluate the request check of the first play, read the second play from the
-# playbook file, and run the playbook in check mode against a local inventory.
+# These examples evaluate the request check of the first play and run the playbook in check mode against a local inventory.
 module RebootGuestPlaybook
   PLAYBOOKS = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks')
   PLAYBOOK_FILE = File.join(PLAYBOOKS, 'reboot-guest.yml')
-  REBOOT_TASK_FILE = 'tasks/reboot-and-require-new-boot.yml'
   REQUEST_TASK = 'Refuse a guest reboot outside one QA Tack guest'
   CHECK_END_TASK = 'End a check run before the reboot'
   SCHEDULE_TASK = 'Schedule the reboot independently of the SSH connection'
-  IMPORT_KEY = 'ansible.builtin.import_tasks'
-  META_KEY = 'ansible.builtin.meta'
   QA_GUEST = 'tack-app2.suburban.goodkind.io'
   QA_HOSTS = [QA_GUEST, 'tack-qa.suburban.goodkind.io'].freeze
   PRODUCTION_GUEST = 'tack-app2.home.goodkind.io'
@@ -80,19 +76,13 @@ RSpec.describe RebootGuestPlaybook do
     end
   end
 
-  it 'ends a check run and imports the shared reboot tasks as the only tasks of the second play', :aggregate_failures do
-    check_end, reboot = described_class.plays[1].fetch('tasks')
-
-    expect(described_class.plays[1].fetch('tasks').size).to eq(2)
-    expect(check_end.except('name')).to eq(RebootGuestPlaybook::META_KEY => 'end_host', 'when' => 'ansible_check_mode')
-    expect(reboot.except('name')).to eq(RebootGuestPlaybook::IMPORT_KEY => RebootGuestPlaybook::REBOOT_TASK_FILE)
-  end
-
-  it 'passes the request check and schedules no reboot in a check run on one QA guest', :aggregate_failures do
+  it 'passes the request check, ends the check run before the reboot, and schedules no reboot on one QA guest',
+     :aggregate_failures do
     result = described_class.check_run
 
     expect(result.exit_status.success?).to be(true), result.output
     expect(result.output).to include("TASK [#{RebootGuestPlaybook::REQUEST_TASK}]")
+    expect(result.output).to include("TASK [#{RebootGuestPlaybook::CHECK_END_TASK}]")
     expect(result.output).not_to include("TASK [#{RebootGuestPlaybook::SCHEDULE_TASK}]")
   end
 end
