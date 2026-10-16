@@ -88,10 +88,10 @@
           --deploy-commit. ops backfill once-drop-killtest-schema accepts no
           extra argument. ops backfill once-search-projections accepts only
           the argument --manifest=/etc/tack/search-projections.json. Command
-          "{{ tack_ops_command }}", arguments {{ tack_ops_args }}, commit "{{ tack_commit }}", tack-server digest
-          "{{ tack_server_digest }}", tack-audit-consumer digest
-          "{{ tack_audit_consumer_digest }}", guests
-          {{ ansible_play_hosts_all }}.
+          "{{ tack_ops_command }}", arguments {{ tack_ops_args }}, commit
+          "{{ tack_commit }}", tack-server digest "{{ tack_server_digest }}",
+          tack-audit-consumer digest "{{ tack_audit_consumer_digest }}",
+          guests {{ ansible_play_hosts_all }}.
         quiet: true
       any_errors_fatal: true
 
