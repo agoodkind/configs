@@ -175,6 +175,11 @@ RSpec.describe TackOpsPlaybook do
     expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'])).to be(true)
   end
 
+  it 'accepts the full ops search reindex on the production owner guest' do
+    expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'], 'tack_ops_command' => 'ops search reindex',
+                                          'tack_ops_args' => ['--mode=full'])).to be(true)
+  end
+
   it 'accepts ops backfill once-search-projections on the production owner guest' do
     expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'],
                                           'tack_ops_command' => 'ops backfill once-search-projections',
