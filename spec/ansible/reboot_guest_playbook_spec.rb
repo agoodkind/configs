@@ -1,32 +1,21 @@
 # frozen_string_literal: true
 
 require 'tmpdir'
-require 'yaml'
 require_relative '../support/ansible_render'
 require_relative '../support/command_runner'
-require_relative '../support/task_expressions'
 
 # reboot-guest.yml imports tasks/reboot-and-require-new-boot.yml.
 # The deploy-mwan playbook imports the same task file.
 # reboot-guest.yml reboots exactly one QA Tack guest.
-# These examples evaluate the request check of the first play and run the playbook in check mode against a local inventory.
+# These examples run the playbook in check mode against local inventories.
 module RebootGuestPlaybook
   PLAYBOOKS = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks')
   PLAYBOOK_FILE = File.join(PLAYBOOKS, 'reboot-guest.yml')
   REQUEST_TASK = 'Refuse a guest reboot outside one QA Tack guest'
   CHECK_END_TASK = 'End a check run before the reboot'
   SCHEDULE_TASK = 'Schedule the reboot independently of the SSH connection'
-  QA_GUEST = 'tack-app2.suburban.goodkind.io'
-  QA_HOSTS = [QA_GUEST, 'tack-qa.suburban.goodkind.io'].freeze
-  PRODUCTION_GUEST = 'tack-app2.home.goodkind.io'
-  OTHER_HOST = 'proxy.home.goodkind.io'
-  GROUPS = { 'tack_qa_all' => QA_HOSTS, 'tack_prod_all' => [PRODUCTION_GUEST] }.freeze
-  REFUSED_REQUESTS = {
-    'two QA guests' => QA_HOSTS,
-    'a production guest' => [PRODUCTION_GUEST],
-    'a host outside the Tack groups' => [OTHER_HOST]
-  }.freeze
-  CHECK_INVENTORY = <<~INVENTORY
+  REFUSAL_MESSAGE = 'reboot-guest reboots exactly one QA Tack guest'
+  QA_GUEST_INVENTORY = <<~INVENTORY
     [tack_all]
     reboot-test ansible_connection=local
 
@@ -35,27 +24,44 @@ module RebootGuestPlaybook
 
     [tack_prod_all]
   INVENTORY
+  REFUSED_INVENTORIES = {
+    'two QA guests' => <<~INVENTORY,
+      [tack_all]
+      reboot-test-one ansible_connection=local
+      reboot-test-two ansible_connection=local
+
+      [tack_qa_all]
+      reboot-test-one
+      reboot-test-two
+
+      [tack_prod_all]
+    INVENTORY
+    'a production guest' => <<~INVENTORY,
+      [tack_all]
+      reboot-test ansible_connection=local
+
+      [tack_qa_all]
+
+      [tack_prod_all]
+      reboot-test
+    INVENTORY
+    'a host outside the QA and production groups' => <<~INVENTORY
+      [tack_all]
+      reboot-test ansible_connection=local
+
+      [tack_qa_all]
+
+      [tack_prod_all]
+    INVENTORY
+  }.freeze
   RUN_TIMEOUT_SECONDS = 120
 
   module_function
 
-  def plays
-    YAML.safe_load_file(PLAYBOOK_FILE)
-  end
-
-  # Whether the request check passes for the selected hosts, from the real assert.
-  def request_passes(hosts)
-    request = plays.first.fetch('tasks').find { |task| task['name'] == REQUEST_TASK }
-    that = TaskExpressions.condition_list(request.dig('ansible.builtin.assert', 'that'))
-    variables = { 'ansible_play_hosts_all' => hosts, 'groups' => GROUPS }
-    TaskExpressions.evaluate(variables: variables, facts: [], conditions: { 'request' => that })
-                   .dig('conditions', 'request')
-  end
-
-  def check_run
+  def check_run(inventory_text)
     Dir.mktmpdir('reboot-guest') do |directory|
       inventory = File.join(directory, 'inventory.ini')
-      File.write(inventory, CHECK_INVENTORY)
+      File.write(inventory, inventory_text)
       password = File.join(directory, 'vault-password')
       File.write(password, AnsibleRender::VAULT_PASSWORD_PLACEHOLDER, perm: AnsibleRender::SECRET_FILE_MODE)
       argv = [AnsibleRender::PLAYBOOK_COMMAND, '--check', '--inventory', inventory, PLAYBOOK_FILE]
@@ -66,19 +72,19 @@ module RebootGuestPlaybook
 end
 
 RSpec.describe RebootGuestPlaybook do
-  it 'accepts one QA Tack guest' do
-    expect(described_class.request_passes([RebootGuestPlaybook::QA_GUEST])).to be(true)
-  end
+  it 'refuses two QA guests, a production guest, and a host outside the QA and production groups',
+     :aggregate_failures do
+    RebootGuestPlaybook::REFUSED_INVENTORIES.each do |label, inventory_text|
+      result = described_class.check_run(inventory_text)
 
-  it 'refuses two guests, a production guest, and a host outside the Tack groups', :aggregate_failures do
-    RebootGuestPlaybook::REFUSED_REQUESTS.each do |label, hosts|
-      expect(described_class.request_passes(hosts)).to be(false), label
+      expect(result.exit_status.success?).to be(false), label
+      expect(result.output).to include(RebootGuestPlaybook::REFUSAL_MESSAGE), label
     end
   end
 
   it 'passes the request check, ends the check run before the reboot, and schedules no reboot on one QA guest',
      :aggregate_failures do
-    result = described_class.check_run
+    result = described_class.check_run(RebootGuestPlaybook::QA_GUEST_INVENTORY)
 
     expect(result.exit_status.success?).to be(true), result.output
     expect(result.output).to include("TASK [#{RebootGuestPlaybook::REQUEST_TASK}]")
