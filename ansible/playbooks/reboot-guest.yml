@@ -25,7 +25,7 @@
     # configsctl's early cancellation offset.
     mwan_reboot_lock_extend_seconds: 540
     # The guest reboot deletes Ansible's module directory under /tmp.
-    # Pipelining sends each module over SSH stdin instead of uploading it there.
+    # Pipelining avoids uploading supported modules to the guest's temporary directory.
     ansible_pipelining: true
   tasks:
     - name: End a check run before the reboot
