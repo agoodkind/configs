@@ -6,7 +6,7 @@
 # group tack_servers. On that guest, the playbook accepts only ops deploy
 # verify, ops backfill once-search-projections, ops search provision, ops
 # search reindex, and ops search verify. The QA reset runs its hand-run ops
-# commands only through this playbook. Each row those commands record then
+# commands only through this playbook. Each row that those commands record
 # includes the agent service, session, accountable operator, and deploy
 # commit.
 #
