@@ -52,7 +52,7 @@ locals {
     disk_size_gb = 8
   }
 
-  # Keep LAN client ports on the host until the user authorizes LAN activation.
+  # The gateway must not own LAN-facing ports.
   poweredge_lan_ports = toset(["nic0", "nic3", "ens1f1"])
 
   poweredge_gateway_container_options = {
@@ -63,6 +63,7 @@ locals {
 
   poweredge_lan_container_options = {
     hostnic0 = "link=nic1v1,name=mwanbr"
+    hostnic1 = "link=nic0,name=lan,up=1"
   }
 
   poweredge_container_options = {
@@ -197,7 +198,7 @@ resource "pveguest_container_options" "poweredge_gateway" {
   lifecycle {
     precondition {
       condition     = length(local.poweredge_container_lan_links.gateway) == 0
-      error_message = "Container options assign PowerEdge LAN ports that must stay on the host while the LAN is dormant (nic0, nic3, ens1f1): ${join(", ", local.poweredge_container_lan_links.gateway)}"
+      error_message = "The PowerEdge WAN container cannot own LAN-facing ports (nic0, nic3, ens1f1): ${join(", ", local.poweredge_container_lan_links.gateway)}"
     }
   }
 
@@ -211,8 +212,8 @@ resource "pveguest_container_options" "poweredge_lan" {
 
   lifecycle {
     precondition {
-      condition     = length(local.poweredge_container_lan_links.lan) == 0
-      error_message = "Container options assign PowerEdge LAN ports that must stay on the host while the LAN is dormant (nic0, nic3, ens1f1): ${join(", ", local.poweredge_container_lan_links.lan)}"
+      condition     = length(setsubtract(toset(local.poweredge_container_lan_links.lan), toset(["nic0"]))) == 0
+      error_message = "The PowerEdge LAN container may own nic0. Keep nic3 and ens1f1 on the host."
     }
   }
 
