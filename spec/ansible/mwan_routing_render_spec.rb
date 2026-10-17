@@ -61,7 +61,7 @@ RSpec.describe 'MWAN routing scenario configuration' do
         'name' => 'tunnel_upstream_home', 'peer-address' => '2001:db8:4ff:10::2',
         'local-address' => '2001:db8:4ff:1::1', 'local-as' => 64_512, 'remote-as' => 64_541,
         'router-id' => '10.240.240.3', 'multihop-ttl' => 2, 'keepalive' => 3, 'hold' => 9,
-        'connect-retry' => 5, 'route-metric' => 8600,
+        'connect-retry' => 5, 'graceful-restart-time' => 60, 'route-metric' => 8600,
         'import' => [
           { 'prefix' => '2001:db8:480:1::/64', 'min-length' => 64, 'max-length' => 64 },
           { 'prefix' => '::/0', 'min-length' => 0, 'max-length' => 0 }
@@ -84,6 +84,8 @@ RSpec.describe 'MWAN routing scenario configuration' do
     %w[enetheric0 sit-vps-sonic sit-vps-astound].each do |name|
       expect(sessions.fetch(name).first).not_to have_key('multihop-ttl')
     end
+    restart_times = configured.transform_values { |list| list.map { |session| session.fetch('graceful-restart-time') } }
+    expect(restart_times.values.flatten).to all(eq(60))
   end
 
   it 'renders a default gateway on each tunnel without a session and each tunnel on its connection' do
