@@ -1,5 +1,8 @@
 ---
-# routing_tunnel_loss is a line of routing_recovery_tunnel_losses.
+# routing_tunnel_loss is one tunnel loss entry of routing_recovery_tunnel_losses.
+# Its fields are the tunnel, its endpoint node, its endpoint interface, the
+# remaining checked tunnel, and the comma-separated gateway addresses of the
+# sessions on the lost tunnel.
 - name: Collect the tunnel loss inputs
   ansible.builtin.set_fact:
     routing_tunnel_fault:
@@ -29,13 +32,23 @@
         routing_session_established: false
         routing_session_retries: "{{ routing_recovery.wait_retries }}"
 
-    - name: Require the home prefix on each upstream router
+    - name: Read the BGP route to the home prefix on each upstream router
       ansible.builtin.command:
         argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, ip, -j, "-6", route, show, exact, "{{ item.1 }}", proto, bgp]
       loop: "{{ routing_recovery.upstream_nodes | product(routing_recovery.scenario.home_prefixes) | list }}"
       register: routing_tunnel_loss_home
       changed_when: false
-      failed_when: routing_tunnel_loss_home.stdout | from_json == []
+
+    - name: Require the home prefix on each upstream router
+      ansible.builtin.assert:
+        that:
+          - item.stdout | from_json != []
+        fail_msg: >-
+          Routing scenario {{ routing_recovery.name }}: {{ item.item.0 }} has no BGP route to
+          {{ item.item.1 }} after the loss of tunnel {{ routing_tunnel_fault.tunnel }}.
+      loop: "{{ routing_tunnel_loss_home.results }}"
+      loop_control:
+        label: "{{ item.item.0 }} {{ item.item.1 }}"
 
     - name: Require IPv6 packets through the remaining tunnel
       ansible.builtin.include_tasks:

@@ -1,5 +1,8 @@
 ---
-# routing_restart is a line of routing_recovery_restarts.
+# routing_restart is one restart entry of routing_recovery_restarts. Its fields
+# are the tunnel endpoint node, the comma-separated IDs of the gateway sessions
+# on the node's tunnels, and the session wait retries that fit in the longest
+# hold time of those sessions.
 - name: Collect the simulator restart inputs
   ansible.builtin.set_fact:
     routing_restart_fault:
@@ -16,6 +19,8 @@
       | selectattr('id', 'in', routing_restart[1].split(',') | reject('equalto', '') | list) | list }}
 
 - name: Check the restart of {{ routing_restart_fault.node }}
+  vars:
+    routing_restart_system_states: [running, degraded]
   block:
     - name: Read the UTC clock before the simulator restart
       ansible.builtin.command:
@@ -28,17 +33,27 @@
         argv: [pct, reboot, "{{ routing_restart_fault.vmid }}"]
       changed_when: true
 
-    # check-routing-simulator-node.yml checks every service the node declares,
-    # so a degraded state from an undeclared unit does not fail the wait.
+    # systemctl is-system-running exits nonzero for degraded. The assertion
+    # below reads the state from stdout.
     - name: Wait until systemd in the simulator guest finishes startup
       ansible.builtin.command:
         argv: [pct, exec, "{{ routing_restart_fault.vmid }}", --, systemctl, is-system-running, --wait]
       register: routing_restart_system
       changed_when: false
-      failed_when: routing_restart_system.stdout not in ['running', 'degraded']
-      until: routing_restart_system.stdout in ['running', 'degraded']
+      failed_when: false
+      until: routing_restart_system.stdout in routing_restart_system_states
       retries: "{{ routing_recovery.wait_retries }}"
       delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+    # check-routing-simulator-node.yml checks every service that the node
+    # declares. A degraded state from an undeclared unit passes this assertion.
+    - name: Require a running or degraded systemd state in the simulator guest
+      ansible.builtin.assert:
+        that:
+          - routing_restart_system.stdout in routing_restart_system_states
+        fail_msg: >-
+          {{ routing_restart_fault.node }}: systemctl is-system-running printed
+          {{ routing_restart_system.stdout }} and exited {{ routing_restart_system.rc }}.
 
     - name: Restart FRR in the simulator guest
       ansible.builtin.command:

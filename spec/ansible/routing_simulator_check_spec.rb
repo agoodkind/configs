@@ -286,7 +286,8 @@ RSpec.describe 'routing simulator checks' do
       variables: inventory.slice(*RoutingSimulatorConfig::LITERAL_VARIABLES).merge(
         'routing_vps_default_advertised' => result, 'routing_vps_default_present' => present
       ),
-      facts: [], conditions: { 'expected' => TaskExpressions.condition_list(wait.fetch('until')) }
+      facts: [RoutingSimulatorConfig.fact(wait.fetch('vars'), wait.fetch('vars'))],
+      conditions: { 'expected' => TaskExpressions.condition_list(wait.fetch('until')) }
     ).fetch('conditions').fetch('expected')
   end
 

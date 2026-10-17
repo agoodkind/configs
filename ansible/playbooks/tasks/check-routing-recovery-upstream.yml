@@ -2,16 +2,10 @@
 - name: Check upstream loss and recovery
   when: routing_recovery.upstream_nodes != []
   block:
-    - name: Read the clock before the upstream loss
-      ansible.builtin.command:
-        argv: [date, +%s]
-      register: routing_upstream_loss_start
-      changed_when: false
-
     - name: Read the UTC clock before the upstream loss
       ansible.builtin.command:
-        argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
-      register: routing_upstream_loss_start_utc
+        argv: [date, -u, "+{{ routing_upstream_clock_format }}"]
+      register: routing_upstream_loss_start
       changed_when: false
 
     - name: Stop FRR on each upstream router
@@ -90,17 +84,10 @@
     routing_gateway_default_present: true
   when: routing_recovery.upstream_nodes != []
 
-- name: Read the clock after the upstream recovery
-  ansible.builtin.command:
-    argv: [date, +%s]
-  register: routing_upstream_loss_end
-  changed_when: false
-  when: routing_recovery.upstream_nodes != []
-
 - name: Read the UTC clock after the upstream recovery
   ansible.builtin.command:
-    argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
-  register: routing_upstream_loss_end_utc
+    argv: [date, -u, "+{{ routing_upstream_clock_format }}"]
+  register: routing_upstream_loss_end
   changed_when: false
   when: routing_recovery.upstream_nodes != []
 
@@ -110,10 +97,11 @@
       {{ routing_recovery_results + [{
         'fault': 'upstream loss',
         'seconds_from_fault_to_recovery':
-          routing_upstream_loss_end.stdout | int - routing_upstream_loss_start.stdout | int,
+          ((routing_upstream_loss_end.stdout | to_datetime(routing_upstream_clock_format))
+          - (routing_upstream_loss_start.stdout | to_datetime(routing_upstream_clock_format))).total_seconds() | int,
         'vps_gateway_sessions': routing_recovery.vps_gateway_sessions | map(attribute='id') | list,
-        'started_utc': routing_upstream_loss_start_utc.stdout,
-        'recovered_utc': routing_upstream_loss_end_utc.stdout,
+        'started_utc': routing_upstream_loss_start.stdout,
+        'recovered_utc': routing_upstream_loss_end.stdout,
         'result': 'passed'
       }] }}
   when: routing_recovery.upstream_nodes != []

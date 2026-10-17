@@ -18,6 +18,8 @@
 
     - name: Check upstream loss and recovery
       ansible.builtin.import_tasks: check-routing-recovery-upstream.yml
+      vars:
+        routing_upstream_clock_format: "%Y-%m-%dT%H:%M:%SZ"
 
     - name: Check the undeclared prefix
       ansible.builtin.import_tasks: check-routing-recovery-undeclared.yml

@@ -1,5 +1,9 @@
 ---
-# routing_sibling_loss is a line of routing_recovery_sibling_losses.
+# routing_sibling_loss is one sibling link loss entry of
+# routing_recovery_sibling_losses. Its fields are the failed connection, the
+# kept connection, their shared simulator node, the simulator interface of the
+# failed connection, and the comma-separated checked tunnels on the kept
+# connection.
 - name: Collect the sibling link loss inputs
   ansible.builtin.set_fact:
     routing_sibling_fault:
