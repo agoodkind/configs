@@ -18,13 +18,13 @@
 
     - name: Push each file with a changed checksum
       ansible.builtin.copy:
-        src: "{{ rsim_temp_dir }}/{{ item.0.0 }}"
-        dest: "{{ item.0.1 }}"
-        mode: "{{ item.0.2 }}"
-      loop: "{{ rsim_files | zip(rsim_staged.results, rsim_installed.results) | list }}"
+        src: "{{ rsim_temp_dir }}/{{ item.0 }}"
+        dest: "{{ item.1 }}"
+        mode: "{{ item.2 }}"
+      loop: "{{ rsim_files }}"
       loop_control:
-        label: "{{ item.0.1 }}"
-      when: not item.2.stdout.startswith(item.1.stat.checksum)
+        label: "{{ item.1 }}"
+      when: item.1 in rsim_changed_files
 
     - name: Collect the service groups with a pending apply
       ansible.builtin.import_tasks: ../../../ansible/playbooks/tasks/deploy-routing-simulator-pending.yml
