@@ -212,6 +212,13 @@ select its provider. The service that first needs an operation does not
 determine its implementation owner. A shared configuration module combines
 resources without duplicating their implementation.
 
+Docker management must have a tested bootstrap and recovery path that does
+not require a connection to the guest's IP address or a working Docker
+network endpoint. Use the existing Proxmox guest API for prerequisite setup
+and repair. Verify the provider's actual configuration and refresh behavior
+before selecting its connection method. Reuse generic Docker resources and
+implement only a verified generic capability gap.
+
 The [approved Tack design](https://github.com/agoodkind/tack/blob/main/docs/superpowers/specs/2026-10-10-tack-provider.md)
 governs Tack deployment. Application-specific resources implement rules such
 as Tack's schema compatibility and coordinated search replacement, or MWAN's
@@ -314,7 +321,8 @@ each remaining item. A genuine decision requires options and a recommendation.
 - AC16: Tack and MWAN reuse generic provider resources and the shared guest
   module. Applicable AC1 through AC8 pass. Every custom resource has the
   section 12 justification. A shared capability passes acceptance for each
-  consumer that requires it.
+  consumer that requires it. Docker acceptance includes fresh-guest bootstrap
+  and repair when guest management networking is unavailable.
 - AC17: Tack passes its approved deployment acceptance requirements on QA
   and production without invoking Ansible. Adoption preserves identities and
   data volumes. Planning does not change deployed state. Drift repair and

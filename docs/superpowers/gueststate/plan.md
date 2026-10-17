@@ -22,6 +22,15 @@ Distinguish an existing implementation from one that still needs development.
 The source tasks establish required behavior. Their current grouping does not
 determine provider ownership.
 
+Docker connection selection must account for initial setup and recovery.
+Verify a fresh guest before Docker and its management endpoint exist. Verify
+repair after guest management networking becomes unavailable. Use the existing
+Proxmox guest API for prerequisite setup and repair. A Docker network endpoint
+cannot be the only management path. Preserve the generic Docker resource
+model and prove the exact connection gap before implementing an adapter.
+These checks use existing real test guests; they do not require new PowerEdge
+simulators.
+
 | Work | Tickets | Owner | Concrete action | Completion check |
 | --- | --- | --- | --- | --- |
 | Guest preparation | [LAB-90](https://tack.home.goodkind.io/browse/LAB-90) | Generic provider maintainer | Reuse the [base module](../../../opentofu/guest/base/main.tf). Check the provider contract for package versions, upgrade restrictions, repositories, users, directories, file differences, and removal behavior before proposing extensions. | Each required operation has an existing resource or a verified gap. Both services use the same implementation where they require that operation. |
