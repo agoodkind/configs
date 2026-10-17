@@ -22,7 +22,21 @@
       interfaces: >-
         {{ rsim_service.routing_interfaces.values() | rejectattr('network', 'equalto', 'management')
         | sort(attribute='name') }}
-      tunnels: "{{ rsim_scenario.tunnels | selectattr('remote.node', 'equalto', rsim_name) | list }}"
+      # systemd-networkd sets addrgenmode none on every SIT device. FRR
+      # requires an IPv6 link-local address to set the next hop of a BGP
+      # session over a tunnel. The tunnel unit configures one with an
+      # interface identifier that joins the outer IPv4 endpoints. The
+      # inventory validation requires each endpoint pair to be unique.
+      tunnels: >-
+        {%- set tunnels = [] -%}
+        {%- for tunnel in rsim_scenario.tunnels | selectattr('remote.node', 'equalto', rsim_name) -%}
+        {%- set octets = (tunnel.remote.outer_ipv4.split('.') + tunnel.local.outer_ipv4.split('.'))
+        | map('int') | list -%}
+        {%- set link_local = 'fe80::%x:%x:%x:%x' % (octets[0] * 256 + octets[1], octets[2] * 256 + octets[3],
+        octets[4] * 256 + octets[5], octets[6] * 256 + octets[7]) -%}
+        {%- set _ = tunnels.append(tunnel | combine({'link_local_ipv6': link_local})) -%}
+        {%- endfor -%}
+        {{ tunnels }}
       static_routes: >-
         {{ rsim_scenario.routes | selectattr('node', 'equalto', rsim_name)
         | rejectattr('destination', 'in', rsim_tracked_destinations) | list }}

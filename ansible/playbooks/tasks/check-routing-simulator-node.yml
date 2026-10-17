@@ -37,7 +37,8 @@
     rsim_expected_addresses: >-
       {{ (rsim.interfaces | map(attribute='ipv4') | reject('equalto', '') | list)
       + (rsim.interfaces | map(attribute='ipv6') | reject('equalto', '') | list)
-      + (rsim.tunnels | map(attribute='remote.inner_ipv6') | list) }}
+      + (rsim.tunnels | map(attribute='remote.inner_ipv6') | list)
+      + (rsim.tunnels | map(attribute='link_local_ipv6') | list) }}
 
 - name: Read each tunnel device
   ansible.builtin.command:
