@@ -79,33 +79,33 @@ module RoutingSimulatorConfig
     ).fetch('conditions').fetch('valid')
   end
 
+  def scenario_input_tasks
+    [task('Collect the connections that the checks stamp', 'tasks', 'check-routing-connection-selection.yml'),
+     task('Collect the scenario check inputs', 'tasks', 'check-routing-scenario-inputs.yml')]
+  end
+
   def required_checks_valid?(inventory, scenario, mode, results)
-    inputs = task('Collect the scenario check inputs', 'tasks', 'check-routing-scenario-inputs.yml')
     assertion = task('Require every required check', 'tasks', 'check-routing-scenario.yml')
     assertion_valid?(
       inventory, assertion, { 'routing_scenario_name' => scenario, 'routing_scenario_mode' => mode },
-      [TaskExpressions.fact_task(inputs), fact({ 'routing_check_results' => results })]
+      scenario_input_tasks.map { |item| TaskExpressions.fact_task(item) } + [fact({ 'routing_check_results' => results })]
     )
   end
 
-  # Evaluates the scenario and connection inputs of the MWAN check and then the
-  # fact tasks in later, and returns the facts.
   def connection_facts(inventory, scenario, connection, variables: {}, later: [])
-    inputs = task('Collect the scenario check inputs', 'tasks', 'check-routing-scenario-inputs.yml')
     connection_inputs = task('Collect the connection check inputs', 'tasks', 'check-routing-mwan-connection.yml')
     TaskExpressions.evaluate(
       variables: inventory.slice(*LITERAL_VARIABLES).merge(
         'routing_scenario_name' => scenario, 'routing_scenario_mode' => 'mwan', 'routing_connection_id' => connection
       ).merge(variables),
-      facts: inventory_facts(inventory) + [inputs, connection_inputs, *later].map { |item| TaskExpressions.fact_task(item) }
+      facts: inventory_facts(inventory) +
+             [*scenario_input_tasks, connection_inputs, *later].map { |item| TaskExpressions.fact_task(item) }
     ).fetch('facts')
   end
 
-  # Evaluates the scenario inputs and the ordinary IPv4 connection inputs with
-  # gateway_reads as the registered qm guest exec reads, and returns the facts.
   def ipv4_connection_facts(inventory, scenario, connection, gateway_reads)
     file = 'check-routing-ordinary-ipv4.yml'
-    tasks = [task('Collect the scenario check inputs', 'tasks', 'check-routing-scenario-inputs.yml'),
+    tasks = [*scenario_input_tasks,
              task('Collect the ordinary IPv4 connection inputs', 'tasks', file),
              task('Collect the gateway interface of the connection', 'tasks', file)]
     TaskExpressions.evaluate(

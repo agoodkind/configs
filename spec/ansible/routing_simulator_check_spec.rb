@@ -227,6 +227,45 @@ RSpec.describe 'routing simulator checks' do
     RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'routing_ipv4_captures' => { 'results' => results } }, [])
   end
 
+  def tunnel_captures_valid?(phases_and_codes)
+    assertion = RoutingSimulatorConfig.task('Require every outbound capture and one return capture on the connection',
+                                            'tasks', 'check-routing-mwan-packets.yml')
+    results = phases_and_codes.map { |phase, code| { 'rc' => code, 'item' => { 'item' => [phase, 'tunnel_vps_astound'] } } }
+    variables = { 'routing_connection' => { 'tunnels' => [{ 'id' => 'tunnel_vps_astound' }] },
+                  'routing_capture_results' => { 'results' => results } }
+    RoutingSimulatorConfig.assertion_valid?(inventory, assertion, variables, [])
+  end
+
+  it 'requires one successful return capture on a tunnel connection', :aggregate_failures do
+    outbound = [['before provider', 0], ['after provider', 0], ['inner at endpoint', 0]]
+
+    expect(tunnel_captures_valid?(outbound + [['return through provider', 124], ['return through provider', 0]])).to be(true)
+    expect(tunnel_captures_valid?(outbound + [['return through provider', 124]])).to be(false)
+    expect(tunnel_captures_valid?(outbound)).to be(false)
+  end
+
+  it 'captures only requests that leave the gateway with the forced DSCP of the connection' do
+    block = RoutingSimulatorConfig.task('Check ordinary IPv4 packets through the connection', 'tasks', 'check-routing-ordinary-ipv4.yml')
+    start = block.fetch('block').find { |task| task['name'] == 'Start the bounded packet captures on the gateway interface' }
+    connection = { 'mwan_ipv4' => '192.0.2.2', 'dscp' => '39' }
+    rendered = TaskExpressions.evaluate(
+      variables: inventory.slice(*RoutingSimulatorConfig::LITERAL_VARIABLES).merge('routing_ipv4_connection' => connection),
+      facts: [], renders: [{ 'vars' => {}, 'templates' => { 'filter' => start.fetch('loop').first.last } }]
+    ).fetch('renders').first.fetch('filter')
+
+    expect(rendered).to end_with('and ip[1] & 0xfc == 156')
+  end
+
+  it 'requires a guest exit code of zero from each gateway read', :aggregate_failures do
+    assertion = RoutingSimulatorConfig.task('Require each gateway read to succeed in the guest',
+                                            'tasks', 'check-routing-ordinary-ipv4.yml')
+    read = ->(output) { { 'item' => %w[tcpdump --version], 'stdout' => JSON.generate(output) } }
+
+    expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'item' => read.call('exitcode' => 0) }, [])).to be(true)
+    expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'item' => read.call('exitcode' => 127) }, [])).to be(false)
+    expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'item' => read.call('pid' => 7) }, [])).to be(false)
+  end
+
   it 'requires a guest exit code of zero from both gateway captures', :aggregate_failures do
     captured = { 'exitcode' => 0, 'exited' => 1 }
 

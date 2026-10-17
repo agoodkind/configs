@@ -83,7 +83,9 @@
   ansible.builtin.assert:
     that:
       - routing_capture_outbound_failures == []
-      - routing_capture_returns == [] or (routing_capture_returns | selectattr('rc', 'equalto', 0) | list) != []
+      - >-
+        routing_connection.tunnels == []
+        or (routing_capture_returns != [] and (routing_capture_returns | selectattr('rc', 'equalto', 0) | list) != [])
     fail_msg: >-
       Routing scenario {{ routing_check.name }} connection {{ routing_connection.id }}
       with DSCP {{ routing_connection.dscp }}: the captures do not show the

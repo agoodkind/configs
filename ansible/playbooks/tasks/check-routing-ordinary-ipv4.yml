@@ -23,7 +23,20 @@
     - [tcpdump, --version]
   register: routing_gateway_reads
   changed_when: false
-  failed_when: (routing_gateway_reads.stdout | from_json).exitcode != 0
+
+# qm guest exec exits 0 when the guest command fails. The guest command
+# status is the exitcode field of its JSON output.
+- name: Require each gateway read to succeed in the guest
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | from_json).exitcode is defined
+      - (item.stdout | from_json).exitcode == 0
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }}: {{ item.item | join(' ') }} on the gateway
+      returned {{ item.stdout }}
+  loop: "{{ routing_gateway_reads.results }}"
+  loop_control:
+    label: "{{ item.item | join(' ') }}"
 
 - name: Collect the gateway interface of the connection
   ansible.builtin.set_fact:
@@ -73,11 +86,15 @@
           - -c
           - "1"
           - "{{ item.1 }}"
+      # MWAN matches the forced DSCP to choose the connection and does not
+      # rewrite the DSCP. The request leaves the gateway with the client's DSCP
+      # in the upper six bits of the IPv4 TOS byte.
       loop:
         - - leaving the gateway
           - >-
             icmp and icmp[icmptype] == icmp-echo and src host {{ routing_ipv4_connection.mwan_ipv4 }}
             and dst host {{ testbed_routing_checks.ordinary_ipv4_target }}
+            and ip[1] & 0xfc == {{ routing_ipv4_connection.dscp | int * 4 }}
         - - returning to the gateway
           - >-
             icmp and icmp[icmptype] == icmp-echoreply and src host {{ testbed_routing_checks.ordinary_ipv4_target }}
@@ -119,10 +136,7 @@
       until: routing_ipv4_captures.finished
       retries: "{{ testbed_routing_checks.capture_timeout_seconds }}"
       delay: 2
-      failed_when: false
 
-    # qm guest exec exits 0 when the guest command fails. The guest command
-    # status is the exitcode field of its JSON output.
     - name: Require the packets leaving and returning on the gateway interface
       ansible.builtin.assert:
         that:

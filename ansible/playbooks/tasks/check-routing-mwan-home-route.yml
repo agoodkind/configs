@@ -25,4 +25,3 @@
 - name: Record the upstream home route
   ansible.builtin.set_fact:
     routing_check_results: "{{ routing_check_results + ['home route on upstream'] }}"
-  when: routing_check.scenario.sessions != []
