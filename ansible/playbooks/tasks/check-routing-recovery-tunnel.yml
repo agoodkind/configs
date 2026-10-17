@@ -48,11 +48,14 @@
       loop_control:
         label: "{{ item.item.0 }} {{ item.item.1 }}"
 
+    # The lost tunnel is down. The remaining tunnel is the only tunnel to the
+    # endpoint for the replies.
     - name: Require IPv6 packets through the remaining tunnel
       ansible.builtin.include_tasks:
         file: check-routing-recovery-stamped-probe.yml
       vars:
         routing_probe_connection: "{{ routing_tunnel_fault.kept_connection }}"
+        routing_probe_return_rule: kept tunnel
   always:
     - name: Set the tunnel interface up on the tunnel endpoint
       ansible.builtin.import_tasks: check-routing-recovery-links-up.yml

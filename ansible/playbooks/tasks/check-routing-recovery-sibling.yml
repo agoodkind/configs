@@ -35,12 +35,16 @@
         routing_ipv4_connection_id: "{{ routing_sibling_fault.kept_connection }}"
         routing_ordinary_phase: "during the loss of {{ routing_sibling_fault.failed_connection }}"
 
+    # Every tunnel to the endpoint stays up during a sibling link loss.
     - name: Require IPv6 packets through each checked tunnel on the kept connection
       ansible.builtin.include_tasks:
         file: check-routing-recovery-stamped-probe.yml
+      vars:
+        routing_probe_return_rule: any tunnel to the endpoint
       loop: "{{ routing_sibling_fault.kept_tunnels }}"
       loop_control:
         loop_var: routing_probe_connection
+        label: "{{ routing_probe_connection }} (replies on any tunnel to the endpoint)"
   always:
     - name: Set the simulator link of the failed connection up
       ansible.builtin.import_tasks: check-routing-recovery-links-up.yml
