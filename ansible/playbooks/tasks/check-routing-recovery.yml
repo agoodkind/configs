@@ -1,8 +1,14 @@
 ---
+- name: Collect the connections that the checks stamp
+  ansible.builtin.import_tasks: check-routing-connection-selection.yml
+
 - name: Check faults and recovery with stamped client packets
   block:
     - name: Stamp the downstream client's packets for the scenario
       ansible.builtin.import_tasks: check-routing-client-stamp.yml
+      vars:
+        routing_stamp_connection: "{{ routing_connection_selection.checked[0] }}"
+        routing_stamp_destinations: "{{ testbed_routing_scenarios[routing_scenario_name].remote_prefixes }}"
 
     - name: Collect the fault inputs
       ansible.builtin.import_tasks: check-routing-recovery-inputs.yml
@@ -21,6 +27,8 @@
   always:
     - name: Remove the client stamp
       ansible.builtin.import_tasks: check-routing-client-unstamp.yml
+  vars:
+    routing_stamp_family: ip6
 
 - name: Require every required fault check
   ansible.builtin.assert:

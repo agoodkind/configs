@@ -2,6 +2,12 @@
 testbed_routing_scenario_tunnel_static:
   kind: tunnel_configured_home
   connections: [sonic_1]
+  unchecked_connections:
+    - id: sonic_1
+      reason: >-
+        The sonic_1 underlay has no IPv6 address or IPv6 route on MWAN. MWAN uses it
+        only for the outer IPv4 packets of tunnel tunnel_static_sonic_1.
+  unchecked_ipv4_connections: []
   nodes: [tunnel_static_vps, tunnel_static_upstream, tunnel_static_client]
   home_prefixes: ["{{ testbed_routing_home_prefix }}"]
   remote_prefixes: ["{{ testbed_routing_networks.tunnel_static_remote.ipv6_net }}"]

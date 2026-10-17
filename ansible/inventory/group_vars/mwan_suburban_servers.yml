@@ -570,6 +570,7 @@ mwan_providers:
     from_prio: 59
     tier: 1
     weight: 1
+    forced_dscp: "{{ testbed_routing_forced_dscp.astound }}"
     health:
       enabled: true
       ping_count: 3

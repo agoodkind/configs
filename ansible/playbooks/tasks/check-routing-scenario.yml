@@ -31,10 +31,19 @@
       + (routing_check.transport_tunnels | map(attribute='id') | map('regex_replace', '^', 'transport source ') | list)
       + ((routing_check.mode == 'mwan') | ternary(routing_check_mwan_expected, [])) }}
     routing_check_mwan_expected: >-
-      {{ ['ordinary ipv4 before', 'packet captures', 'icmp both directions', 'tcp transfer both directions',
-      'packet size', 'ordinary ipv4 after']
-      + (routing_check.gateway_sessions | map(attribute='id') | map('regex_replace', '^', 'gateway session ') | list)
+      {{ (routing_check.checked_connections | product(routing_check_connection_expected) | map('join', ' ')
+      | map('regex_replace', '^', 'connection ') | list)
+      + (routing_check.gateway_sessions | map(attribute='connection')
+      | zip(routing_check.gateway_sessions | map(attribute='id')) | map('join', ' gateway session ')
+      | map('regex_replace', '^', 'connection ') | list)
+      + (routing_check.ipv4_connections | product(['ordinary ipv4 before', 'ordinary ipv4 after'])
+      | map('join', ' ') | map('regex_replace', '^', 'connection ') | list)
       + ((routing_check.scenario.sessions != []) | ternary(['home route on upstream'], [])) }}
+    routing_check_connection_expected:
+      - packet captures
+      - icmp both directions
+      - tcp transfer both directions
+      - packet size
 
 - name: Record the scenario report
   ansible.builtin.set_fact:
@@ -44,4 +53,11 @@
         'mode': routing_check.mode,
         'checks': routing_check_results,
         'configuration_sha256': routing_check_hashes
-      }] }}
+      } | combine((routing_check.mode == 'mwan') | ternary({
+        'connection_dscp': dict(routing_check.checked_connections
+          | zip(routing_check.checked_connections | map('extract', testbed_routing_forced_dscp))),
+        'unchecked_connections': routing_check.unchecked_connections,
+        'ipv4_connection_dscp': dict(routing_check.ipv4_connections
+          | zip(routing_check.ipv4_connections | map('extract', testbed_routing_forced_dscp))),
+        'unchecked_ipv4_connections': routing_check.unchecked_ipv4_connections
+      }, {}))] }}

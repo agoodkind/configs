@@ -2,6 +2,12 @@
 testbed_routing_scenario_tunnel_upstream:
   kind: tunnel_upstream_peer
   connections: [sonic_2]
+  unchecked_connections:
+    - id: sonic_2
+      reason: >-
+        The sonic_2 underlay has no IPv6 address or IPv6 route on MWAN. MWAN uses it
+        only for the outer IPv4 packets of tunnel tunnel_upstream_sonic_2.
+  unchecked_ipv4_connections: []
   nodes: [tunnel_upstream_vps, tunnel_upstream_upstream, tunnel_upstream_client]
   home_prefixes: ["{{ testbed_routing_home_prefix }}"]
   remote_prefixes: ["{{ testbed_routing_networks.tunnel_upstream_remote.ipv6_net }}"]
@@ -58,6 +64,7 @@ testbed_routing_scenario_tunnel_upstream:
         {{ service_mapping.routing_tunnel_upstream_upstream_suburban.routing_interfaces.remote.ipv6 }}
   sessions:
     - id: tunnel_upstream_home
+      connection: tunnel_upstream_sonic_2
       address_family: ipv6_unicast
       hops: 2
       multihop_ttl: 2

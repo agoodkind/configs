@@ -1,20 +1,160 @@
 ---
-- name: Send ordinary IPv4 packets from the downstream client
+- name: Collect the ordinary IPv4 connection inputs
+  ansible.builtin.set_fact:
+    routing_ipv4_connection:
+      id: "{{ routing_ipv4_connection_id }}"
+      dscp: "{{ testbed_routing_forced_dscp[routing_ipv4_connection_id] }}"
+      mwan_ipv4: "{{ testbed_routing_connections[routing_ipv4_connection_id].mwan_ipv4 }}"
+      # qm guest exec waits for the capture, which ends at its own timeout.
+      guest_exec_timeout: "{{ testbed_routing_checks.capture_timeout_seconds * 2 }}"
+
+- name: Report the ordinary IPv4 connection and its forced DSCP
+  ansible.builtin.debug:
+    msg: >-
+      Routing scenario {{ routing_check.name }} sends ordinary IPv4 packets
+      {{ routing_ordinary_phase }} the IPv6 checks through connection
+      {{ routing_ipv4_connection.id }} with forced DSCP {{ routing_ipv4_connection.dscp }}.
+
+- name: Read the gateway addresses and require tcpdump on the gateway
   ansible.builtin.command:
-    argv:
-      - pct
-      - exec
-      - "{{ routing_check.downstream.vmid }}"
-      - --
-      - ping
-      - "-4"
-      - -c
-      - "{{ testbed_routing_checks.ping_count }}"
-      - -W
-      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
-      - "{{ testbed_routing_checks.ordinary_ipv4_target }}"
+    argv: "{{ ['qm', 'guest', 'exec', routing_check.gateway_vmid | string, '--'] + item }}"
+  loop:
+    - [ip, -j, addr, show]
+    - [tcpdump, --version]
+  register: routing_gateway_reads
   changed_when: false
 
-- name: Record the ordinary IPv4 check
+# qm guest exec exits 0 when the guest command fails. The guest command
+# status is the exitcode field of its JSON output.
+- name: Require each gateway read to succeed in the guest
+  ansible.builtin.assert:
+    that:
+      - (item.stdout | from_json).exitcode is defined
+      - (item.stdout | from_json).exitcode == 0
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }}: {{ item.item | join(' ') }} on the gateway
+      returned {{ item.stdout }}
+  loop: "{{ routing_gateway_reads.results }}"
+  loop_control:
+    label: "{{ item.item | join(' ') }}"
+
+- name: Collect the gateway interface of the connection
   ansible.builtin.set_fact:
-    routing_check_results: "{{ routing_check_results + ['ordinary ipv4 ' ~ routing_ordinary_phase] }}"
+    routing_ipv4_interfaces: >-
+      {{ (routing_gateway_reads.results[0].stdout | from_json)['out-data'] | from_json
+      | subelements('addr_info', skip_missing=True)
+      | selectattr('1.local', 'equalto', routing_ipv4_connection.mwan_ipv4)
+      | map(attribute='0.ifname') | unique | list }}
+
+- name: Require one gateway interface with the connection address
+  ansible.builtin.assert:
+    that:
+      - routing_ipv4_interfaces | length == 1
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }} connection {{ routing_ipv4_connection.id }}:
+      the gateway interfaces {{ routing_ipv4_interfaces }} have the address
+      {{ routing_ipv4_connection.mwan_ipv4 }}, and the check requires exactly one.
+
+- name: Check ordinary IPv4 packets through the connection
+  block:
+    - name: Stamp the downstream client's packets to the ordinary IPv4 target
+      ansible.builtin.import_tasks: check-routing-client-stamp.yml
+      vars:
+        routing_stamp_connection: "{{ routing_ipv4_connection.id }}"
+        routing_stamp_destinations: ["{{ testbed_routing_checks.ordinary_ipv4_target }}"]
+
+    - name: Start the bounded packet captures on the gateway interface
+      ansible.builtin.command:
+        argv:
+          - qm
+          - guest
+          - exec
+          - "{{ routing_check.gateway_vmid }}"
+          - --timeout
+          - "{{ routing_ipv4_connection.guest_exec_timeout }}"
+          - --
+          - timeout
+          - "{{ testbed_routing_checks.capture_timeout_seconds }}"
+          - tcpdump
+          - -n
+          - -i
+          - "{{ routing_ipv4_interfaces[0] }}"
+          - -c
+          - "1"
+          - "{{ item.1 }}"
+      # MWAN matches the forced DSCP to choose the connection and does not
+      # rewrite the DSCP. The gateway sends the request with the client's DSCP
+      # in the upper six bits of the IPv4 TOS byte.
+      loop:
+        - - outbound from the gateway
+          - >-
+            icmp and icmp[icmptype] == icmp-echo and src host {{ routing_ipv4_connection.mwan_ipv4 }}
+            and dst host {{ testbed_routing_checks.ordinary_ipv4_target }}
+            and ip[1] & 0xfc == {{ routing_ipv4_connection.dscp | int * 4 }}
+        - - inbound to the gateway
+          - >-
+            icmp and icmp[icmptype] == icmp-echoreply and src host {{ testbed_routing_checks.ordinary_ipv4_target }}
+            and dst host {{ routing_ipv4_connection.mwan_ipv4 }}
+      loop_control:
+        label: "{{ routing_ipv4_connection.id }} {{ item.0 }}"
+      async: "{{ routing_ipv4_connection.guest_exec_timeout }}"
+      poll: 0
+      register: routing_ipv4_capture_jobs
+      changed_when: false
+
+    - name: Wait for the captures to open the gateway interface
+      ansible.builtin.pause:
+        seconds: "{{ testbed_routing_checks.ping_timeout_seconds }}"
+
+    - name: Send ordinary IPv4 packets from the downstream client
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ routing_check.downstream.vmid }}"
+          - --
+          - ping
+          - "-4"
+          - -c
+          - "{{ testbed_routing_checks.ping_count }}"
+          - -W
+          - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+          - "{{ testbed_routing_checks.ordinary_ipv4_target }}"
+      changed_when: false
+
+    - name: Wait for each gateway capture
+      ansible.builtin.async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ routing_ipv4_capture_jobs.results }}"
+      loop_control:
+        label: "{{ routing_ipv4_connection.id }} {{ item.item.0 }}"
+      register: routing_ipv4_captures
+      until: routing_ipv4_captures.finished
+      retries: "{{ testbed_routing_checks.capture_timeout_seconds }}"
+      delay: 2
+
+    - name: Require the outbound and inbound packets on the gateway interface
+      ansible.builtin.assert:
+        that:
+          - routing_ipv4_capture_failures == []
+        fail_msg: >-
+          Routing scenario {{ routing_check.name }} connection {{ routing_ipv4_connection.id }}
+          with DSCP {{ routing_ipv4_connection.dscp }}: interface {{ routing_ipv4_interfaces[0] }}
+          does not show the packets {{ routing_ipv4_capture_failures }}.
+      vars:
+        routing_ipv4_capture_failures: >-
+          {{ routing_ipv4_captures.results | map(attribute='item.item.0')
+          | zip(routing_ipv4_captures.results | map(attribute='stdout') | map('from_json')
+          | map(attribute='exitcode', default='missing'))
+          | rejectattr('1', 'equalto', 0) | map(attribute='0') | list }}
+
+    - name: Record the ordinary IPv4 check
+      ansible.builtin.set_fact:
+        routing_check_results: >-
+          {{ routing_check_results
+          + ['connection ' ~ routing_ipv4_connection.id ~ ' ordinary ipv4 ' ~ routing_ordinary_phase] }}
+  always:
+    - name: Remove the client stamp
+      ansible.builtin.import_tasks: check-routing-client-unstamp.yml
+  vars:
+    routing_stamp_family: ip
