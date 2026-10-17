@@ -12,8 +12,8 @@
   ansible.builtin.debug:
     msg: >-
       Routing scenario {{ routing_check.name }} sends ordinary IPv4 packets
-      {{ routing_ordinary_phase }} the IPv6 checks through connection
-      {{ routing_ipv4_connection.id }} with forced DSCP {{ routing_ipv4_connection.dscp }}.
+      through connection {{ routing_ipv4_connection.id }} with forced DSCP
+      {{ routing_ipv4_connection.dscp }} ({{ routing_ordinary_phase }}).
 
 - name: Read the gateway addresses and require tcpdump on the gateway
   ansible.builtin.command:

@@ -1,0 +1,72 @@
+---
+# routing_sibling_loss is one entry of routing_recovery_sibling_losses.
+- name: Collect the sibling link loss inputs
+  ansible.builtin.set_fact:
+    routing_sibling_fault:
+      failed_connection: "{{ routing_sibling_loss.failed_connection }}"
+      kept_connection: "{{ routing_sibling_loss.kept_connection }}"
+      links:
+        - node: "{{ routing_sibling_loss.node }}"
+          interface: "{{ routing_sibling_loss.interface }}"
+      kept_tunnels: "{{ routing_sibling_loss.kept_tunnels }}"
+
+- name: Check the loss of {{ routing_sibling_fault.failed_connection }} on its simulator link
+  block:
+    - name: Read the UTC clock before the sibling link loss
+      ansible.builtin.command:
+        argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+      register: routing_sibling_loss_start
+      changed_when: false
+
+    - name: Set the simulator link of the failed connection down
+      ansible.builtin.import_tasks: check-routing-recovery-links-down.yml
+      vars:
+        routing_fault_links: "{{ routing_sibling_fault.links }}"
+
+    - name: Collect the scenario check inputs for the ordinary IPv4 check
+      ansible.builtin.import_tasks: check-routing-scenario-inputs.yml
+      vars:
+        routing_scenario_mode: mwan
+
+    - name: Require ordinary IPv4 packets through the kept connection
+      ansible.builtin.include_tasks:
+        file: check-routing-ordinary-ipv4.yml
+      vars:
+        routing_ipv4_connection_id: "{{ routing_sibling_fault.kept_connection }}"
+        routing_ordinary_phase: "during the loss of {{ routing_sibling_fault.failed_connection }}"
+
+    # The check sends traffic through each kept tunnel and accepts a reply through any tunnel to the endpoint.
+    - name: Require IPv6 packets through each checked tunnel on the kept connection
+      ansible.builtin.include_tasks:
+        file: check-routing-recovery-stamped-probe.yml
+      vars:
+        routing_probe_return_rule: any tunnel to the endpoint
+      loop: "{{ routing_sibling_fault.kept_tunnels }}"
+      loop_control:
+        loop_var: routing_probe_connection
+        label: "{{ routing_probe_connection }} (replies on any tunnel to the endpoint)"
+  always:
+    - name: Set the simulator link of the failed connection up
+      ansible.builtin.import_tasks: check-routing-recovery-links-up.yml
+      vars:
+        routing_fault_links: "{{ routing_sibling_fault.links }}"
+
+- name: Read the UTC clock after the sibling link recovery
+  ansible.builtin.command:
+    argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+  register: routing_sibling_loss_end
+  changed_when: false
+
+- name: Record the sibling link loss check
+  ansible.builtin.set_fact:
+    routing_recovery_results: >-
+      {{ routing_recovery_results + [{
+        'fault': 'sibling link loss ' ~ routing_sibling_fault.failed_connection,
+        'kept_connection': routing_sibling_fault.kept_connection,
+        'kept_dscp': testbed_routing_forced_dscp[routing_sibling_fault.kept_connection],
+        'kept_tunnel_dscp': dict(routing_sibling_fault.kept_tunnels
+          | zip(routing_sibling_fault.kept_tunnels | map('extract', testbed_routing_forced_dscp))),
+        'started_utc': routing_sibling_loss_start.stdout,
+        'recovered_utc': routing_sibling_loss_end.stdout,
+        'result': 'passed'
+      }] }}

@@ -1,0 +1,46 @@
+---
+# When routing_vps_default_present is true, the tasks wait until each VPS has
+# the BGP default route and advertises the BGP default route to the gateway.
+# When routing_vps_default_present is false, the tasks wait until each VPS has
+# no BGP default route and advertises no default route to the gateway.
+- name: Wait for the expected BGP default route on each VPS
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, ip, -j, "-6", route, show, exact, "{{ item.1 }}", proto, bgp]
+  loop: >-
+    {{ routing_recovery.vps_gateway_sessions | map(attribute='remote.node') | unique
+    | product(routing_simulator_default_routes) | list }}
+  register: routing_vps_default_route
+  changed_when: false
+  until: (routing_vps_default_route.stdout | from_json != []) == routing_vps_default_present
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+# FRR 10.3 peer_adj_routes in bgpd/bgp_route.c prints the advertised prefixes
+# as the keys of advertisedRoutes, and prints an empty advertisedRoutes object
+# when the peer has nothing advertised. An unknown neighbor or an inactive
+# address family prints only a warning key. The missing advertisedRoutes key
+# fails the task. Ansible then prints the node and neighbor label, the command,
+# and the FRR output.
+- name: Wait for the expected default route in each VPS advertisement to the gateway
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.remote.node] }}"
+      - --
+      - vtysh
+      - -c
+      - "show bgp ipv6 unicast neighbors {{ item.local.address }} advertised-routes json"
+  loop: "{{ routing_recovery.vps_gateway_sessions }}"
+  loop_control:
+    label: "{{ item.remote.node }} neighbor {{ item.local.address }}"
+  register: routing_vps_default_advertised
+  changed_when: false
+  failed_when: "'advertisedRoutes' not in (routing_vps_default_advertised.stdout | from_json)"
+  until: >-
+    'advertisedRoutes' not in (routing_vps_default_advertised.stdout | from_json)
+    or (routing_simulator_default_routes
+    | difference((routing_vps_default_advertised.stdout | from_json).advertisedRoutes | list) == [])
+    == routing_vps_default_present
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
