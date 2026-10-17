@@ -40,8 +40,14 @@ tofu:
         suburban/203: dns64.suburban.goodkind.io
         suburban/213: mwan.suburban.goodkind.io
         suburban/216: mwan-failover.suburban.goodkind.io
+        suburban/217: tack-qa.suburban.goodkind.io
         suburban/218: seaweedfs.suburban.goodkind.io
+        suburban/220: tack-data1.suburban.goodkind.io
+        suburban/221: tack-data2.suburban.goodkind.io
+        suburban/222: tack-data3.suburban.goodkind.io
+        suburban/223: tack-app2.suburban.goodkind.io
         suburban/224: clyde.suburban.goodkind.io
+        suburban/227: tack-search1.suburban.goodkind.io
 deploy:
   # For non-check deploys, `./configsctl deploy` reads each declared variable
   # on each play host and locks the named inventory host with the play hosts.
