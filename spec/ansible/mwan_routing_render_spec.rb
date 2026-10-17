@@ -101,9 +101,10 @@ RSpec.describe 'MWAN routing scenario configuration' do
     forced = entries.transform_values { |entry| entry.dig('goodkind-mwan-steering:wan', 'forced-dscp') }
 
     expect(forced.compact).to eq(
-      'enatt0' => 8, 'ensonic1' => 35, 'ensonic2' => 39, 'enetheric0' => 43, 'sit-astound' => 47,
+      'enatt0' => 8, 'enastound0' => 31, 'ensonic1' => 35, 'ensonic2' => 39, 'enetheric0' => 43, 'sit-astound' => 47,
       'sit-static' => 51, 'sit-upstream' => 55, 'sit-vps-sonic' => 59, 'sit-vps-astound' => 63
     )
+    expect(entries.fetch('enastound0').fetch('goodkind-mwan-steering:wan').values_at('forced-dscp', 'fw-mark')).to eq([31, 5])
   end
 
   it 'renders the BGP session journal path for the testbed gateway' do

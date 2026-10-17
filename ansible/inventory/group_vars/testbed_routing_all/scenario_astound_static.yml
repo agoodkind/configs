@@ -7,11 +7,7 @@ testbed_routing_scenario_astound_static:
       reason: >-
         The astound underlay has no IPv6 address or IPv6 route on MWAN. MWAN uses it
         only for the outer IPv4 packets of tunnel astound_static_astound.
-  unchecked_ipv4_connections:
-    - id: astound
-      reason: >-
-        testbed_routing_forced_dscp declares no forced DSCP for astound, and the MWAN
-        astound connection sets no forced_dscp. A client cannot steer IPv4 packets onto it.
+  unchecked_ipv4_connections: []
   nodes: [astound_static_endpoint, astound_static_client]
   home_prefixes: ["{{ testbed_routing_home_prefix }}"]
   remote_prefixes: ["{{ testbed_routing_networks.astound_static_remote.ipv6_net }}"]

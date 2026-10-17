@@ -152,10 +152,10 @@ RSpec.describe 'routing simulator checks' do
   it 'checks each connection that forwards the scenario traffic with its forced DSCP', :aggregate_failures do
     dscp = inventory.fetch('testbed_routing_forced_dscp')
     {
-      'astound_static' => [%w[astound_static_astound], []], 'etheric_native' => [%w[etheric], []],
+      'astound_static' => [%w[astound_static_astound], %w[astound]], 'etheric_native' => [%w[etheric], []],
       'tunnel_static' => [%w[tunnel_static_sonic_1], %w[sonic_1]],
       'tunnel_upstream' => [%w[tunnel_upstream_sonic_2], %w[sonic_2]],
-      'tunnel_vps' => [%w[tunnel_vps_sonic_1 tunnel_vps_astound], %w[sonic_1]]
+      'tunnel_vps' => [%w[tunnel_vps_sonic_1 tunnel_vps_astound], %w[sonic_1 astound]]
     }.each do |scenario, (connections, ipv4_connections)|
       connections.each do |connection|
         facts = RoutingSimulatorConfig.connection_facts(inventory, scenario, connection)
@@ -183,7 +183,8 @@ RSpec.describe 'routing simulator checks' do
      'remote client gateway', 'transport source tunnel_vps_sonic_1',
      'connection tunnel_vps_sonic_1 gateway session tunnel_vps_home_sonic_1',
      'connection tunnel_vps_astound gateway session tunnel_vps_home_astound',
-     'connection sonic_1 ordinary ipv4 before', 'connection sonic_1 ordinary ipv4 after', 'home route on upstream'] +
+     'connection sonic_1 ordinary ipv4 before', 'connection sonic_1 ordinary ipv4 after',
+     'connection astound ordinary ipv4 before', 'connection astound ordinary ipv4 after', 'home route on upstream'] +
       %w[tunnel_vps_sonic_1 tunnel_vps_astound].product(connection_checks).map { |id, check| "connection #{id} #{check}" }
   end
 
@@ -195,6 +196,7 @@ RSpec.describe 'routing simulator checks' do
     expect(valid.call(tunnel_vps_mwan_results - ['connection tunnel_vps_astound gateway session tunnel_vps_home_astound']))
       .to be(false)
     expect(valid.call(tunnel_vps_mwan_results - ['connection sonic_1 ordinary ipv4 after'])).to be(false)
+    expect(valid.call(tunnel_vps_mwan_results - ['connection astound ordinary ipv4 before'])).to be(false)
     expect(valid.call(tunnel_vps_mwan_results - ['home route on upstream'])).to be(false)
   end
 

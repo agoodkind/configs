@@ -2,6 +2,7 @@
 # Each key is a gateway connection ID. RFC 2474 pool 2 (xxxx11) is for local
 # use, and no standard service class uses one of these codepoints.
 testbed_routing_forced_dscp:
+  astound: 31
   sonic_1: 35
   sonic_2: 39
   etheric: 43
