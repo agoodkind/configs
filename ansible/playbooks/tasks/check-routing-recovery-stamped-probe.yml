@@ -1,6 +1,29 @@
 ---
-# routing_probe_connection is a checked connection of the scenario. The outer
+# routing_probe_connection is a checked tunnel of the scenario. The outer
 # fault block removes the stamp table.
+- name: Collect the stamped probe inputs
+  ansible.builtin.set_fact:
+    routing_stamped_probe_path:
+      interface: >-
+        {{ (routing_recovery.scenario.tunnels | selectattr('id', 'equalto', routing_probe_connection)
+        | map(attribute='local.interface') | list)[0] }}
+      # qm guest exec waits for the capture, which ends at its own timeout.
+      guest_exec_timeout: "{{ testbed_routing_checks.capture_timeout_seconds * 2 }}"
+      ping_argv:
+        - pct
+        - exec
+        - "{{ routing_recovery.downstream.vmid }}"
+        - --
+        - ping
+        - "-6"
+        - -c
+        - "{{ testbed_routing_checks.ping_count }}"
+        - -W
+        - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+        - -I
+        - "{{ routing_recovery.downstream.ipv6 }}"
+        - "{{ routing_recovery.remote_client_address }}"
+
 - name: Stamp the downstream client's packets for {{ routing_probe_connection }}
   ansible.builtin.import_tasks: check-routing-client-stamp.yml
   vars:
@@ -8,22 +31,83 @@
     routing_stamp_connection: "{{ routing_probe_connection }}"
     routing_stamp_destinations: "{{ routing_recovery.scenario.remote_prefixes }}"
 
-- name: Require IPv6 packets and replies through {{ routing_probe_connection }}
+- name: Wait until IPv6 packets and replies pass with the stamp for {{ routing_probe_connection }}
   ansible.builtin.command:
-    argv:
-      - pct
-      - exec
-      - "{{ routing_recovery.downstream.vmid }}"
-      - --
-      - ping
-      - "-6"
-      - -c
-      - "{{ testbed_routing_checks.ping_count }}"
-      - -W
-      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
-      - "{{ routing_recovery.remote_client_address }}"
+    argv: "{{ routing_stamped_probe_path.ping_argv }}"
   register: routing_stamped_probe
   changed_when: false
   until: routing_stamped_probe.rc == 0
   retries: "{{ routing_recovery.wait_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+- name: Start the bounded packet captures on the gateway tunnel interface
+  ansible.builtin.command:
+    argv:
+      - qm
+      - guest
+      - exec
+      - "{{ routing_recovery.gateway_vmid }}"
+      - --timeout
+      - "{{ routing_stamped_probe_path.guest_exec_timeout }}"
+      - --
+      - timeout
+      - "{{ testbed_routing_checks.capture_timeout_seconds }}"
+      - tcpdump
+      - -n
+      - -i
+      - "{{ routing_stamped_probe_path.interface }}"
+      - -c
+      - "1"
+      - "{{ item.1 }}"
+  loop:
+    - - outbound from the gateway
+      - >-
+        icmp6 and ip6[40] == 128 and src host {{ routing_recovery.downstream.ipv6 }}
+        and dst host {{ routing_recovery.remote_client_address }}
+    - - inbound to the gateway
+      - >-
+        icmp6 and ip6[40] == 129 and src host {{ routing_recovery.remote_client_address }}
+        and dst host {{ routing_recovery.downstream.ipv6 }}
+  loop_control:
+    label: "{{ routing_probe_connection }} {{ item.0 }}"
+  async: "{{ routing_stamped_probe_path.guest_exec_timeout }}"
+  poll: 0
+  register: routing_stamped_capture_jobs
+  changed_when: false
+
+- name: Wait for the captures to open the gateway tunnel interface
+  ansible.builtin.pause:
+    seconds: "{{ testbed_routing_checks.ping_timeout_seconds }}"
+
+- name: Send stamped IPv6 packets during the captures
+  ansible.builtin.command:
+    argv: "{{ routing_stamped_probe_path.ping_argv }}"
+  changed_when: false
+
+- name: Wait for each gateway tunnel capture
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ routing_stamped_capture_jobs.results }}"
+  loop_control:
+    label: "{{ routing_probe_connection }} {{ item.item.0 }}"
+  register: routing_stamped_captures
+  until: routing_stamped_captures.finished
+  retries: "{{ testbed_routing_checks.capture_timeout_seconds }}"
+  delay: 2
+
+# qm guest exec exits 0 when the guest command fails. The guest command
+# status is the exitcode field of its JSON output.
+- name: Require the echo requests and replies on the gateway tunnel interface
+  ansible.builtin.assert:
+    that:
+      - routing_stamped_capture_failures == []
+    fail_msg: >-
+      Routing scenario {{ routing_recovery.name }} connection {{ routing_probe_connection }}:
+      interface {{ routing_stamped_probe_path.interface }} on the gateway does not show the packets
+      {{ routing_stamped_capture_failures }}.
+  vars:
+    routing_stamped_capture_failures: >-
+      {{ routing_stamped_captures.results | map(attribute='item.item.0')
+      | zip(routing_stamped_captures.results | map(attribute='stdout') | map('from_json')
+      | map(attribute='exitcode', default='missing'))
+      | rejectattr('1', 'equalto', 0) | map(attribute='0') | list }}
