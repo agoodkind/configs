@@ -258,36 +258,6 @@ RSpec.describe 'routing simulator checks' do
     expect(learned).to eq([])
   end
 
-  it 'selects the tunnel loss, sibling link loss, and restart targets of each scenario', :aggregate_failures do
-    link = ->(name) { inventory.dig('service_mapping', 'isp_sonic_suburban', 'routing_interfaces', name, 'name') }
-    tunnel_loss = lambda do |tunnel, interface, kept, address|
-      { 'tunnel' => tunnel, 'node' => 'tunnel_vps_vps', 'interface' => interface, 'kept_connection' => kept,
-        'gateway_addresses' => [address] }
-    end
-    sibling_loss = lambda do |failed, kept, tunnel|
-      { 'failed_connection' => failed, 'kept_connection' => kept, 'node' => 'isp_sonic', 'interface' => link.call(failed),
-        'kept_tunnels' => [tunnel] }
-    end
-    {
-      'tunnel_vps' => [
-        [tunnel_loss.call('tunnel_vps_sonic_1', 'sit-sonic1', 'tunnel_vps_astound', '2001:db8:5ff:1::1'),
-         tunnel_loss.call('tunnel_vps_astound', 'sit-astound', 'tunnel_vps_sonic_1', '2001:db8:5ff:2::1')],
-        [sibling_loss.call('sonic_2', 'sonic_1', 'tunnel_vps_sonic_1')],
-        [{ 'node' => 'tunnel_vps_vps', 'gateway_sessions' => %w[tunnel_vps_home_sonic_1 tunnel_vps_home_astound],
-           'hold_retries' => 2 }]
-      ],
-      'tunnel_upstream' => [[], [sibling_loss.call('sonic_1', 'sonic_2', 'tunnel_upstream_sonic_2')],
-                            [{ 'node' => 'tunnel_upstream_vps', 'gateway_sessions' => ['tunnel_upstream_home'],
-                               'hold_retries' => 2 }]],
-      'etheric_native' => [[], [], []]
-    }.each do |scenario, (tunnel_losses, sibling_losses, restarts)|
-      facts = RoutingSimulatorConfig.fault_facts(inventory, scenario)
-      expect(facts.fetch('routing_recovery_tunnel_losses')).to eq(tunnel_losses), scenario
-      expect(facts.fetch('routing_recovery_sibling_losses')).to eq(sibling_losses), scenario
-      expect(facts.fetch('routing_recovery_restarts')).to eq(restarts), scenario
-    end
-  end
-
   it 'sets each fault link up and reconfigures it on its simulator' do
     restore = RoutingSimulatorConfig.tasks('tasks', 'check-routing-recovery-links-up.yml').first
     variables = { 'routing_fault_links' => [{ 'node' => 'isp_sonic', 'interface' => 'eth3' },

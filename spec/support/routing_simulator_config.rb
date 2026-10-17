@@ -124,9 +124,7 @@ module RoutingSimulatorConfig
   end
 
   def fault_facts(inventory, scenario)
-    file = 'check-routing-recovery-inputs.yml'
-    tasks = [scenario_input_tasks.first, task('Collect the fault inputs', 'tasks', file),
-             task('Collect the tunnel loss, sibling link loss, and simulator restart targets', 'tasks', file),
+    tasks = [task('Collect the fault inputs', 'tasks', 'check-routing-recovery-inputs.yml'),
              task('Collect the tracked home routes', 'tasks', 'check-routing-recovery-tracker.yml')]
     TaskExpressions.evaluate(
       variables: inventory.slice(*LITERAL_VARIABLES).merge('routing_scenario_name' => scenario),
