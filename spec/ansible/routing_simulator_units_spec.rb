@@ -26,6 +26,14 @@ RSpec.describe 'routing simulator network units' do
     end
   end
 
+  it 'configures a link-local address from the outer endpoints in each tunnel unit', :aggregate_failures do
+    sonic = render('tunnel_vps_vps', 'tunnel.network.j2', 'rsim_tunnel' => 'rsim.tunnels[0]')
+    astound = render('tunnel_vps_vps', 'tunnel.network.j2', 'rsim_tunnel' => 'rsim.tunnels[1]')
+
+    expect(sonic.lines.map(&:strip)).to include('Address=2001:db8:5ff:1::2/64', 'Address=fe80::c633:6428:af0:d102/64')
+    expect(astound.lines.map(&:strip)).to include('Address=2001:db8:5ff:2::2/64', 'Address=fe80::c633:6428:af0:cf02/64')
+  end
+
   it 'renders a changed tunnel MTU and outer TTL in the tunnel device' do
     changed = RoutingSimulatorInventory.changed_scenario('astound_static') do |scenario|
       scenario['tunnels'][0].merge!('mtu' => 1400, 'outer_ttl' => 32)
