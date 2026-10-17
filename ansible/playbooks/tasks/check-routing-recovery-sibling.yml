@@ -5,7 +5,9 @@
     routing_sibling_fault:
       failed_connection: "{{ routing_sibling_loss.failed_connection }}"
       kept_connection: "{{ routing_sibling_loss.kept_connection }}"
-      links: [["{{ routing_sibling_loss.node }}", "{{ routing_sibling_loss.interface }}"]]
+      links:
+        - node: "{{ routing_sibling_loss.node }}"
+          interface: "{{ routing_sibling_loss.interface }}"
       kept_tunnels: "{{ routing_sibling_loss.kept_tunnels }}"
 
 - name: Check the loss of {{ routing_sibling_fault.failed_connection }} on its simulator link

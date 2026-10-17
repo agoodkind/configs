@@ -1,7 +1,9 @@
 ---
-# Each routing_fault_links entry is a simulator node and an interface name.
+# Each routing_fault_links entry has a simulator node and an interface name.
 - name: Set each fault link down
   ansible.builtin.command:
-    argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, ip, link, set, dev, "{{ item.1 }}", down]
+    argv: [pct, exec, "{{ routing_node_vmids[item.node] }}", --, ip, link, set, dev, "{{ item.interface }}", down]
   loop: "{{ routing_fault_links }}"
+  loop_control:
+    label: "{{ item.node }} {{ item.interface }}"
   changed_when: true

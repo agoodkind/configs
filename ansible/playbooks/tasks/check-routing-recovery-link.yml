@@ -10,7 +10,7 @@
     - name: Set each scenario link down
       ansible.builtin.import_tasks: check-routing-recovery-links-down.yml
       vars:
-        routing_fault_links: "{{ routing_recovery_links }}"
+        routing_fault_links: "{{ routing_recovery.links }}"
 
     - name: Wait until packets routed by the scenario fail
       ansible.builtin.command:
@@ -61,7 +61,7 @@
     - name: Set each scenario link up
       ansible.builtin.import_tasks: check-routing-recovery-links-up.yml
       vars:
-        routing_fault_links: "{{ routing_recovery_links }}"
+        routing_fault_links: "{{ routing_recovery.links }}"
 
 # The recovery probe runs only after every restore command succeeds.
 - name: Wait until packets routed by the scenario pass again

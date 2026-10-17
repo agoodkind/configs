@@ -4,7 +4,9 @@
   ansible.builtin.set_fact:
     routing_tunnel_fault:
       tunnel: "{{ routing_tunnel_loss.tunnel }}"
-      links: [["{{ routing_tunnel_loss.node }}", "{{ routing_tunnel_loss.interface }}"]]
+      links:
+        - node: "{{ routing_tunnel_loss.node }}"
+          interface: "{{ routing_tunnel_loss.interface }}"
       kept_connection: "{{ routing_tunnel_loss.kept_connection }}"
       peers: "{{ [routing_tunnel_loss.node] | product(routing_tunnel_loss.gateway_addresses) | list }}"
 

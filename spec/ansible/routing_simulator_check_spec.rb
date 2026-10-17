@@ -290,7 +290,8 @@ RSpec.describe 'routing simulator checks' do
 
   it 'sets each fault link up and reconfigures it on its simulator' do
     restore = RoutingSimulatorConfig.tasks('tasks', 'check-routing-recovery-links-up.yml').first
-    variables = { 'routing_fault_links' => [%w[isp_sonic eth3], %w[tunnel_vps_vps sit-sonic1]],
+    variables = { 'routing_fault_links' => [{ 'node' => 'isp_sonic', 'interface' => 'eth3' },
+                                            { 'node' => 'tunnel_vps_vps', 'interface' => 'sit-sonic1' }],
                   'routing_node_vmids' => { 'isp_sonic' => 906, 'tunnel_vps_vps' => 918 } }
     commands = TaskExpressions.evaluate(variables: variables, facts: [RoutingSimulatorConfig.fact(restore['vars'], restore['vars'])])
                               .fetch('facts').fetch('routing_restore_commands')
