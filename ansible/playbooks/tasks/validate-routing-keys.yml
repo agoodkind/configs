@@ -12,6 +12,7 @@
       scenario:
         - kind
         - connections
+        - unchecked_connections
         - nodes
         - home_prefixes
         - remote_prefixes
@@ -20,6 +21,9 @@
         - sessions
         - probe_targets
       entries:
+        unchecked_connections:
+          keys: [id, reason]
+          nested: {}
         tunnels:
           keys: [id, connection, protocol, mtu, outer_ttl, inner_prefix_length, local, remote]
           nested:

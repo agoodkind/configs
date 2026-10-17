@@ -34,6 +34,19 @@ RSpec.describe 'routing simulator scenario contracts' do
     expect(valid).to be(false)
   end
 
+  it 'rejects a declared connection without a forced DSCP or an unchecked declaration' do
+    expect(contract_valid?('astound_static') { |scenario| scenario['unchecked_connections'] = [] }).to be(false)
+  end
+
+  it 'rejects an unchecked declaration without a reason' do
+    expect(contract_valid?('tunnel_vps') { |scenario| scenario['unchecked_connections'][1]['reason'] = '' }).to be(false)
+  end
+
+  it 'rejects a gateway session without a checked connection', :aggregate_failures do
+    expect(contract_valid?('tunnel_vps') { |scenario| scenario['sessions'][0].delete('connection') }).to be(false)
+    expect(contract_valid?('tunnel_vps') { |scenario| scenario['sessions'][0]['connection'] = 'sonic_1' }).to be(false)
+  end
+
   it 'rejects an upstream router that two scenarios reference' do
     valid = contract_valid?('tunnel_vps') do |scenario|
       scenario['nodes'] = %w[tunnel_vps_vps tunnel_static_upstream tunnel_vps_client]

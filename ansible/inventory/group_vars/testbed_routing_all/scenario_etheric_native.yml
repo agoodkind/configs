@@ -2,6 +2,7 @@
 testbed_routing_scenario_etheric_native:
   kind: native_bgp
   connections: [etheric]
+  unchecked_connections: []
   nodes: [etheric_native_router, etheric_native_upstream, etheric_native_client]
   home_prefixes: ["{{ testbed_routing_home_prefix }}"]
   remote_prefixes: ["{{ testbed_routing_networks.etheric_native_remote.ipv6_net }}"]
@@ -14,6 +15,7 @@ testbed_routing_scenario_etheric_native:
         {{ service_mapping.routing_etheric_native_upstream_suburban.routing_interfaces.remote.ipv6 }}
   sessions:
     - id: etheric_native_home
+      connection: etheric
       address_family: ipv6_unicast
       hops: 1
       multihop_ttl: 0

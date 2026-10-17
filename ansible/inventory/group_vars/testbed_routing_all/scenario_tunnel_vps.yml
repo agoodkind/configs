@@ -2,6 +2,15 @@
 testbed_routing_scenario_tunnel_vps:
   kind: tunnel_vps_peer
   connections: [sonic_1, astound]
+  unchecked_connections:
+    - id: sonic_1
+      reason: >-
+        The sonic_1 underlay has no IPv6 address or IPv6 route on MWAN. MWAN uses it
+        only for the outer IPv4 packets of tunnel tunnel_vps_sonic_1.
+    - id: astound
+      reason: >-
+        The astound underlay has no IPv6 address or IPv6 route on MWAN. MWAN uses it
+        only for the outer IPv4 packets of tunnel tunnel_vps_astound.
   nodes: [tunnel_vps_vps, tunnel_vps_upstream, tunnel_vps_client]
   home_prefixes: ["{{ testbed_routing_home_prefix }}"]
   remote_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}"]
@@ -66,6 +75,7 @@ testbed_routing_scenario_tunnel_vps:
         {{ service_mapping.routing_tunnel_vps_upstream_suburban.routing_interfaces.remote.ipv6 }}
   sessions:
     - id: tunnel_vps_home_sonic_1
+      connection: tunnel_vps_sonic_1
       address_family: ipv6_unicast
       hops: 1
       multihop_ttl: 0
@@ -83,6 +93,7 @@ testbed_routing_scenario_tunnel_vps:
         import_prefixes: ["{{ testbed_routing_networks.tunnel_vps_remote.ipv6_net }}", "::/0"]
         export_prefixes: ["{{ testbed_routing_home_prefix }}"]
     - id: tunnel_vps_home_astound
+      connection: tunnel_vps_astound
       address_family: ipv6_unicast
       hops: 1
       multihop_ttl: 0
