@@ -1,0 +1,14 @@
+---
+# Each key is a gateway connection ID. RFC 2474 pool 2 (xxxx11) is for local
+# use, and no standard service class uses one of these codepoints.
+testbed_routing_forced_dscp:
+  sonic_1: 35
+  sonic_2: 39
+  etheric: 43
+  astound_static_astound: 47
+  tunnel_static_sonic_1: 51
+  tunnel_upstream_sonic_2: 55
+  tunnel_vps_sonic_1: 59
+  tunnel_vps_astound: 63
+
+testbed_routing_stamp_table: routing_scenario_stamp

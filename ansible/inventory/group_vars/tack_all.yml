@@ -80,6 +80,11 @@ tack_docker_held_packages:
   - docker-compose-plugin
   - docker-ce-rootless-extras
 
+# The play restarts Docker on every deploy target, one guest at a time,
+# when tack_docker_rolling_restart is true, even when daemon.json did not
+# change.
+tack_docker_rolling_restart: false
+
 # Bootstrap of an empty ledger requires yugabyte before role seeding creates
 # tack_migrator and the other roles.
 tack_yugabyte_user: yugabyte

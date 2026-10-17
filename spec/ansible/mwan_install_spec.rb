@@ -457,6 +457,10 @@ RSpec.describe MwanInstall do
     'render_mwan_network.yml' => {
       'enatt0' => 'att', 'enwebpass0' => 'webpass', 'enmbrains0' => 'monkeybrains',
       'enrouted0' => 'routed', 'enastound0' => 'astound',
+      'ensonic1' => 'sonic_1', 'ensonic2' => 'sonic_2', 'enetheric0' => 'etheric',
+      'sit-astound' => 'astound_static_astound', 'sit-static' => 'tunnel_static_sonic_1',
+      'sit-upstream' => 'tunnel_upstream_sonic_2', 'sit-vps-sonic' => 'tunnel_vps_sonic_1',
+      'sit-vps-astound' => 'tunnel_vps_astound',
       'enmwanbr0' => 'enmwanbr0', 'enmgmt0' => 'enmgmt0'
     },
     'render_mwan_prod_network.yml' => {

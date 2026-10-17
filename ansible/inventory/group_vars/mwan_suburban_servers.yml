@@ -112,6 +112,7 @@ mwan_deploy_gate_families: "ipv4,ipv6"
 mwan_deploy_gate_consecutive_rounds: "3"
 mwan_links_state_file: "/var/lib/mwan/owned-links.json"
 mwan_autoconfiguration_state_file: "/var/lib/mwan/owned-kernel.json"
+mwan_bgp_sessions_state_file: "/var/lib/mwan/owned-bgp-sessions.json"
 mwan_deploy_probe:
   opnsense_vmid: "{{ service_mapping.opnsense_suburban.vmid }}"
   ipv4_source: "{{ service_mapping.opnsense_suburban.ipv4_transit }}"
@@ -139,6 +140,26 @@ mwan_internal_iface: "enmwanbr0"
 mwan_monkeybrains_iface: "enmbrains0"
 mwan_astound_iface: "enastound0"
 mwan_routed_iface: "enrouted0"
+mwan_sonic_1_iface: "ensonic1"
+mwan_sonic_2_iface: "ensonic2"
+mwan_etheric_iface: "enetheric0"
+mwan_routing_connection_ifaces:
+  astound: "{{ mwan_astound_iface }}"
+  sonic_1: "{{ mwan_sonic_1_iface }}"
+  sonic_2: "{{ mwan_sonic_2_iface }}"
+  etheric: "{{ mwan_etheric_iface }}"
+mwan_routing_tunnel_list: >-
+  {{ testbed_routing_scenarios.values() | map(attribute='tunnels') | flatten }}
+mwan_routing_tunnels: >-
+  {{ dict(mwan_routing_tunnel_list | map(attribute='id') | zip(mwan_routing_tunnel_list)) }}
+mwan_routing_session_list: >-
+  {{ testbed_routing_scenarios.values() | map(attribute='sessions') | flatten }}
+mwan_routing_sessions: >-
+  {{ dict(mwan_routing_session_list | map(attribute='id') | zip(mwan_routing_session_list)) }}
+mwan_routing_ipv6_routes: >-
+  {{ testbed_routing_scenarios.values() | map(attribute='routes') | flatten
+  | selectattr('node', 'equalto', 'mwan') | selectattr('family', 'equalto', 'ipv6') | list }}
+mwan_bgp_session_connect_retry_seconds: 5
 
 # The daemon owns both links. The served configuration rejects a false IPv6
 # dhcp leaf on a daemon-owned link. Each IPv6 family omits that leaf.
@@ -559,6 +580,401 @@ mwan_providers:
       targets_v4: ["1.1.1.1", "8.8.8.8"]
       targets_v6: []
       http_targets: ["https://ifconfig.co/ip"]
+
+  - name: sonic_1
+    connection_id: sonic_1
+    owner: mwan
+    iface: "{{ mwan_sonic_1_iface }}"
+    vlan_id: ""
+    link:
+      match:
+        hardware_address: "{{ service_mapping.mwan_suburban.routing_interfaces.sonic_1.mac_address | lower }}"
+    ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings: []
+      forwarding: true
+      dhcp: false
+      address: >-
+        {{ testbed_routing_connections.sonic_1.mwan_ipv4 }}/{{
+        testbed_routing_networks.sonic_1.ipv4_net.split('/')[1] }}
+      gateway: "{{ testbed_routing_connections.sonic_1.simulator_link_ipv4 }}"
+      route_metric: 8000
+    ipv6:
+      translation:
+        mode: native
+      accept_ra: false
+    table: 800
+    mark: 6
+    mark_prio: 600
+    from_prio: 60
+    tier: 3
+    weight: 1
+    forced_dscp: "{{ testbed_routing_forced_dscp.sonic_1 }}"
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 1
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: ["{{ testbed_routing_connections.sonic_1.simulator_link_ipv4 }}"]
+      targets_v6: []
+      http_targets: []
+
+  - name: sonic_2
+    connection_id: sonic_2
+    owner: mwan
+    iface: "{{ mwan_sonic_2_iface }}"
+    vlan_id: ""
+    link:
+      match:
+        hardware_address: "{{ service_mapping.mwan_suburban.routing_interfaces.sonic_2.mac_address | lower }}"
+    ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings: []
+      forwarding: true
+      dhcp: false
+      address: >-
+        {{ testbed_routing_connections.sonic_2.mwan_ipv4 }}/{{
+        testbed_routing_networks.sonic_2.ipv4_net.split('/')[1] }}
+      gateway: "{{ testbed_routing_connections.sonic_2.simulator_link_ipv4 }}"
+      route_metric: 8100
+    ipv6:
+      translation:
+        mode: native
+      accept_ra: false
+    table: 900
+    mark: 7
+    mark_prio: 700
+    from_prio: 61
+    tier: 3
+    weight: 1
+    forced_dscp: "{{ testbed_routing_forced_dscp.sonic_2 }}"
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 1
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: ["{{ testbed_routing_connections.sonic_2.simulator_link_ipv4 }}"]
+      targets_v6: []
+      http_targets: []
+
+  - name: etheric
+    connection_id: etheric
+    owner: mwan
+    iface: "{{ mwan_etheric_iface }}"
+    vlan_id: ""
+    link:
+      match:
+        hardware_address: "{{ service_mapping.mwan_suburban.routing_interfaces.etheric.mac_address | lower }}"
+    ipv4:
+      translation:
+        mode: ietf-nat:napt44
+        static_mappings: []
+      forwarding: true
+      dhcp: false
+      address: >-
+        {{ testbed_routing_connections.etheric.mwan_ipv4 }}/{{
+        testbed_routing_networks.etheric.ipv4_net.split('/')[1] }}
+      gateway: "{{ testbed_routing_connections.etheric.simulator_link_ipv4 }}"
+      route_metric: 8200
+    ipv6:
+      translation:
+        mode: native
+      forwarding: true
+      accept_ra: false
+      address: >-
+        {{ service_mapping.mwan_suburban.routing_interfaces.etheric.ipv6 }}/{{
+        testbed_routing_networks.etheric.ipv6_net.split('/')[1] }}
+    bgp_sessions:
+      - name: etheric_native_home
+        peer_address: "{{ mwan_routing_sessions.etheric_native_home.remote.address }}"
+        local_address: "{{ mwan_routing_sessions.etheric_native_home.local.address }}"
+        local_as: "{{ mwan_routing_sessions.etheric_native_home.local.asn }}"
+        remote_as: "{{ mwan_routing_sessions.etheric_native_home.remote.asn }}"
+        router_id: "{{ bgp_router_id }}"
+        multihop_ttl: "{{ mwan_routing_sessions.etheric_native_home.multihop_ttl }}"
+        keepalive: "{{ mwan_routing_sessions.etheric_native_home.keepalive_seconds }}"
+        hold: "{{ mwan_routing_sessions.etheric_native_home.hold_seconds }}"
+        connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        route_metric: 8500
+        import_prefixes: "{{ mwan_routing_sessions.etheric_native_home.policy.import_prefixes }}"
+        export_prefixes: "{{ mwan_routing_sessions.etheric_native_home.policy.export_prefixes }}"
+        export_mode: always
+        export_next_hop: "{{ mwan_routing_sessions.etheric_native_home.local.address }}"
+    table: 1000
+    mark: 8
+    mark_prio: 800
+    from_prio: 62
+    tier: 3
+    weight: 1
+    forced_dscp: "{{ testbed_routing_forced_dscp.etheric }}"
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 1
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: ["{{ testbed_routing_connections.etheric.simulator_link_ipv4 }}"]
+      targets_v6: ["{{ mwan_routing_sessions.etheric_native_home.remote.address }}"]
+      http_targets: []
+
+  - name: astound_static_astound
+    connection_id: astound_static_astound
+    owner: mwan
+    iface: "{{ mwan_routing_tunnels.astound_static_astound.local.interface }}"
+    vlan_id: ""
+    link:
+      mtu: "{{ mwan_routing_tunnels.astound_static_astound.mtu }}"
+      tunnel:
+        protocol: 6in4
+        underlay: "{{ mwan_routing_connection_ifaces[mwan_routing_tunnels.astound_static_astound.connection] }}"
+        remote_address: "{{ mwan_routing_tunnels.astound_static_astound.remote.outer_ipv4 }}"
+        local_address: "{{ mwan_routing_tunnels.astound_static_astound.local.outer_ipv4 }}"
+        ttl: "{{ mwan_routing_tunnels.astound_static_astound.outer_ttl }}"
+    ipv6:
+      translation:
+        mode: native
+      address: >-
+        {{ mwan_routing_tunnels.astound_static_astound.local.inner_ipv6 }}/{{
+        mwan_routing_tunnels.astound_static_astound.inner_prefix_length }}
+      gateway: "{{ mwan_routing_tunnels.astound_static_astound.remote.inner_ipv6 }}"
+      route_metric: 8300
+      routes: >-
+        {{ mwan_routing_ipv6_routes | selectattr('gateway', 'equalto',
+        mwan_routing_tunnels.astound_static_astound.remote.inner_ipv6) | list }}
+    table: 1100
+    mark: 9
+    mark_prio: 900
+    from_prio: 63
+    tier: 3
+    weight: 1
+    forced_dscp: "{{ testbed_routing_forced_dscp.astound_static_astound }}"
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 1
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: []
+      targets_v6: ["{{ mwan_routing_tunnels.astound_static_astound.remote.inner_ipv6 }}"]
+      http_targets: []
+
+  - name: tunnel_static_sonic_1
+    connection_id: tunnel_static_sonic_1
+    owner: mwan
+    iface: "{{ mwan_routing_tunnels.tunnel_static_sonic_1.local.interface }}"
+    vlan_id: ""
+    link:
+      mtu: "{{ mwan_routing_tunnels.tunnel_static_sonic_1.mtu }}"
+      tunnel:
+        protocol: 6in4
+        underlay: "{{ mwan_routing_connection_ifaces[mwan_routing_tunnels.tunnel_static_sonic_1.connection] }}"
+        remote_address: "{{ mwan_routing_tunnels.tunnel_static_sonic_1.remote.outer_ipv4 }}"
+        local_address: "{{ mwan_routing_tunnels.tunnel_static_sonic_1.local.outer_ipv4 }}"
+        ttl: "{{ mwan_routing_tunnels.tunnel_static_sonic_1.outer_ttl }}"
+    ipv6:
+      translation:
+        mode: native
+      address: >-
+        {{ mwan_routing_tunnels.tunnel_static_sonic_1.local.inner_ipv6 }}/{{
+        mwan_routing_tunnels.tunnel_static_sonic_1.inner_prefix_length }}
+      gateway: "{{ mwan_routing_tunnels.tunnel_static_sonic_1.remote.inner_ipv6 }}"
+      route_metric: 8400
+      routes: >-
+        {{ mwan_routing_ipv6_routes | selectattr('gateway', 'equalto',
+        mwan_routing_tunnels.tunnel_static_sonic_1.remote.inner_ipv6) | list }}
+    table: 1200
+    mark: 10
+    mark_prio: 1000
+    from_prio: 64
+    tier: 3
+    weight: 1
+    forced_dscp: "{{ testbed_routing_forced_dscp.tunnel_static_sonic_1 }}"
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 1
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: []
+      targets_v6: ["{{ mwan_routing_tunnels.tunnel_static_sonic_1.remote.inner_ipv6 }}"]
+      http_targets: []
+
+  - name: tunnel_upstream_sonic_2
+    connection_id: tunnel_upstream_sonic_2
+    owner: mwan
+    iface: "{{ mwan_routing_tunnels.tunnel_upstream_sonic_2.local.interface }}"
+    vlan_id: ""
+    link:
+      mtu: "{{ mwan_routing_tunnels.tunnel_upstream_sonic_2.mtu }}"
+      tunnel:
+        protocol: 6in4
+        underlay: "{{ mwan_routing_connection_ifaces[mwan_routing_tunnels.tunnel_upstream_sonic_2.connection] }}"
+        remote_address: "{{ mwan_routing_tunnels.tunnel_upstream_sonic_2.remote.outer_ipv4 }}"
+        local_address: "{{ mwan_routing_tunnels.tunnel_upstream_sonic_2.local.outer_ipv4 }}"
+        ttl: "{{ mwan_routing_tunnels.tunnel_upstream_sonic_2.outer_ttl }}"
+    ipv6:
+      translation:
+        mode: native
+      address: >-
+        {{ mwan_routing_tunnels.tunnel_upstream_sonic_2.local.inner_ipv6 }}/{{
+        mwan_routing_tunnels.tunnel_upstream_sonic_2.inner_prefix_length }}
+      routes: >-
+        {{ mwan_routing_ipv6_routes | selectattr('gateway', 'equalto',
+        mwan_routing_tunnels.tunnel_upstream_sonic_2.remote.inner_ipv6) | list }}
+    bgp_sessions:
+      - name: tunnel_upstream_home
+        peer_address: "{{ mwan_routing_sessions.tunnel_upstream_home.remote.address }}"
+        local_address: "{{ mwan_routing_sessions.tunnel_upstream_home.local.address }}"
+        local_as: "{{ mwan_routing_sessions.tunnel_upstream_home.local.asn }}"
+        remote_as: "{{ mwan_routing_sessions.tunnel_upstream_home.remote.asn }}"
+        router_id: "{{ bgp_router_id }}"
+        multihop_ttl: "{{ mwan_routing_sessions.tunnel_upstream_home.multihop_ttl }}"
+        keepalive: "{{ mwan_routing_sessions.tunnel_upstream_home.keepalive_seconds }}"
+        hold: "{{ mwan_routing_sessions.tunnel_upstream_home.hold_seconds }}"
+        connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        route_metric: 8600
+        import_prefixes: "{{ mwan_routing_sessions.tunnel_upstream_home.policy.import_prefixes }}"
+        export_prefixes: "{{ mwan_routing_sessions.tunnel_upstream_home.policy.export_prefixes }}"
+        export_mode: always
+        export_next_hop: "{{ mwan_routing_sessions.tunnel_upstream_home.local.address }}"
+    table: 1300
+    mark: 11
+    mark_prio: 1100
+    from_prio: 65
+    tier: 3
+    weight: 1
+    forced_dscp: "{{ testbed_routing_forced_dscp.tunnel_upstream_sonic_2 }}"
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 1
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: []
+      targets_v6: ["{{ mwan_routing_tunnels.tunnel_upstream_sonic_2.remote.inner_ipv6 }}"]
+      http_targets: []
+
+  - name: tunnel_vps_sonic_1
+    connection_id: tunnel_vps_sonic_1
+    owner: mwan
+    iface: "{{ mwan_routing_tunnels.tunnel_vps_sonic_1.local.interface }}"
+    vlan_id: ""
+    link:
+      mtu: "{{ mwan_routing_tunnels.tunnel_vps_sonic_1.mtu }}"
+      tunnel:
+        protocol: 6in4
+        underlay: "{{ mwan_routing_connection_ifaces[mwan_routing_tunnels.tunnel_vps_sonic_1.connection] }}"
+        remote_address: "{{ mwan_routing_tunnels.tunnel_vps_sonic_1.remote.outer_ipv4 }}"
+        local_address: "{{ mwan_routing_tunnels.tunnel_vps_sonic_1.local.outer_ipv4 }}"
+        ttl: "{{ mwan_routing_tunnels.tunnel_vps_sonic_1.outer_ttl }}"
+    ipv6:
+      translation:
+        mode: native
+      address: >-
+        {{ mwan_routing_tunnels.tunnel_vps_sonic_1.local.inner_ipv6 }}/{{
+        mwan_routing_tunnels.tunnel_vps_sonic_1.inner_prefix_length }}
+      routes: >-
+        {{ mwan_routing_ipv6_routes | selectattr('gateway', 'equalto',
+        mwan_routing_tunnels.tunnel_vps_sonic_1.remote.inner_ipv6) | list }}
+    bgp_sessions:
+      - name: tunnel_vps_home_sonic_1
+        peer_address: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.remote.address }}"
+        local_address: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.local.address }}"
+        local_as: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.local.asn }}"
+        remote_as: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.remote.asn }}"
+        router_id: "{{ bgp_router_id }}"
+        multihop_ttl: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.multihop_ttl }}"
+        keepalive: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.keepalive_seconds }}"
+        hold: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.hold_seconds }}"
+        connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        route_metric: 8700
+        import_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.policy.import_prefixes }}"
+        export_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.policy.export_prefixes }}"
+        export_mode: always
+        export_next_hop: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.local.address }}"
+    table: 1400
+    mark: 12
+    mark_prio: 1200
+    from_prio: 66
+    tier: 3
+    weight: 1
+    forced_dscp: "{{ testbed_routing_forced_dscp.tunnel_vps_sonic_1 }}"
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 1
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: []
+      targets_v6: ["{{ mwan_routing_tunnels.tunnel_vps_sonic_1.remote.inner_ipv6 }}"]
+      http_targets: []
+
+  - name: tunnel_vps_astound
+    connection_id: tunnel_vps_astound
+    owner: mwan
+    iface: "{{ mwan_routing_tunnels.tunnel_vps_astound.local.interface }}"
+    vlan_id: ""
+    link:
+      mtu: "{{ mwan_routing_tunnels.tunnel_vps_astound.mtu }}"
+      tunnel:
+        protocol: 6in4
+        underlay: "{{ mwan_routing_connection_ifaces[mwan_routing_tunnels.tunnel_vps_astound.connection] }}"
+        remote_address: "{{ mwan_routing_tunnels.tunnel_vps_astound.remote.outer_ipv4 }}"
+        local_address: "{{ mwan_routing_tunnels.tunnel_vps_astound.local.outer_ipv4 }}"
+        ttl: "{{ mwan_routing_tunnels.tunnel_vps_astound.outer_ttl }}"
+    ipv6:
+      translation:
+        mode: native
+      address: >-
+        {{ mwan_routing_tunnels.tunnel_vps_astound.local.inner_ipv6 }}/{{
+        mwan_routing_tunnels.tunnel_vps_astound.inner_prefix_length }}
+      routes: >-
+        {{ mwan_routing_ipv6_routes | selectattr('gateway', 'equalto',
+        mwan_routing_tunnels.tunnel_vps_astound.remote.inner_ipv6) | list }}
+    bgp_sessions:
+      - name: tunnel_vps_home_astound
+        peer_address: "{{ mwan_routing_sessions.tunnel_vps_home_astound.remote.address }}"
+        local_address: "{{ mwan_routing_sessions.tunnel_vps_home_astound.local.address }}"
+        local_as: "{{ mwan_routing_sessions.tunnel_vps_home_astound.local.asn }}"
+        remote_as: "{{ mwan_routing_sessions.tunnel_vps_home_astound.remote.asn }}"
+        router_id: "{{ bgp_router_id }}"
+        multihop_ttl: "{{ mwan_routing_sessions.tunnel_vps_home_astound.multihop_ttl }}"
+        keepalive: "{{ mwan_routing_sessions.tunnel_vps_home_astound.keepalive_seconds }}"
+        hold: "{{ mwan_routing_sessions.tunnel_vps_home_astound.hold_seconds }}"
+        connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        route_metric: 8800
+        import_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_astound.policy.import_prefixes }}"
+        export_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_astound.policy.export_prefixes }}"
+        export_mode: always
+        export_next_hop: "{{ mwan_routing_sessions.tunnel_vps_home_astound.local.address }}"
+    table: 1500
+    mark: 13
+    mark_prio: 1300
+    from_prio: 67
+    tier: 3
+    weight: 1
+    forced_dscp: "{{ testbed_routing_forced_dscp.tunnel_vps_astound }}"
+    health:
+      enabled: true
+      ping_count: 3
+      success_threshold: 1
+      failure_threshold: 2
+      recovery_threshold: 2
+      check_interval: 10
+      targets_v4: []
+      targets_v6: ["{{ mwan_routing_tunnels.tunnel_vps_astound.remote.inner_ipv6 }}"]
+      http_targets: []
 
 # How a new connection is assigned among the active tier's healthy providers.
 mwan_hash_mode: random

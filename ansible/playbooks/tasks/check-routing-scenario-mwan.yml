@@ -1,22 +1,30 @@
 ---
-- name: Collect the packet captures and require the tools
-  ansible.builtin.import_tasks: check-routing-mwan-captures.yml
+- name: Check the scenario with stamped client packets
+  block:
+    - name: Stamp the downstream client's packets for the scenario
+      ansible.builtin.import_tasks: check-routing-client-stamp.yml
 
-- name: Send ordinary IPv4 packets before the IPv6 checks
-  ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
-  vars:
-    routing_ordinary_phase: before
+    - name: Collect the packet captures and require the tools
+      ansible.builtin.import_tasks: check-routing-mwan-captures.yml
 
-- name: Capture and send packets at the gateway
-  ansible.builtin.import_tasks: check-routing-mwan-packets.yml
+    - name: Send ordinary IPv4 packets before the IPv6 checks
+      ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
+      vars:
+        routing_ordinary_phase: before
 
-- name: Transfer TCP data and check the packet size
-  ansible.builtin.import_tasks: check-routing-mwan-transfer.yml
+    - name: Capture and send packets at the gateway
+      ansible.builtin.import_tasks: check-routing-mwan-packets.yml
 
-- name: Check the gateway sessions and routes
-  ansible.builtin.import_tasks: check-routing-mwan-sessions.yml
+    - name: Transfer TCP data and check the packet size
+      ansible.builtin.import_tasks: check-routing-mwan-transfer.yml
 
-- name: Send ordinary IPv4 packets after the IPv6 checks
-  ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
-  vars:
-    routing_ordinary_phase: after
+    - name: Check the gateway sessions and routes
+      ansible.builtin.import_tasks: check-routing-mwan-sessions.yml
+
+    - name: Send ordinary IPv4 packets after the IPv6 checks
+      ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
+      vars:
+        routing_ordinary_phase: after
+  always:
+    - name: Remove the client stamp
+      ansible.builtin.import_tasks: check-routing-client-unstamp.yml

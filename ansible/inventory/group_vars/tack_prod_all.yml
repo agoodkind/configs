@@ -13,6 +13,7 @@ tack_audit_reader_password: "{{ vault_tack_audit_reader_password }}"
 tack_audit_redactor_password: "{{ vault_tack_audit_redactor_password }}"
 tack_audit_operator_password: "{{ vault_tack_audit_operator_password }}"
 tack_migrator_password: "{{ vault_tack_migrator_password }}"
+tack_ops_migrator_login: true
 
 # Phase C audit cutover (TACK-232). Kafka storage uuid; distinct from QA.
 tack_kafka_cluster_id: "r8jB0c2ISFubOB2oWkKmEQ"
@@ -113,16 +114,16 @@ tack_store_redundancy_mode: double
 # While tack_search_enabled is false, the env file has no OPENSEARCH_*
 # setting, the application guests receive no search authority, and
 # deploy-tack skips the search guests and the topology check.
-tack_search_enabled: false
+tack_search_enabled: true
 tack_search_members: "{{ tack_search_production_members }}"
 tack_search_endpoint: "https://[{{ service_mapping.vault_hypervisor.ipv6 }}]:{{ tack_search_port }}"
 tack_search_single_node: false
 tack_search_cluster_name: tack-search-production
 
 # While this value is true, the env file of the first member sets that member
-# as the initial cluster manager. Set it to false after the cluster forms.
-# Later members discover the existing cluster.
-tack_search_bootstrap_cluster: true
+# as the initial cluster manager. The production cluster formed on 2026-10-15.
+# Every member discovers the existing cluster.
+tack_search_bootstrap_cluster: false
 
 tack_search_username: "{{ vault_tack_search_username }}"
 tack_search_password: "{{ vault_tack_search_password }}"
@@ -142,5 +143,5 @@ tack_search_cursor_key: "{{ vault_tack_search_cursor_key }}"
 tack_search_shards: 1
 tack_search_routing_shards: 8
 tack_search_replicas: 0
-tack_search_public_enabled: false
+tack_search_public_enabled: true
 tack_search_model_repair_enabled: false

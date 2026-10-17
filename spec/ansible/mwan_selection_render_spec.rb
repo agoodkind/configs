@@ -28,6 +28,7 @@ RSpec.describe 'MWAN connection selection configuration' do
   end
 
   it 'renders omitted, enabled, and excluded connections without changing other connections' do
+    inventory_selection = providers.to_h { |provider| [provider.fetch('connection_id'), provider['selection_enabled']] }
     Dir.mktmpdir('mwan-selection-render') do |directory|
       [nil, true, false].each do |enabled|
         network = File.join(directory, 'network.json')
@@ -40,10 +41,16 @@ RSpec.describe 'MWAN connection selection configuration' do
         else
           expect(steering.fetch('enabled')).to be(enabled)
         end
-        connections.except('webpass').each_value do |entry|
+        connections.except('webpass').each do |connection_id, entry|
           next unless entry.key?('goodkind-mwan-steering:steering')
 
-          expect(entry.fetch('goodkind-mwan-steering:steering')).not_to have_key('enabled')
+          other_steering = entry.fetch('goodkind-mwan-steering:steering')
+          configured = inventory_selection.fetch(connection_id)
+          if configured.nil?
+            expect(other_steering).not_to have_key('enabled')
+          else
+            expect(other_steering.fetch('enabled')).to be(configured)
+          end
         end
       end
     end

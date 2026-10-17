@@ -5,10 +5,11 @@ require_relative '../support/ansible_render'
 require_relative '../support/task_expressions'
 require_relative '../support/tack_ops_identity'
 
-# tack-ops runs one reviewed Tack ops command on one QA guest with the rendered
-# operator identity. These examples run the real playbook through its identity
-# guard and evaluate the real playbook text: the request check, the task
-# order, and the rendered command lines.
+# tack-ops runs one reviewed Tack ops command on one QA guest or on the
+# production owner guest with the rendered operator identity.
+# These examples run the real playbook through its identity guard and
+# evaluate the real playbook text: the request check, the task order, and
+# the rendered command lines.
 module TackOpsPlaybook
   PLAYBOOKS = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks')
   PLAYBOOK_FILE = File.join(PLAYBOOKS, 'tack-ops.yml')
@@ -19,7 +20,7 @@ module TackOpsPlaybook
   EXECUTE_OUTPUT_TASK = 'Show the output of the --execute run'
   QA_HOSTS = %w[tack-qa tack-data1-suburban tack-data2-suburban tack-data3-suburban].freeze
   PRODUCTION_HOSTS = %w[tack tack-data1 tack-data2 tack-data3].freeze
-  GROUPS = { 'tack_qa_all' => QA_HOSTS, 'tack_prod_all' => PRODUCTION_HOSTS }.freeze
+  GROUPS = { 'tack_qa_all' => QA_HOSTS, 'tack_prod_all' => PRODUCTION_HOSTS, 'tack_servers' => ['tack'] }.freeze
   COMMIT = '66ef50f670fd1cd6a5f4dfe8f877af30ed6c2b51'
   SERVER_DIGEST = "sha256:#{'a' * 64}".freeze
   CONSUMER_DIGEST = "sha256:#{'b' * 64}".freeze
@@ -28,6 +29,7 @@ module TackOpsPlaybook
   # once-drop-killtest-schema (TACK-560; command removal day 2026-12-06).
   KILLTEST_COMMAND = 'ops backfill once-drop-killtest-schema'
   SUPERUSER_URL = 'render-only-superuser-url'
+  MANIFEST_ARGUMENT = '--manifest=/etc/tack/search-projections.json'
   OTHER_COMMANDS = ['ops deploy verify', 'ops audit prove-schema-guard', 'audit signers', 'audit query',
                     'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
                     'ops qa datagen search-load', 'ops qa datagen search-mixed',
@@ -124,11 +126,22 @@ module TackOpsPlaybook
     'a positional argument' => { 'tack_ops_args' => ['SELECT'] },
     'an argument that adds --execute' => { 'tack_ops_args' => ['--execute'] },
     'an argument that sets an identity flag' => { 'tack_ops_args' => ['--operator-id=x'] },
-    'a production guest' => { 'ansible_play_hosts_all' => ['tack'] },
+    'a QA command on the production owner guest' => { 'ansible_play_hosts_all' => ['tack'],
+                                                       'tack_ops_command' => 'ops qa datagen seed' },
+    'a production data guest' => { 'ansible_play_hosts_all' => ['tack-data1'] },
+    'tack_provision_owner passed for a guest outside tack_servers' => {
+      'ansible_play_hosts_all' => ['tack'], 'tack_provision_owner' => true,
+      'groups' => GROUPS.merge('tack_servers' => [])
+    },
+    'a QA guest and a production guest' => { 'ansible_play_hosts_all' => %w[tack-qa tack] },
     'two guests' => { 'ansible_play_hosts_all' => %w[tack-qa tack-data1-suburban] },
     'a short commit' => { 'tack_commit' => '66ef50f' },
     'an empty command' => { 'tack_ops_command' => '' },
-    'an argument to the killtest schema backfill' => { 'tack_ops_command' => KILLTEST_COMMAND, 'tack_ops_args' => ['--output=json'] }
+    'an argument to the killtest schema backfill' => { 'tack_ops_command' => KILLTEST_COMMAND, 'tack_ops_args' => ['--output=json'] },
+    'the search projection backfill on the production owner guest without the manifest argument' => {
+      'ansible_play_hosts_all' => ['tack'], 'tack_ops_command' => 'ops backfill once-search-projections',
+      'tack_ops_args' => ['--manifest=/etc/tack/other.json']
+    }
   }.freeze
 end
 
@@ -156,6 +169,21 @@ RSpec.describe TackOpsPlaybook do
                                           'tack_ops_args' => ['--rate=1000', '--commit'])).to be(true)
     expect(described_class.request_passes('tack_ops_command' => 'ops qa datagen search-mixed',
                                           'tack_ops_args' => ['--rate=1000', '--write-rate=60', '--commit'])).to be(true)
+  end
+
+  it 'accepts ops search verify on the production owner guest' do
+    expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'])).to be(true)
+  end
+
+  it 'accepts the full ops search reindex on the production owner guest' do
+    expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'], 'tack_ops_command' => 'ops search reindex',
+                                          'tack_ops_args' => ['--mode=full'])).to be(true)
+  end
+
+  it 'accepts ops backfill once-search-projections on the production owner guest' do
+    expect(described_class.request_passes('ansible_play_hosts_all' => ['tack'],
+                                          'tack_ops_command' => 'ops backfill once-search-projections',
+                                          'tack_ops_args' => [TackOpsPlaybook::MANIFEST_ARGUMENT])).to be(true)
   end
 
   it 'refuses every request outside the reviewed commands, guests, and arguments', :aggregate_failures do
