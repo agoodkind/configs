@@ -1,0 +1,55 @@
+---
+- name: Collect the connection check inputs
+  ansible.builtin.set_fact:
+    routing_connection:
+      id: "{{ routing_connection_id }}"
+      dscp: "{{ testbed_routing_forced_dscp[routing_connection_id] }}"
+      tunnels: "{{ routing_connection_tunnels }}"
+      underlay: >-
+        {{ ((routing_connection_tunnels | map(attribute='connection') | list) + [routing_connection_id])[0] }}
+      gateway_sessions: >-
+        {{ routing_check.gateway_sessions | selectattr('connection', 'equalto', routing_connection_id) | list }}
+      mtu: >-
+        {{ (routing_connection_tunnels | map(attribute='mtu') | list
+        + [testbed_routing_checks.native_mtu]) | min }}
+  vars:
+    routing_connection_tunnels: >-
+      {{ routing_check.scenario.tunnels | selectattr('id', 'equalto', routing_connection_id) | list }}
+
+- name: Report the connection and its forced DSCP
+  ansible.builtin.debug:
+    msg: >-
+      Routing scenario {{ routing_check.name }} checks connection
+      {{ routing_connection.id }} with forced DSCP {{ routing_connection.dscp }}.
+
+- name: Check the connection with stamped client packets
+  block:
+    - name: Stamp the downstream client's packets with the forced DSCP of the connection
+      ansible.builtin.import_tasks: check-routing-client-stamp.yml
+      vars:
+        routing_stamp_connection: "{{ routing_connection.id }}"
+
+    - name: Collect the packet captures and require the tools
+      ansible.builtin.import_tasks: check-routing-mwan-captures.yml
+
+    - name: Send ordinary IPv4 packets before the IPv6 checks
+      ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
+      vars:
+        routing_ordinary_phase: before
+
+    - name: Capture and send packets at the gateway
+      ansible.builtin.import_tasks: check-routing-mwan-packets.yml
+
+    - name: Transfer TCP data and check the packet size
+      ansible.builtin.import_tasks: check-routing-mwan-transfer.yml
+
+    - name: Check the gateway sessions and routes
+      ansible.builtin.import_tasks: check-routing-mwan-sessions.yml
+
+    - name: Send ordinary IPv4 packets after the IPv6 checks
+      ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
+      vars:
+        routing_ordinary_phase: after
+  always:
+    - name: Remove the client stamp
+      ansible.builtin.import_tasks: check-routing-client-unstamp.yml

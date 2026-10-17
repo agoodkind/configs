@@ -118,7 +118,7 @@ RSpec.describe 'routing simulator checks' do
                  { 'ifname' => 'eth2', 'addr_info' => [{ 'local' => '10.240.209.1' }] }]
     transport = { 'results' => [{ 'item' => 'sonic_1', 'stdout' => JSON.generate(addresses) }] }
     node_vmids = { 'isp_sonic' => 906, 'tunnel_static_vps' => 912 }
-    captures = RoutingSimulatorConfig.captures(inventory, 'tunnel_static', transport, node_vmids)
+    captures = RoutingSimulatorConfig.captures(inventory, 'tunnel_static', 'tunnel_static_sonic_1', transport, node_vmids)
 
     expect(captures.map { |capture| capture.first(4) }).to eq(
       [['before provider', 'tunnel_static_sonic_1', '906', 'eth2'],
@@ -126,6 +126,72 @@ RSpec.describe 'routing simulator checks' do
        ['return through provider', 'tunnel_static_sonic_1', '906', 'eth2'],
        ['inner at endpoint', 'tunnel_static_sonic_1', '912', 'sit-sonic1']]
     )
+  end
+
+  it 'captures outbound packets on the connection tunnel and return packets on every tunnel to the endpoint' do
+    address = ->(service, interface) { RoutingSimulatorConfig.interface_address(inventory, service, interface, 'ipv4') }
+    sonic = [{ 'ifname' => 'eth1', 'addr_info' => [{ 'local' => address.call('isp_sonic_suburban', 'outer') }] },
+             { 'ifname' => 'eth2', 'addr_info' => [{ 'local' => address.call('isp_sonic_suburban', 'sonic_1') }] }]
+    astound = [{ 'ifname' => 'eth3', 'addr_info' => [{ 'local' => address.call('isp_astound_suburban', 'outer') }] },
+               { 'ifname' => 'eth4',
+                 'addr_info' => [{ 'local' => inventory.fetch('service_mapping').fetch('isp_astound_suburban').fetch('ipv4') }] }]
+    transport = { 'results' => [{ 'item' => 'sonic_1', 'stdout' => JSON.generate(sonic) },
+                                { 'item' => 'astound', 'stdout' => JSON.generate(astound) }] }
+    node_vmids = { 'isp_sonic' => 906, 'isp_astound' => 905, 'tunnel_vps_vps' => 915 }
+    captures = RoutingSimulatorConfig.captures(inventory, 'tunnel_vps', 'tunnel_vps_astound', transport, node_vmids)
+
+    expect(captures.map { |capture| capture.first(4) }).to eq(
+      [['before provider', 'tunnel_vps_astound', '905', 'eth4'],
+       ['after provider', 'tunnel_vps_astound', '905', 'eth3'],
+       ['return through provider', 'tunnel_vps_sonic_1', '906', 'eth2'],
+       ['return through provider', 'tunnel_vps_astound', '905', 'eth4'],
+       ['inner at endpoint', 'tunnel_vps_astound', '915', 'sit-astound']]
+    )
+  end
+
+  it 'checks each connection that forwards the scenario IPv6 traffic with its forced DSCP', :aggregate_failures do
+    dscp = inventory.fetch('testbed_routing_forced_dscp')
+    {
+      'astound_static' => %w[astound_static_astound], 'etheric_native' => %w[etheric],
+      'tunnel_static' => %w[tunnel_static_sonic_1], 'tunnel_upstream' => %w[tunnel_upstream_sonic_2],
+      'tunnel_vps' => %w[tunnel_vps_sonic_1 tunnel_vps_astound]
+    }.each do |scenario, connections|
+      connections.each do |connection|
+        facts = RoutingSimulatorConfig.connection_facts(inventory, scenario, connection)
+        expect(facts.fetch('routing_check').fetch('checked_connections')).to eq(connections)
+        expect(facts.fetch('routing_connection').fetch('dscp').to_i).to eq(dscp.fetch(connection))
+      end
+    end
+  end
+
+  it 'binds the gateway sessions, the underlay, and the MTU to the connection', :aggregate_failures do
+    astound = RoutingSimulatorConfig.connection_facts(inventory, 'tunnel_vps', 'tunnel_vps_astound').fetch('routing_connection')
+    etheric = RoutingSimulatorConfig.connection_facts(inventory, 'etheric_native', 'etheric').fetch('routing_connection')
+
+    expect(astound.fetch('gateway_sessions').map { |session| session.fetch('id') }).to eq(['tunnel_vps_home_astound'])
+    expect(astound.values_at('underlay', 'mtu').map(&:to_s)).to eq(%w[astound 1480])
+    expect(etheric.fetch('gateway_sessions').map { |session| session.fetch('id') }).to eq(['etheric_native_home'])
+    expect(etheric.values_at('underlay', 'mtu').map(&:to_s)).to eq(%w[etheric 1500])
+  end
+
+  def tunnel_vps_mwan_results
+    connection_checks = ['ordinary ipv4 before', 'packet captures', 'icmp both directions',
+                         'tcp transfer both directions', 'packet size', 'ordinary ipv4 after', 'home route on upstream']
+    ['node tunnel_vps_vps', 'node tunnel_vps_upstream', 'node tunnel_vps_client', 'node isp_sonic',
+     'outer transport tunnel_vps_sonic_1', 'outer transport tunnel_vps_astound', 'session tunnel_vps_upstream',
+     'remote client gateway', 'transport source tunnel_vps_sonic_1',
+     'connection tunnel_vps_sonic_1 gateway session tunnel_vps_home_sonic_1',
+     'connection tunnel_vps_astound gateway session tunnel_vps_home_astound'] +
+      %w[tunnel_vps_sonic_1 tunnel_vps_astound].product(connection_checks).map { |id, check| "connection #{id} #{check}" }
+  end
+
+  it 'requires the MWAN checks of every checked connection', :aggregate_failures do
+    valid = ->(results) { RoutingSimulatorConfig.required_checks_valid?(inventory, 'tunnel_vps', 'mwan', results) }
+
+    expect(valid.call(tunnel_vps_mwan_results)).to be(true)
+    expect(valid.call(tunnel_vps_mwan_results - ['connection tunnel_vps_astound packet captures'])).to be(false)
+    expect(valid.call(tunnel_vps_mwan_results - ['connection tunnel_vps_astound gateway session tunnel_vps_home_astound']))
+      .to be(false)
   end
 
   it 'derives the fault wait from the configured hold time', :aggregate_failures do

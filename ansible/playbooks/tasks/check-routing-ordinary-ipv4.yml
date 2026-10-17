@@ -17,4 +17,5 @@
 
 - name: Record the ordinary IPv4 check
   ansible.builtin.set_fact:
-    routing_check_results: "{{ routing_check_results + ['ordinary ipv4 ' ~ routing_ordinary_phase] }}"
+    routing_check_results: >-
+      {{ routing_check_results + ['connection ' ~ routing_connection.id ~ ' ordinary ipv4 ' ~ routing_ordinary_phase] }}

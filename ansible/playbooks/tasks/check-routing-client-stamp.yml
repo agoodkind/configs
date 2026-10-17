@@ -13,10 +13,8 @@
         ip6 dscp set {{ testbed_routing_forced_dscp[routing_stamp_connection] }}
   vars:
     routing_stamp_scenario: "{{ testbed_routing_scenarios[routing_scenario_name] }}"
-    routing_stamp_connection: >-
-      {{ ((routing_stamp_scenario.tunnels | map(attribute='id') | list) + routing_stamp_scenario.connections)[0] }}
 
-- name: Stamp the downstream client's packets to the scenario's remote prefixes
+- name: Stamp the downstream client's packets to the scenario's remote prefixes for {{ routing_stamp_connection }}
   ansible.builtin.command:
     argv: [pct, exec, "{{ routing_stamp.vmid }}", --, sh, -c, "{{ routing_stamp.script }}"]
   changed_when: true

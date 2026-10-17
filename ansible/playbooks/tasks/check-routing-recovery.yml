@@ -3,6 +3,10 @@
   block:
     - name: Stamp the downstream client's packets for the scenario
       ansible.builtin.import_tasks: check-routing-client-stamp.yml
+      vars:
+        routing_stamp_connection: >-
+          {{ ((testbed_routing_scenarios[routing_scenario_name].tunnels | map(attribute='id') | list)
+          + testbed_routing_scenarios[routing_scenario_name].connections)[0] }}
 
     - name: Collect the fault inputs
       ansible.builtin.import_tasks: check-routing-recovery-inputs.yml

@@ -27,9 +27,10 @@
         | map(attribute='address') | list)[0] }}
       remote_client_node: >-
         {{ (routing_check_scenario.nodes | select('in', routing_check_client_nodes) | list)[0] }}
-      mtu: >-
-        {{ (routing_check_scenario.tunnels | map(attribute='mtu') | list
-        + [testbed_routing_checks.native_mtu]) | min }}
+      checked_connections: >-
+        {{ ((routing_check_scenario.tunnels | map(attribute='id') | list) + routing_check_scenario.connections)
+        | reject('in', routing_check_scenario.unchecked_connections | map(attribute='id') | list) | list }}
+      unchecked_connections: "{{ routing_check_scenario.unchecked_connections }}"
       downstream: "{{ service_mapping[testbed_routing_checks.downstream_client] }}"
   vars:
     routing_check_scenario: "{{ testbed_routing_scenarios[routing_scenario_name] }}"

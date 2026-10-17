@@ -65,7 +65,7 @@
 
 - name: Record the ICMP check
   ansible.builtin.set_fact:
-    routing_check_results: "{{ routing_check_results + ['icmp both directions'] }}"
+    routing_check_results: "{{ routing_check_results + ['connection ' ~ routing_connection.id ~ ' icmp both directions'] }}"
 
 - name: Wait for each packet capture
   ansible.builtin.async_status:
@@ -79,30 +79,26 @@
   delay: 2
   failed_when: false
 
-# A scenario with several tunnels passes when the captures on one tunnel
-# contain every packet.
-- name: Require every packet capture on one path
+- name: Require every outbound capture and one return capture on the connection
   ansible.builtin.assert:
     that:
-      - routing_capture_complete_paths != ''
+      - routing_capture_outbound_failures == []
+      - routing_capture_returns == [] or (routing_capture_returns | selectattr('rc', 'equalto', 0) | list) != []
     fail_msg: >-
-      Routing scenario {{ routing_check.name }}: no path shows the expected
-      packets. Failed captures: {{ routing_capture_failures }}
+      Routing scenario {{ routing_check.name }} connection {{ routing_connection.id }}
+      with DSCP {{ routing_connection.dscp }}: the captures do not show the
+      expected packets. Failed captures: {{ routing_capture_failures }}
   vars:
+    routing_capture_return_phase: return through provider
     routing_capture_failures: >-
       {{ routing_capture_results.results | rejectattr('rc', 'equalto', 0)
       | map(attribute='item.item') | map('join', ' ') | list }}
-    routing_capture_complete_paths: >-
-      {%- set complete = [] -%}
-      {%- for path in routing_captures | map(attribute=1) | unique -%}
-      {%- set failed = routing_capture_results.results | selectattr('item.item.1', 'equalto', path)
-      | rejectattr('rc', 'equalto', 0) | list -%}
-      {%- if failed == [] -%}
-      {%- set _ = complete.append(path) -%}
-      {%- endif -%}
-      {%- endfor -%}
-      {{ complete | join(',') }}
+    routing_capture_returns: >-
+      {{ routing_capture_results.results | selectattr('item.item.0', 'equalto', routing_capture_return_phase) | list }}
+    routing_capture_outbound_failures: >-
+      {{ routing_capture_results.results | rejectattr('item.item.0', 'equalto', routing_capture_return_phase)
+      | rejectattr('rc', 'equalto', 0) | list }}
 
 - name: Record the packet captures
   ansible.builtin.set_fact:
-    routing_check_results: "{{ routing_check_results + ['packet captures'] }}"
+    routing_check_results: "{{ routing_check_results + ['connection ' ~ routing_connection.id ~ ' packet captures'] }}"

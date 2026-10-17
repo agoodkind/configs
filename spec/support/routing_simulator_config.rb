@@ -88,16 +88,23 @@ module RoutingSimulatorConfig
     )
   end
 
-  def captures(inventory, scenario, transport_addresses, node_vmids)
+  # Evaluates the scenario and connection inputs of the MWAN check and then the
+  # fact tasks in later, and returns the facts.
+  def connection_facts(inventory, scenario, connection, variables: {}, later: [])
     inputs = task('Collect the scenario check inputs', 'tasks', 'check-routing-scenario-inputs.yml')
-    collect = task('Collect the packet captures', 'tasks', 'check-routing-mwan-captures.yml')
+    connection_inputs = task('Collect the connection check inputs', 'tasks', 'check-routing-mwan-connection.yml')
     TaskExpressions.evaluate(
       variables: inventory.slice(*LITERAL_VARIABLES).merge(
-        'routing_scenario_name' => scenario, 'routing_scenario_mode' => 'mwan',
-        'routing_transport_addresses' => transport_addresses, 'routing_node_vmids' => node_vmids
-      ),
-      facts: inventory_facts(inventory) + [TaskExpressions.fact_task(inputs), TaskExpressions.fact_task(collect)]
-    ).fetch('facts').fetch('routing_captures')
+        'routing_scenario_name' => scenario, 'routing_scenario_mode' => 'mwan', 'routing_connection_id' => connection
+      ).merge(variables),
+      facts: inventory_facts(inventory) + [inputs, connection_inputs, *later].map { |item| TaskExpressions.fact_task(item) }
+    ).fetch('facts')
+  end
+
+  def captures(inventory, scenario, connection, transport_addresses, node_vmids)
+    collect = task('Collect the packet captures', 'tasks', 'check-routing-mwan-captures.yml')
+    variables = { 'routing_transport_addresses' => transport_addresses, 'routing_node_vmids' => node_vmids }
+    connection_facts(inventory, scenario, connection, variables: variables, later: [collect]).fetch('routing_captures')
   end
 
   def fault_facts(inventory, scenario)
