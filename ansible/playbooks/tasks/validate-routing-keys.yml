@@ -13,6 +13,7 @@
         - kind
         - connections
         - unchecked_connections
+        - unchecked_ipv4_connections
         - nodes
         - home_prefixes
         - remote_prefixes
@@ -22,6 +23,9 @@
         - probe_targets
       entries:
         unchecked_connections:
+          keys: [id, reason]
+          nested: {}
+        unchecked_ipv4_connections:
           keys: [id, reason]
           nested: {}
         tunnels:

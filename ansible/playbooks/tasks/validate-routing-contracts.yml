@@ -50,9 +50,12 @@
         | reject('ge', routing_simulator_private_asn_ranges[1].lowest) | list == []
       - routing_scenario_asns | select('gt', routing_simulator_private_asn_ranges[1].highest) | list == []
       - item.value.unchecked_connections | map(attribute='id') | difference(routing_scenario_connections) == []
-      - item.value.unchecked_connections | map(attribute='reason') | select('equalto', '') | list == []
+      - item.value.unchecked_ipv4_connections | map(attribute='id') | difference(item.value.connections) == []
+      - routing_scenario_exclusion_reasons | reject('string') | list == []
+      - routing_scenario_exclusion_reasons | map('trim') | select('equalto', '') | list == []
       - routing_scenario_checked_connections != []
       - routing_scenario_checked_connections | difference(testbed_routing_forced_dscp.keys() | list) == []
+      - routing_scenario_ipv4_connections | difference(testbed_routing_forced_dscp.keys() | list) == []
       - routing_scenario_gateway_sessions | rejectattr('connection', 'defined') | list == []
       - >-
         routing_scenario_gateway_sessions | map(attribute='connection')
@@ -67,10 +70,17 @@
       + (item.value.sessions | map(attribute='remote.asn') | list) }}
     # The MWAN check stamps the forced DSCP of each checked connection. A
     # declared connection outside that set needs an unchecked_connections entry.
+    # An underlay connection outside the ordinary IPv4 checks needs an
+    # unchecked_ipv4_connections entry.
     routing_scenario_connections: >-
       {{ (item.value.tunnels | map(attribute='id') | list) + item.value.connections }}
     routing_scenario_checked_connections: >-
       {{ routing_scenario_connections
       | reject('in', item.value.unchecked_connections | map(attribute='id') | list) | list }}
+    routing_scenario_ipv4_connections: >-
+      {{ item.value.connections
+      | reject('in', item.value.unchecked_ipv4_connections | map(attribute='id') | list) | list }}
+    routing_scenario_exclusion_reasons: >-
+      {{ (item.value.unchecked_connections + item.value.unchecked_ipv4_connections) | map(attribute='reason') | list }}
     routing_scenario_gateway_sessions: >-
       {{ item.value.sessions | selectattr('local.node', 'in', routing_simulator_gateway_nodes) | list }}
