@@ -50,6 +50,7 @@
     - { candidate: /etc/frr/frr.conf.candidate, active: /etc/frr/frr.conf, enabled: "{{ rsim.bgp }}" }
   when: item.enabled | bool
   changed_when: false
+  check_mode: false
 
 - name: Require each home route tracker unit to run
   ansible.builtin.command:
@@ -58,3 +59,4 @@
     {{ rsim_files | selectattr(3, 'equalto', 'tracker') | map(attribute=0)
     | select('search', '\.service$') | list }}
   changed_when: false
+  check_mode: false
