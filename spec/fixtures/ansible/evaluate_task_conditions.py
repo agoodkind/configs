@@ -20,6 +20,7 @@ import sys
 from typing import TypedDict
 
 from ansible.parsing.dataloader import DataLoader
+from ansible.plugins.loader import init_plugin_loader
 from ansible.template import Templar, trust_as_template
 
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
@@ -153,6 +154,9 @@ def evaluate(request: EvaluationRequest) -> EvaluationResult:
 
 
 def main() -> int:
+    # A task expression can call a lookup plugin, which ansible-core finds only
+    # after the plugin loader starts.
+    init_plugin_loader()
     request: EvaluationRequest = json.load(sys.stdin)
     json.dump(evaluate(request), sys.stdout)
     return 0
