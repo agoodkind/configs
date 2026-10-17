@@ -1,9 +1,9 @@
 ---
 # routing_probe_connection is a checked tunnel of the scenario. The outer
-# fault block removes the stamp table. The echo requests must leave the gateway
-# on that tunnel. routing_probe_return_rule is "kept tunnel" when the replies
-# must return on that tunnel, and "any tunnel to the endpoint" when the tunnel
-# endpoint can choose another tunnel to it for the replies.
+# fault block removes the stamp table. The gateway sends echo requests on that
+# tunnel. When routing_probe_return_rule is "kept tunnel", the gateway must
+# receive the replies on that tunnel. When it is "any tunnel to the endpoint",
+# the tunnel endpoint can send the replies on any of its tunnels to the gateway.
 - name: Collect the stamped probe inputs
   ansible.builtin.set_fact:
     routing_stamped_probe_path:

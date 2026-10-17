@@ -29,8 +29,8 @@
         argv: [pct, reboot, "{{ routing_restart_fault.vmid }}"]
       changed_when: true
 
-    # systemctl is-system-running exits nonzero for degraded. The assertion
-    # below reads the state from stdout.
+    # systemctl is-system-running exits nonzero for degraded. The next task
+    # asserts on the state that the command prints.
     - name: Wait until systemd in the simulator guest finishes startup
       ansible.builtin.command:
         argv: [pct, exec, "{{ routing_restart_fault.vmid }}", --, systemctl, is-system-running, --wait]
@@ -42,7 +42,8 @@
       delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
 
     # check-routing-simulator-node.yml checks every service that the node
-    # declares. A degraded state from an undeclared unit passes this assertion.
+    # declares. The assertion accepts a degraded state from a unit that the node
+    # does not declare.
     - name: Require a running or degraded systemd state in the simulator guest
       ansible.builtin.assert:
         that:

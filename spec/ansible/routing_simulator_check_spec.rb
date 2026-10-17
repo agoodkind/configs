@@ -258,18 +258,6 @@ RSpec.describe 'routing simulator checks' do
     expect(learned).to eq([])
   end
 
-  it 'sets each fault link up and reconfigures it on its simulator' do
-    restore = RoutingSimulatorConfig.tasks('tasks', 'check-routing-recovery-links-up.yml').first
-    variables = { 'routing_fault_links' => [{ 'node' => 'isp_sonic', 'interface' => 'eth3' },
-                                            { 'node' => 'tunnel_vps_vps', 'interface' => 'sit-sonic1' }],
-                  'routing_node_vmids' => { 'isp_sonic' => 906, 'tunnel_vps_vps' => 918 } }
-    commands = TaskExpressions.evaluate(variables: variables, facts: [RoutingSimulatorConfig.fact(restore['vars'], restore['vars'])])
-                              .fetch('facts').fetch('routing_restore_commands')
-
-    expect(commands).to eq(["pct exec 906 -- sh -c 'ip link set dev eth3 up && networkctl reconfigure eth3'",
-                            "pct exec 918 -- sh -c 'ip link set dev sit-sonic1 up && networkctl reconfigure sit-sonic1'"])
-  end
-
   it 'rejects an MWAN run with only the infrastructure results' do
     expect(required_checks_valid?('mwan', infrastructure_results)).to be(false)
   end

@@ -18,8 +18,8 @@
 # FRR 10.3 peer_adj_routes in bgpd/bgp_route.c prints the advertised prefixes
 # as the keys of advertisedRoutes, and prints an empty advertisedRoutes object
 # when the peer has nothing advertised. An unknown neighbor or an inactive
-# address family prints only a warning key. That output stops the retries and
-# fails the task, and Ansible prints the node and neighbor label, the command,
+# address family prints only a warning key. The missing advertisedRoutes key
+# fails the task. Ansible then prints the node and neighbor label, the command,
 # and the FRR output.
 - name: Wait for the expected default route in each VPS advertisement to the gateway
   ansible.builtin.command:
