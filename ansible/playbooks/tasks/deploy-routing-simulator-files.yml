@@ -21,8 +21,13 @@
     - name: Read the staged and installed checksums
       ansible.builtin.import_tasks: deploy-routing-simulator-checksums.yml
 
-    # The FRR configuration check reads this content after the always block
-    # removes the temp directory.
+    # The firewall and FRR configuration checks read this content after the
+    # always block removes the temp directory.
+    - name: Read the staged firewall configuration
+      ansible.builtin.slurp:
+        src: "{{ rsim_temp_dir }}/nftables.conf"
+      register: rsim_nftables_staged
+
     - name: Read the staged FRR configuration
       ansible.builtin.slurp:
         src: "{{ rsim_temp_dir }}/frr.conf"
