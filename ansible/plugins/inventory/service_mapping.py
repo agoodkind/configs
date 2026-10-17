@@ -4,7 +4,8 @@ Ansible Dynamic Inventory Plugin: service_mapping
 Reads service_mapping from group_vars/all/service_mapping.yml and creates:
   - A host for each service using its hostname
   - A group named {service}_servers containing that host
-  - Host vars: ansible_host (IPv6), service_ipv4 (if defined)
+  - Host vars: ansible_host (IPv6), service_ipv4 (if defined), service_vmid
+    (if the entry defines vmid)
   - Optional parent groups declared under top-level `group_children`. A child
     may be a group this plugin creates or a group another inventory source
     declares, such as the hypervisor groups in the static hosts file. All
@@ -125,6 +126,7 @@ class InventoryModule(BaseInventoryPlugin):
             hostname = service_data.get("hostname")
             ipv6 = service_data.get("ipv6")
             ipv4 = service_data.get("ipv4")
+            vmid = service_data.get("vmid")
 
             # An entry can declare itself out of the inventory while still
             # carrying its identity for other consumers. The simulated ISPs do
@@ -164,6 +166,9 @@ class InventoryModule(BaseInventoryPlugin):
 
             if ipv4:
                 self.inventory.set_variable(hostname, "service_ipv4", ipv4)
+
+            if vmid is not None:
+                self.inventory.set_variable(hostname, "service_vmid", int(vmid))
 
             # Add to all_services group
             if create_all_group:

@@ -53,3 +53,8 @@ deploy:
   # on each play host and locks the named inventory host with the play hosts.
   lock_host_variables:
     deploy-mwan: [mwan_proxmox_delegate]
+  # Keys are the second label of a guest host name. Values are the Proxmox node
+  # names in ansible_proxmox_host.
+  absent_guest_nodes:
+    home: vault
+    suburban: hypervisor
