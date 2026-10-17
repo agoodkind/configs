@@ -148,7 +148,7 @@ delegated.
 | NPTv6 filters on `wan` and `mwanbr`, ingress and egress | Attached |
 | Devices found by name, owner `networkd`, link files hand-authored | Pass |
 | DHCPv4 on `wan` from the uplink | Address and default gateway received |
-| Provider health | Unhealthy: no IPv4 reply arrives on `wan`, and the uplink offers no IPv6 default route |
+| Provider health | Unhealthy: IPv4 replies do not arrive on `wan`, and the uplink does not offer an IPv6 default route |
 | Uplink ping with MWAN stopped and nftables rules removed | The capture recorded requests and did not record replies. |
 | Policy rules and provider default route | The daemon did not install them while the provider was unhealthy. |
 

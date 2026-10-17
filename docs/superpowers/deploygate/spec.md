@@ -3,7 +3,7 @@
 The MWAN deploy's reboot gate reports the true verdict even when the
 controller loses every route to production during the reboot window. The
 controller's own tunnel rides the VM being rebooted, so the design assumes
-the controller can reach nothing on the production side, vault included,
+the controller cannot connect to any system on the production side, vault included,
 for the whole window.
 
 ## Defect this replaces

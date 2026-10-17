@@ -1,8 +1,8 @@
 # The model
 
-The gateway describes itself with published IETF models. Only the steering
-concepts have no published model, so they live in one local module that
-extends the others. This page is the single home for the model's shape; the
+The gateway describes itself with published IETF models. The steering
+concepts are the only concepts that do not have a published model, so they
+live in one local module that extends the others. This page is the single home for the model's shape; the
 five specifications express their behavior in its terms.
 
 ## What the published models give
@@ -30,16 +30,16 @@ instance carries a `policy`, which for prefix translation holds
 declares native, NPTv6, or NAPT44 as each family's base mode and references
 the applicable RFC 8512 data. IPv4 static mappings are entries within NAPT44,
 not an exclusive mode. NPTv6 itself maps the configured IPv6 prefixes one to
-one. Native mode is explicit because RFC 8512 models NAT instances and has no
-instance type for unchanged forwarding.
+one. Native mode is explicit because RFC 8512 models NAT instances and does
+not define an instance type for unchanged forwarding.
 
 **Routing.** RFC 8349 defines control-plane protocols and routing tables,
 which covers the per-provider tables and the learned routes.
 
 ## What the local module adds
 
-One module extends the interface list with the steering properties no
-published model covers:
+One module extends the interface list with the steering properties that
+published models do not cover:
 
 - `tier`, a small integer. Lower is preferred.
 - `weight`, a positive integer, for unequal balancing among members of one
@@ -70,13 +70,13 @@ hand-authored, and an interface carrying a provider states one or the other.
 A `networkd` container carries free-form unit-file sections, one ordered
 list of sections for each of `link`, `network`, and `netdev`, each section
 an ordered list of key and value pairs keyed by position, so a link shape
-with no typed leaf is still expressible. The schema validates the free-form
-structure and networkd validates its keys.
+that does not have a typed leaf is still expressible. The schema validates
+the free-form structure and networkd validates its keys.
 
-The module also carries the daemon settings that no published model covers
+The module also carries the daemon settings that published models do not cover
 and the surface serves: the rollback watchdog's thresholds and probe
 targets, the out-of-band access policy, and the tunnel tap. They are plain
-configuration nodes with no steering semantics.
+configuration nodes that do not have steering semantics.
 
 The module defines two notifications, a member health transition and an
 active-tier change, each carrying the value before and after. How and when
@@ -156,8 +156,8 @@ Configure advertisement policy per prefix and session. The policy can
 advertise a prefix through every eligible session, prefer some advertised
 paths over others, or advertise a backup path only when its configured
 condition becomes true. Provider-specific communities and other supported
-BGP attributes are policy values. No provider, connection, or policy is the
-hardcoded primary. Changing the production policy requires configuration and
+BGP attributes are policy values. The model does not hardcode a provider,
+connection, or policy as the primary. Changing the production policy requires configuration and
 deployment, not a binary change.
 
 Install the route to the tunnel endpoint's remote address in the underlying
@@ -230,7 +230,7 @@ ASN does not by itself require every connection to advertise the same prefix.
 | Import policy | The policy selects which received routes MWAN accepts. |
 | Export policy | The policy selects which routes MWAN advertises to a peer. |
 | Route withdrawal | A router stops advertising a previously announced route. |
-| Default route | The router uses this route when no more specific destination route matches. The IPv6 default is ::/0. |
+| Default route | The router uses this route when it cannot match a more specific destination route. The IPv6 default is ::/0. |
 | Full table | The provider supplies its available internet destination routes instead of only a default. |
 | Next hop | This router receives the packet for the next forwarding step. |
 | Multihop BGP | The peer is beyond a directly connected link, and session configuration permits the intervening router hops. |
@@ -245,14 +245,14 @@ Each row is a current special case and the model element that replaces it.
 |---|---|
 | IPv4 and IPv6 translation are different code paths in different components | two instances on one interface, types `napt44` and `nptv6` |
 | IPv4 static mapping is separate from the family's translation type | `mapping-table` entries of type `static` on the interface's NAPT44 instance |
-| No way to express address masquerade, a statically routed prefix, or no translation | the family's explicit base mode: NAPT44, NPTv6, or native |
+| The current implementation cannot express address masquerade, a statically routed prefix, or forwarding without translation | the family's explicit base mode: NAPT44, NPTv6, or native |
 | A delegation is forced to a fixed length, and a shorter one is widened onto space the gateway does not hold | both prefixes are explicit leaves, and RFC 6296 defines the rest |
-| Nothing checks the two prefix lengths against each other | both are modeled, so the check is schema-level |
+| The implementation does not check one prefix length against the other | both are modeled, so the check is schema-level |
 | The load balancer is hardcoded in three expressions and cannot select the fallback provider | derived from the member list of the active tier |
-| A provider with no delegation keeps receiving IPv6 and discarding it | the IPv6 container's operational status is down when its instance cannot be realized |
+| A provider without a delegation keeps receiving IPv6 and discarding it | the IPv6 container's operational status is down when its instance cannot be realized |
 | The health verdict merges both families | MWAN-507 evaluates each family and its required link, routing, and translation state separately. |
 | Forwarding is enabled globally before any firewall exists | the `forwarding` leaf, per interface per family |
-| The rollback watchdog's probe list is hand-maintained and omits one provider | the daemon pushes its verdict to the watchdog, which holds no list |
+| The rollback watchdog's probe list is hand-maintained and omits one provider | the daemon pushes its verdict to the watchdog, which does not maintain a list |
 | Four routing identifiers are hand-assigned per provider | still typed per provider, and checked for uniqueness and collision at load |
 
 ## Prefixes of differing length
@@ -280,11 +280,12 @@ every mwan release builds and proves in a container, so a gateway installs
 them with apt and never compiles.
 
 The one piece that is ours is the publishing binding: a small Go-to-C layer
-through which the daemon sets values by path and applies them. It carries no
-write acceptance, no validation, and no transaction machinery, because the
-surface accepts no edits.
+through which the daemon sets values by path and applies them. It does not
+accept writes, validate data, or manage transactions, because the
+surface does not accept edits.
 
 The Go-only alternatives were probed and set aside. The single-dependency
 library fails to parse the translation module at its only tagged release,
-and the mature Go parser has no server, so pairing it with a served surface
-means writing the protocol layer ourselves, which this work does not do.
+and the mature Go parser does not provide a server, so pairing it with a
+served surface means writing the protocol layer ourselves, which this work
+does not do.

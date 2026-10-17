@@ -64,8 +64,8 @@ recovery, see [emergency out-of-band access](oob.md).
 
 A guest refuses every SSH key when sshd points at the global key file and
 that file is missing or empty. The audit finds these guests from the
-hypervisors and changes nothing. The redeploy in step 2 restarts sshd on each
-guest it targets.
+hypervisors and does not change anything. The redeploy in step 2 restarts sshd on
+each guest it targets.
 
 1. Run the audit. It lists each guest at risk, and separately each guest it
    could not read because the guest is stopped or its agent did not answer.

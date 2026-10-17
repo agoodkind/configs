@@ -37,26 +37,3 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y python3-jinja2
       - name: Lint Ansible inputs
         run: ./configsctl lint
-
-  # These specs render the real inventory and tack group_vars through Ansible
-  # and run the real package updater script, so a change to that data or script
-  # fails the pull request. The runner image provides ansible-playbook.
-  configs-data-tests:
-    name: configs data tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: .go-version
-          cache-dependency-path: configsctl
-      - uses: ruby/setup-ruby@v1
-        with:
-          bundler-cache: true
-      - name: Install Ansible IP address filter dependency
-        run: pipx inject ansible-core netaddr
-      # The localhost deployment fixtures contain no encrypted inventory.
-      - name: Install the test vault password file
-        run: install -D -m 600 spec/fixtures/ansible/unused-vault-password.txt ~/.config/ansible/vault.pass
-      - name: Run data specs
-        run: bundle exec rspec

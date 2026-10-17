@@ -224,7 +224,7 @@ stay disabled until a separate user instruction.
 
 ## Acceptance criteria
 
-- AC1: A plan after an apply on `clyde_suburban` reports no changes.
+- AC1: A plan after an apply on `clyde_suburban` does not report changes.
 - AC2: After a declared package is removed in the guest by hand, a plan
   proposes to install it.
 - AC3: After a declared file is edited in the guest by hand, a plan proposes
@@ -298,8 +298,8 @@ below are recorded for reconsideration. None of them is selected or scheduled.
 
 | Option | Current constraint | Tradeoff | Reconsider when |
 | --- | --- | --- | --- |
-| Root SSH to the hypervisor with `pct exec` and `qm guest exec` | The owner rejects root SSH as a design. | The option requires no overlay and works on stock Proxmox. It grants root on every hypervisor to the machine that runs OpenTofu. | The owner changes the root SSH rule. |
-| SSH into each guest | A guest with broken SSH requires a second repair path. | The option requires no hypervisor privilege. Each guest needs sshd and an authorized key before OpenTofu manages it. | The overlay guest methods stop applying to a Proxmox release and a patch is not feasible. |
+| Root SSH to the hypervisor with `pct exec` and `qm guest exec` | The owner rejects root SSH as a design. | The option does not require an overlay and works on stock Proxmox. It grants root on every hypervisor to the machine that runs OpenTofu. | The owner changes the root SSH rule. |
+| SSH into each guest | A guest with broken SSH requires a second repair path. | The option does not require hypervisor privileges. Each guest needs sshd and an authorized key before OpenTofu manages it. | The overlay guest methods stop applying to a Proxmox release and a patch is not feasible. |
 | Upstream the guest methods to Proxmox | The overlay patches each Proxmox release. | Upstream methods remove the overlay maintenance. Acceptance and timing depend on the Proxmox maintainers. | The overlay methods run on all three hypervisors without a change for one Proxmox minor release. |
 | A Debian package for the overlay | `pve-overlay` installs Perl modules and AppArmor profiles from patch files. | A package can install binaries and units and uses dpkg triggers. It needs a build pipeline and a package source. | The overlay needs a compiled helper, or it installs more than ten host files. |
 | An overlay privilege for VM command execution | The stock `agent/exec` method requires `VM.GuestAgent.Unrestricted`. | A narrow privilege limits a VM token to command execution. It adds one more overlay method. | The first VM guest is enrolled (AC11). |
