@@ -60,6 +60,23 @@ variable "authorized_key_lines" {
   }
 }
 
+variable "extra_authorized_keys_files" {
+  description = "sshd reads keys from these files in addition to /etc/ssh/authorized_keys.d/authorized_keys. The module lists these paths after the global key file on the AuthorizedKeysFile line in 99-sshpiper-global-authorized-keys.conf. The module does not create or write these files. With the default empty list, sshd reads only the global key file."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = (
+      alltrue([
+        for path in var.extra_authorized_keys_files :
+        can(regex("^/[^\\s]*$", path)) && path != "/etc/ssh/authorized_keys.d/authorized_keys"
+      ]) &&
+      length(var.extra_authorized_keys_files) == length(distinct(var.extra_authorized_keys_files))
+    )
+    error_message = "Each extra key file path must be absolute, must not contain whitespace, must differ from /etc/ssh/authorized_keys.d/authorized_keys, and must appear only once."
+  }
+}
+
 variable "packages" {
   description = "Names of the apt packages that every guest has installed."
   type        = set(string)
@@ -233,7 +250,9 @@ locals {
       path = "${local.sshd_dropin_dir}/99-sshpiper-global-authorized-keys.conf"
       content = templatefile(
         "${path.module}/files/sshd-global-authorized-keys.conf.tftpl",
-        { authorized_keys_path = local.authorized_keys_path },
+        {
+          authorized_keys_paths = concat([local.authorized_keys_path], var.extra_authorized_keys_files)
+        },
       )
     }
   }
