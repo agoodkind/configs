@@ -65,6 +65,27 @@ RSpec.describe 'routing simulator checks' do
     expect(unreachable?(outer_net, '', rules)).to be(false)
   end
 
+  def addresses_present?(node, addresses)
+    assertion = RoutingSimulatorConfig.task('Require the declared interface and tunnel addresses',
+                                            'tasks', 'check-routing-simulator-node.yml')
+    node_facts = RoutingSimulatorConfig.tasks('tasks', 'routing-simulator-node-facts.yml')
+                                       .map { |task| TaskExpressions.fact_task(task) }
+    stdout = JSON.generate([{ 'addr_info' => addresses.map { |address| { 'local' => address } } }])
+    variables = { 'rsim_name' => node, 'rsim_addresses' => TaskExpressions.command_result(0, stdout, '') }
+    RoutingSimulatorConfig.assertion_valid?(inventory, assertion, variables, node_facts)
+  end
+
+  it 'requires the link-local address of each tunnel on the guest', :aggregate_failures do
+    interfaces = inventory.fetch('service_mapping').fetch('routing_tunnel_vps_vps_suburban').fetch('routing_interfaces')
+    interface_addresses = interfaces.except('management').values
+                                    .flat_map { |interface| interface.values_at('ipv4', 'ipv6') }.reject(&:empty?)
+    tunnel_addresses = interface_addresses + ['2001:db8:5ff:1::2', '2001:db8:5ff:2::2']
+    link_locals = ['fe80::c633:6428:af0:d102', 'fe80::c633:6428:af0:cf02']
+
+    expect(addresses_present?('tunnel_vps_vps', tunnel_addresses + link_locals)).to be(true)
+    expect(addresses_present?('tunnel_vps_vps', tunnel_addresses + link_locals.first(1))).to be(false)
+  end
+
   def session_established?(file, name, result, summary)
     wait = RoutingSimulatorConfig.task(name, 'tasks', file)
     session = { 'local' => { 'address' => '2001:db8:2ff:10::1' }, 'remote' => { 'address' => '2001:db8:2ff:10::2' } }
