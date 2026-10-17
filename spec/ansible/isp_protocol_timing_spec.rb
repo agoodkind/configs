@@ -65,6 +65,17 @@ RSpec.describe 'ISP simulator protocol timing' do
     expect(rendered.fetch('ra')).not_to include('AdvPreferredLifetime')
   end
 
+  it 'retries the DHCPv6 socket open with the inventory retry settings', :aggregate_failures do
+    defaults = inventory.fetch('testbed_isp_protocol_defaults')
+    interfaces = JSON.parse(render_protocols(provider).fetch('dhcp6')).fetch('Dhcp6').fetch('interfaces-config')
+
+    expect(interfaces.values_at('service-sockets-max-retries', 'service-sockets-retry-wait-time'))
+      .to eq(defaults.values_at('dhcp6_socket_max_retries', 'dhcp6_socket_retry_wait_ms'))
+    expect(interfaces.fetch('service-sockets-max-retries')).to be_positive
+    expect(valid_protocol_timing?(provider)).to be(true)
+    expect(valid_protocol_timing?(provider.merge('dhcp6_socket_retry_wait_ms' => 0))).to be(false)
+  end
+
   it 'renders an isolated short-lease scenario through Ansible' do
     scenario = provider.merge(
       'dhcp4_valid_lifetime_seconds' => 12,

@@ -236,6 +236,10 @@ testbed_isp_protocol_defaults:
   dhcp6_renew_seconds: omit
   dhcp6_rebind_seconds: omit
   dhcp6_dns_servers: []
+  # kea-dhcp6 starts before eth0 comes up after pct start. Kea retries the
+  # failed socket open at this interval, up to this many times.
+  dhcp6_socket_max_retries: 60
+  dhcp6_socket_retry_wait_ms: 5000
   ra_min_interval_seconds: 30
   ra_max_interval_seconds: 100
   ra_dns_servers: []
