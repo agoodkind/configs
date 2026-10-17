@@ -48,10 +48,10 @@ locals {
   # service mapping name of the guest.
   authorized_key_lines_overrides = {}
 
-  # Add extra key files beside the global key file for individual guests. Key
-  # by the service mapping name of the guest.
+  # This map adds key files beside the global key file for individual guests.
+  # Each map key is the service mapping name of the guest.
   # ISP simulators use /etc/ssh/authorized_keys.d/mwan-testbed.
-  # The MWAN testbed deploy writes this file.
+  # The MWAN testbed deploy writes that file.
   authorized_keys_files_overrides = {
     isp_astound_suburban = local.isp_simulator_key_files
     isp_att_suburban     = local.isp_simulator_key_files
