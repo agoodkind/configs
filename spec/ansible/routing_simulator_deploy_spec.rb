@@ -28,19 +28,23 @@ RSpec.describe 'routing simulator file deploy' do
   end
 
   def pushes?(staged_checksum, guest_output)
+    collect = task('Collect the files with a changed checksum', 'deploy-routing-simulator-checksums.yml')
     push = task('Push each file with a changed checksum', 'deploy-routing-simulator-push.yml')
-    item = [[], { 'stat' => { 'checksum' => staged_checksum } }, { 'stdout' => guest_output }]
+    file = ['nftables.conf', '/etc/nftables.conf.candidate', '0644', 'nftables']
+    variables = { 'item' => file, 'rsim_files' => [file],
+                  'rsim_staged' => { 'results' => [{ 'stat' => { 'checksum' => staged_checksum } }] },
+                  'rsim_installed' => { 'results' => [{ 'stdout' => guest_output }] } }
     TaskExpressions.evaluate(
-      variables: { 'item' => item }, facts: [],
+      variables: variables, facts: [TaskExpressions.fact_task(collect)],
       conditions: { 'push' => TaskExpressions.condition_list(push.fetch('when')) }
     ).fetch('conditions').fetch('push')
   end
 
-  def converge(directory, run_name, before_apply_command)
+  def converge(directory, run_name, before_apply_command, options = [])
     password_file = File.join(AnsibleRender::FIXTURE_DIRECTORY, 'unused-vault-password.txt')
     extra_vars = { 'work_directory' => directory, 'run_name' => run_name, 'before_apply_command' => before_apply_command }
     AnsibleRender.run_playbook(password_file, 'localhost,', 'routing_simulator_converge.yml', extra_vars,
-                               AnsibleRender::PLAYBOOK_TIMEOUT_SECONDS)
+                               AnsibleRender::PLAYBOOK_TIMEOUT_SECONDS, options)
   end
 
   def applied(directory)
@@ -76,6 +80,22 @@ RSpec.describe 'routing simulator file deploy' do
     expect(pushes?('abc123', "abc123  /etc/nftables.conf.candidate\n")).to be(false)
     expect(pushes?('abc123', "def456  /etc/nftables.conf.candidate\n")).to be(true)
     expect(pushes?('abc123', '')).to be(true)
+  end
+
+  it 'reports only the changed file in check mode and changes no guest file or group', :aggregate_failures do
+    Dir.mktmpdir('routing-converge') do |directory|
+      %w[staged guest applied].each { |name| Dir.mkdir(File.join(directory, name)) }
+      %w[first second].each { |name| File.write(File.join(directory, 'staged', "#{name}.conf"), "#{name}\n") }
+      File.write(File.join(directory, 'guest', 'first.conf'), "first\n")
+      File.write(File.join(directory, 'guest', 'second.conf'), "old\n")
+
+      checked = converge(directory, 'checked', 'true', ['--check'])
+      expect(checked.exit_status).to be_success, checked.output
+      expect(checked.output).to include("Check mode skips the push of #{directory}/guest/second.conf")
+      expect(checked.output).not_to include("Check mode skips the push of #{directory}/guest/first.conf")
+      expect(File.read(File.join(directory, 'guest', 'second.conf'))).to eq("old\n")
+      expect(applied(directory)).to eq([])
+    end
   end
 
   it 'applies a pushed file on the run after a failed run and only a changed group after that', :aggregate_failures do
