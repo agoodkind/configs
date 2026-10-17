@@ -21,6 +21,14 @@
     - name: Read the staged and installed checksums
       ansible.builtin.import_tasks: deploy-routing-simulator-checksums.yml
 
+    # The FRR configuration check reads this content after the always block
+    # removes the temp directory.
+    - name: Read the staged FRR configuration
+      ansible.builtin.slurp:
+        src: "{{ rsim_temp_dir }}/frr.conf"
+      register: rsim_frr_staged
+      when: rsim.bgp | bool
+
     - name: Push each changed simulator file
       ansible.builtin.import_tasks: deploy-routing-simulator-push.yml
   always:
