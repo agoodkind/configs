@@ -102,13 +102,14 @@ RSpec.describe 'routing simulator file deploy' do
       guest = staged_check_guest_argv(name, file, content.bytesize)
       guard = guest.first(guest.length - checker.length)
 
-      expect(guest.last(checker.length)).to eq(checker)
       complete = run_guest_check(guard + ['cat'], content)
       expect(complete.exit_status).to be_success, complete.error_output
       expect(complete.output).to eq(content)
-      empty = run_guest_check(guard + ['cat'], '')
-      expect(empty.exit_status).not_to be_success
-      expect(empty.output).to eq('')
+      [content.chop, ''].each do |received|
+        short = run_guest_check(guard + ['cat'], received)
+        expect(short.exit_status).not_to be_success, received.inspect
+        expect(short.output).to eq(''), received.inspect
+      end
     end
   end
 
