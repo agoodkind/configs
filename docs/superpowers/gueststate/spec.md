@@ -1,8 +1,9 @@
-# Guest base state in OpenTofu
+# Guest state and service deployment in OpenTofu
 
 OpenTofu declares guest files, installed packages, and systemd units. The
 provider reads each declared resource from the guest during planning. This
-design replaces the `prep-guests` playbook.
+design replaces the `prep-guests` playbook and defines shared provider
+requirements for Tack and MWAN deployment.
 
 ## Defect this replaces
 
@@ -196,9 +197,50 @@ interface binds to `nic0`, `nic3`, or `ens1f1`, or to a bridge with one of
 those LAN ports. LAN client traffic, LAN forwarding, and LAN-facing services
 stay disabled until a separate user instruction.
 
+### 12. Tack and MWAN migration
+
+Configs combines infrastructure, reusable configuration, and application
+resources in each declared deployment. Existing providers manage the state
+they already support. A missing general capability requires a reusable
+extension to the appropriate provider. The shared guest module remains the
+replacement for `prep-guests`; Tack and MWAN reuse it.
+
+The reuse review also covers containers, image downloads and digests, registry
+access, database administration, credentials, certificates, backups, snapshots,
+host configuration, and networking. Use each operation's state and contract to
+select its provider. The service that first needs an operation does not
+determine its implementation owner. A shared configuration module combines
+resources without duplicating their implementation.
+
+The [approved Tack design](https://github.com/agoodkind/tack/blob/main/docs/superpowers/specs/2026-10-10-tack-provider.md)
+governs Tack deployment. Application-specific resources implement rules such
+as Tack's schema compatibility and coordinated search replacement, or MWAN's
+network intent and deployment health decisions. Every proposed custom resource
+must identify the existing providers considered, their exact capability gaps,
+and the application rules that require a separate implementation.
+
+Every managed object and field has one writer. Resources that manage deployed
+objects read live state and show meaningful proposed changes before apply.
+MWAN's configuration-only projections retain the network planning contract
+in section 11; the resources that write deployed state own its live readback.
+A record that a command ran does not establish the resulting state. Deployed
+object contracts must cover import, changes, removal, failed operations, and
+recovery after interruption. Import preserves existing cluster identities
+and data volumes. A provider starts writing a field only after the previous
+Ansible writer stops managing it.
+
+One owner maintains the shared capability list and coordinates generic
+provider changes. Tack and MWAN development proceed in parallel. Each task
+depends only on the capabilities it uses; unrelated work continues while a
+dependency remains unfinished. The [implementation plan](plan.md) requires an
+owner, a concrete action, evidence, dependencies, and a completion check for
+each remaining item. A genuine decision requires options and a recommendation.
+
 ## Boundaries
 
-- Service deploys remain in Ansible.
+- Tack and MWAN must install, configure, update, and recover without invoking
+  Ansible. Other services keep their Ansible service deployments as future work.
+  Removal of the playbooks alone does not satisfy the completion criteria.
 - `deploy-ssh-keys` is deleted after the last guest is enrolled. The transport
   in section 1 repairs a locked-out guest.
 - The first version covers apt and systemd on Debian. Alpine guests are out of
@@ -269,8 +311,34 @@ stay disabled until a separate user instruction.
   modules as loaded. `PUT /nodes/{node}/kernel-modules` rejects a token with
   only `Sys.KernelModules.Audit` with HTTP 403. The HTTP 403 check passed on
   poweredge on 2026-10-06 in pveguest pull request 7.
+- AC16: Tack and MWAN reuse generic provider resources and the shared guest
+  module. Applicable AC1 through AC8 pass. Every custom resource has the
+  section 12 justification. A shared capability passes acceptance for each
+  consumer that requires it.
+- AC17: Tack passes its approved deployment acceptance requirements on QA
+  and production without invoking Ansible. Adoption preserves identities and
+  data volumes. Planning does not change deployed state. Drift repair and
+  interrupted apply recovery pass. The next plan reports zero changes, and a
+  second apply does not perform extra work.
+- AC18: MWAN passes installation, configuration, update, recovery, and
+  applicable AC11 through AC15 checks without invoking Ansible. Coverage
+  includes production, the test environment, ISP and routing simulators,
+  failover guests, host services, observers, and required OPNsense operations.
+  Simulator acceptance verifies addresses, routes, and client traffic.
+  Adoption, drift repair, and interrupted recovery preserve service state.
+  The next plan reports zero changes, and a second apply does not perform
+  extra work.
+- AC19: The completed capability list accounts for every Tack and MWAN
+  lifecycle task, including shared inventory, locking, and controller
+  dependencies. Execution evidence confirms that their supported entrypoints
+  do not invoke Ansible. Other service deployments retain their existing
+  behavior. Existing production and dormant LAN authorization limits apply.
 
 ## Migration order
+
+Guest enrollment and service migration can overlap. Each task requires only
+its own prerequisites. Completing enrollment of every guest does not gate
+independent Tack or MWAN work.
 
 1. Add workspace selection to configsctl and create the `guest` workspace.
    Build `pveguest_file` and `pveguest_systemd_unit`. Enroll `clyde_suburban`
@@ -287,6 +355,20 @@ stay disabled until a separate user instruction.
    with the `guest-type` change, the `terraform-provider-mwan` release with
    pull request 202, and the overlay release with the `hostnic` option.
 8. Delete `prep-guests`, `deploy-ssh-keys`, the marker tasks, and their specs.
+9. Complete the shared capability review and assign implementation owners.
+   Record existing resources, verified gaps, dependencies, actions, and
+   completion checks. Confirm coverage of both services before selecting
+   application-specific resources.
+10. Develop generic capabilities, Tack resources, and MWAN resources in
+    parallel. Each adoption requires acceptance of its actual dependencies.
+    Import existing state and stop each previous writer before provider
+    writes. Complete the applicable AC16 checks for each adopted capability.
+11. Prove Tack on QA and MWAN on the test environment independently, then
+    adopt their production environments within existing authorization.
+    Complete AC17 and AC18. Neither service waits for the other to finish.
+12. Remove replaced Tack and MWAN Ansible tasks and dependencies after their
+    acceptance checks pass. Complete AC19 while preserving other service
+    deployments. Steps 9 through 12 order dependencies, not unrelated work.
 
 Tack epic LAB-65 tracks this work. LAB-71, LAB-72, LAB-74, and LAB-77 track
 the guest API transport.
