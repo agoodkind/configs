@@ -36,9 +36,8 @@
   register: routing_vps_default_advertised
   changed_when: false
   until: >-
-    (routing_simulator_default_routes | difference(routing_vps_advertised_prefixes) == [])
+    (routing_simulator_default_routes
+    | difference((routing_vps_default_advertised.stdout | from_json).advertisedRoutes | list) == [])
     == routing_vps_default_present
   retries: "{{ routing_recovery.wait_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
-  vars:
-    routing_vps_advertised_prefixes: "{{ (routing_vps_default_advertised.stdout | from_json).advertisedRoutes | list }}"
