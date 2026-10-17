@@ -61,7 +61,7 @@ variable "authorized_key_lines" {
 }
 
 variable "extra_authorized_keys_files" {
-  description = "sshd reads keys from these files in addition to /etc/ssh/authorized_keys.d/authorized_keys. The module lists these paths after the global key file on the AuthorizedKeysFile line in 99-sshpiper-global-authorized-keys.conf. The module does not create or write these files. With the default empty list, sshd reads only the global key file."
+  description = "sshd reads keys from these files in addition to /etc/ssh/authorized_keys.d/authorized_keys. The module appends these paths to the AuthorizedKeysFile directive that it configures. The module does not create or write these files. With the default empty list, sshd reads only the global key file."
   type        = list(string)
   default     = []
 
