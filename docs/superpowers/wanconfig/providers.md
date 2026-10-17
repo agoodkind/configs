@@ -5,16 +5,16 @@ re-weighting a provider is an edit to that entry and a configuration deploy.
 The entry holds the provider's routing numbers, tier, weight, translation
 prefix, probe policy, and link identity. The daemon validates the entry at
 load and renders the systemd-networkd unit files for the provider's link
-from it. No provider name appears in Go outside tests, and no file is
-written by hand for a provider.
+from it. Go does not include provider names outside tests, and operators do
+not write files by hand for a provider.
 
 One provider is exempt: AT&T, whose link runs 802.1X authentication before the
-provider answers a lease at all. Its entry says so in one leaf and carries no
-link identity, so the daemon renders nothing for it and its four unit files
+provider answers a lease at all. Its entry says so in one leaf and does not include
+link identity, so the daemon does not render files for it and its four unit files
 stay in the repository: the physical `.link` and `.network`, the VLAN
 `.netdev`, and the VLAN `.network`. Those files are the description of that
-link. Nothing in the configuration file describes it a second time, and
-nothing checks them against anything, because a second description of a link
+link. The configuration file does not describe it a second time, and
+the system does not check those files against other values, because a second description of a link
 this delicate is the thing worth avoiding. The authentication chain that
 drives them stays beside them.
 
@@ -41,13 +41,13 @@ providers, so a fourth inventory entry is not rendered.
 
 The systemd-networkd unit files are written by hand, one pair per provider,
 each named in a deploy list. A fourth provider needs two to four new files,
-and nothing checks them against the provider's other values.
+and the system does not check them against the provider's other values.
 
 ## Inventory takes the model's shape
 
 Each gateway group carries one list with one entry per provider. Every value
 the gateway reads about a provider is in that entry, including the hardware
-values. No per-provider variable exists outside the list.
+values. Per-provider variables do not exist outside the list.
 
 The production group after this piece:
 
@@ -61,8 +61,8 @@ mwan_providers:
     tier: 0
     weight: 1
     # This link's four unit files are hand-authored and describe it on their
-    # own, so the entry carries no link block and no per-family addressing.
-    # It names the interface the daemon steers and says nothing about how
+    # own, so the entry does not include a link block or per-family addressing.
+    # It identifies the interface the daemon steers and does not specify how
     # that interface comes up.
     link_files: hand-authored
     iface: enatt0.3242
@@ -149,8 +149,8 @@ mwan_pin_provider: att
 A fourth provider is one more entry with `table: 600`, `mark: 4`,
 `mark_prio: 600`, `from_prio: 58`, its own tier, and its own link block.
 Tables 400 and 500 are reserved, so 600 is the first free hundred. An
-IPv4-only provider has no `npt_prefix` and no IPv6 probe targets. It gets no
-IPv6 lease, no translation, and no IPv6 source rule. Its `ipv6` block states
+IPv4-only provider does not have an `npt_prefix` or IPv6 probe targets. It does not get an
+IPv6 lease, translation, or an IPv6 source rule. Its `ipv6` block states
 `dhcp: false` and `accept_ra: false`, which renders `IPv6AcceptRA=no` into its
 unit file. The loader rejects any entry with an `ipv4` or `ipv6` block that
 omits `dhcp`.
@@ -161,7 +161,7 @@ describe the same wire, both read the service map.
 The IPv4 source pin is not typed at all. The routing module pins traffic the
 gateway sources from a provider's own address to that provider's table, and
 that address is the link's static address, so the daemon takes the pin from
-the address leaf. A leased link has no static address and gets no pin, as
+the address leaf. A leased link does not have a static address and does not get a pin, as
 today. A provider that must also source traffic from other addresses, such as
 the rest of a delegated block held on the link or a routed prefix on a
 loopback, lists them under `source_addresses`, and the pin covers the link
@@ -174,25 +174,25 @@ length, so the template that renders the configuration file splits it too. That
 is the only shape difference between an entry and the document it produces, and
 it exists because both sides are written for their own reader.
 
-The pinned-destination lists carry no provider name. `mwan_pin_provider`
+The pinned-destination lists do not include a provider name. `mwan_pin_provider`
 names the provider the pins target. The seed and name lists are named for
 what they pin. The kernel set names and the refresher timer keep their
 current names until the refresher moves into the daemon under its own ticket.
 The two WireGuard control-plane pins in the firewall ruleset file use the pin
 provider's mark.
 
-The network configuration renders by looping over the list. No template
-names a provider.
+The network configuration renders by looping over the list. Templates do not
+name a provider.
 
 ## Routing numbers are typed, and only checked
 
 Each provider carries its routing table, firewall mark, and two policy rule
-priorities as typed values. Nothing derives them. The current numbering (100,
+priorities as typed values. The system does not derive them. The current numbering (100,
 200, 300 for tables and mark-rule priorities; 1, 2, 3 for marks; 55, 56, 57
 for source-rule priorities) does not change.
 
 Three checks run at load. Every provider's table, mark, mark-rule priority,
-and source-rule priority is unique across providers. No provider's table is
+and source-rule priority is unique across providers. A provider's table must not be
 in the reserved set. Every weight is at least one. Two checks in the routing
 module stay: a mark is never zero, because zero is the unmarked state the
 balancing rule's guard tests, and neither rule priority equals the catch-all
@@ -204,11 +204,11 @@ rendered into the network configuration under the steering group, and read
 from there by the daemon. The tunnel table, 400, and the out-of-band table,
 500, are in the inventory registry that names the routing tables, and every
 template that needs one reads the registry. The kernel's own tables (253,
-254, 255, and 0) are always reserved. No reader carries a copy of the set.
+254, 255, and 0) are always reserved. Readers do not maintain a copy of the set.
 
 The fixed priority checks are deleted and the new checks land in one change.
-No state exists where one layer accepts a fourth provider and another rejects
-it.
+The layers do not disagree about whether to accept a fourth provider at any
+point.
 
 ## Steering becomes tier and weight
 
@@ -223,7 +223,7 @@ source and destination.
 
 The tiers in inventory decide fallback. A provider alone in its tier is the
 sole carrier when that tier is active. Providers that share a tier share it
-by weight. The daemon carries no tie-break rule.
+by weight. The daemon does not use a tie-break rule.
 
 The daemon owns the balancing rule. A steering module computes the rule from
 the active tier and programs it into a kernel table and chain the module
@@ -245,8 +245,8 @@ systemd-networkd brings links up: it matches the device, names it, sets its
 address, and runs both DHCP clients. The daemon writes its unit files. From
 the loaded network configuration it renders one `.link` and one `.network`
 per provider, plus a `.netdev` and a second `.network` for a provider on a
-VLAN. No per-provider template exists in the repository. The deploy copies no
-unit file for a provider link.
+VLAN. The repository does not contain per-provider templates. The deploy does not copy
+unit files for provider links.
 
 The daemon starts before udev names the devices and before systemd-networkd
 starts: its unit carries `DefaultDependencies=no` and orders itself before
@@ -260,7 +260,7 @@ for a provider that list no longer names, writes a file only when the content
 differs from what is on disk, and asks systemd-networkd to reload after a
 write or a deletion. Its sandbox gains a write path for
 the network manager's unit directory. The firewall keeps loading before
-`network-pre.target`, and the daemon takes no ordering after
+`network-pre.target`, and the daemon does not order itself after
 `network-online.target`, which would close a cycle.
 
 A reload does not carry a changed `.link` file. udev reads that file when the
@@ -395,7 +395,7 @@ provider's routing table, taken from `table-id`.
 ### Example: a key with no typed leaf
 
 A provider whose DHCPv6 lease must not supply resolvers needs `UseDNS=no`
-under `[DHCPv6]`. No typed leaf names it. The entry carries it as a
+under `[DHCPv6]`. The model does not define a typed leaf for it. The entry carries it as a
 free-form section, keyed by position:
 
 ```json
@@ -461,16 +461,16 @@ VLAN=ensonic0.101
 ```
 
 The renderer emits that line into the parent's file from the child's entry.
-No entry declares its own children; the child names its parent, and the
+An entry does not declare its own children; the child names its parent, and the
 renderer reads the list the other way.
 
 AT&T is not this case. Its link comes up through 802.1X authentication and its
-four unit files are hand-authored, so its entry carries no link block and the
-daemon writes nothing for it.
+four unit files are hand-authored, so its entry does not include a link block and the
+daemon does not write files for it.
 
 ### Example: a shape with no typed leaf at all
 
-A bonded uplink has no typed leaves in this piece. It is one entry with
+A bonded uplink does not have typed leaves in this piece. It is one entry with
 free-form sections:
 
 ```json
@@ -496,20 +496,20 @@ free-form sections:
 
 The daemon writes a `.netdev` and a `.network` with those sections.
 
-## The watchdog holds no provider list
+## The watchdog does not maintain a provider list
 
 The rollback watchdog on the hypervisor pings the internet through each
 provider interface during a diagnosis. After this piece the gateway daemon
 pushes its per-provider health verdict to the watchdog. The watchdog keeps its
-basic egress pings and smoke checks, drops its per-interface pings, and holds
-no interface names.
+basic egress pings and smoke checks, drops its per-interface pings, and does not store
+interface names.
 
 The push is advisory and stateless. Every message carries the whole verdict,
 one entry per provider plus the active tier. The watchdog keeps the latest
 message and the time it arrived, and logs both during a diagnosis. A restart
 on either side, or a lost message, is repaired by the next probe cycle, which
-sends the whole state again. A watchdog that has received nothing reports
-that it holds no verdict. No rollback decision reads the verdict in this
+sends the whole state again. A watchdog that has not received a message reports
+that it does not have a verdict. Rollback decisions do not read the verdict in this
 piece. Whether it blocks a rollback is separate work (MWAN-442, MWAN-332,
 MWAN-336).
 
@@ -524,7 +524,7 @@ because at daemon start the delegation may not be readable yet.
 The IPv4 source pin is different: its value is the link's static address,
 which the entry already carries, so it is derived rather than typed. The
 served tree keeps reporting it under the same leaf, now filled by the daemon
-from the address, so a reader of the served tree sees no change.
+from the address, so a reader of the served tree does not see a change.
 
 The daemon does not create links and does not run its own delegation client.
 Both stay with systemd-networkd. Moving them into the daemon is the monolith
@@ -534,7 +534,7 @@ authorities.
 
 ## Acceptance
 
-No provider name remains in Go outside tests or in an inventory variable that
+Provider names do not remain in Go outside tests or in inventory variables that
 the daemon or a rendered template reads by provider name.
 
 For the current provider set, the routes, policy rules, and the served tree
@@ -556,12 +556,12 @@ identical to the hand-authored files they replace, outside comment lines.
 The comparison ran once, by operator ruling, against the checked-in files
 before those files were deleted (agoodkind/mwan Actions run 35522419921), and
 again on each gateway after its cutover by comparing every file in
-`/etc/systemd/network` with the capture taken before it. No permanent CI gate
-exists. AT&T's four files are excluded, because they stay and nothing in
-the configuration file describes that link.
+`/etc/systemd/network` with the capture taken before it. A permanent CI gate does not
+exist. AT&T's four files are excluded, because they stay and
+the configuration file does not describe that link.
 
 A fourth provider can be added, re-tiered, and removed by one inventory entry
-and a configuration deploy, with the binary unchanged and no file written by
+and a configuration deploy, without changing the binary or writing files by
 hand. Traffic is observed leaving it at the simulator's ingress in every
 address family the provider has. The testbed's fourth simulated provider,
 astound, is IPv4-only, so its proof is IPv4 only.
@@ -579,26 +579,26 @@ deletion.
 
 A free-form key is not checked by the deploy's schema validation. A typo
 there surfaces as a networkd warning on the gateway, not as a deploy failure.
-Every line the current providers need has a typed leaf, so no current
-provider takes that path, and the free-form layer is exercised only by its
+Every line the current providers need has a typed leaf, so current
+providers do not use that path, and the free-form layer is exercised only by its
 tests until a provider needs it.
 
 A source address the provider does not route back is dropped at the
-provider's edge as spoofed, with no error on the gateway. `source_addresses`
+provider's edge as spoofed, and the gateway does not report an error. `source_addresses`
 therefore only adds to the link address and never replaces it, and a listed
 address must sit on the link or in a prefix the provider routes to the
 gateway. The daemon cannot check the second condition; the operator can.
 
-A VLAN whose parent's file does not name it is created by nothing, and the
-provider is simply absent with no error from any layer. The daemon fails the
-load when a provider declares a VLAN parent that no interface in the same
-document describes, which is the case this catches. AT&T is outside it: its
-entry declares no parent, and its hand-authored files carry the naming line
+The system does not create a VLAN when its parent's file does not name it, and
+the provider remains absent without an error from any layer. The daemon fails the
+load when a provider declares a VLAN parent that does not match an interface in the same
+document, which is the case this catches. AT&T is outside it: its
+entry does not declare a parent, and its hand-authored files carry the naming line
 themselves.
 
-A provider with no link identity is a provider the daemon does not bring up.
+The daemon does not bring up a provider without link identity.
 That is the point for AT&T, whose files are hand-authored, and it is a mistake
-for anyone else. The loader rejects any entry that has no link block and no
+for anyone else. The loader rejects any entry that does not have a link block and does not have a
 `link_files: hand-authored` leaf. The exemption is written down rather than
 inferred from an absence.
 
@@ -611,7 +611,7 @@ rejects the entire intended change when the runtime would omit any provider.
 Schema validation runs before these provider-local checks. A schema-invalid
 document remains fatal because it is not an accepted configuration tree. The
 daemon also does not start on a missing group-wide value, a routing number two
-providers share, a reserved table, or a document with no loadable provider.
+providers share, a reserved table, or a document that does not have a loadable provider.
 systemd-networkd keeps every other link configured when one `.network` file is
 bad (MWAN-506).
 

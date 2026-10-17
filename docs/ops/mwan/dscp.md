@@ -47,7 +47,7 @@ OPNsense can only SET DSCP through legacy scrub/normalization rules:
 - Allowed values are the named classes (`lowdelay`, `ef`, ...), `af11`-`af43`,
   `cs0`-`cs7`, and raw hex `0x00`-`0xFF`.
 - The MVC firewall filter-rule `tos` field and the Traffic Shaper `dscp` field
-  are MATCH-only, not set. There is no ipfw `setdscp`. So scrub `set-tos` is
+  are MATCH-only, not set. ipfw does not provide `setdscp`. Scrub `set-tos` is
   the only set primitive.
 
 Scrub runs before OPNsense's outbound NAT, so a scrub rule can match the real
@@ -56,9 +56,9 @@ mwan.
 
 ## Automation reach (verified in source)
 
-- The `opnsense-go` REST client cannot do this: its firewall filter model has
-  no `tos` or `dscp` field, and it implements no traffic-shaper or scrub
-  resource.
+- The `opnsense-go` REST client cannot do this: its firewall filter model does
+  not have a `tos` or `dscp` field, and it does not implement a traffic-shaper
+  or scrub resource.
 - The configs stack does not use that REST client. It drives OPNsense through
   the `mwan-opnsense` gRPC daemon over virtio-serial, which mutates the router
   config via XPath set, get, and delete calls plus command execution. Scrub
@@ -149,8 +149,8 @@ and either keep the scrub rule in the router config or program it from
   show `mark=1`; before the change they split between `mark=1` and `mark=2`.
 - Confirm the device egresses AT&T: its public IP as seen by an IP-echo service
   while streaming should be in the AT&T `104.57.226.x` range.
-- Confirm no collateral: only the tagged device should change WAN; other LAN
-  traffic still load-balances.
+- Confirm that only the tagged device changes WAN and that other LAN traffic
+  continues to load-balance.
 
 ## Caveats
 
@@ -158,10 +158,10 @@ and either keep the scrub rule in the router config or program it from
   `mwan-opnsense` XPath path, which has not yet been used for firewall rules;
   verify the daemon can insert a rule subtree, not just scalar values, before
   relying on it.
-- Verify nothing else re-normalizes ToS to 0 between OPNsense and mwan (a quick
-  live capture settles this).
+- Verify that ToS does not reset to 0 between OPNsense and mwan (a quick live
+  capture settles this).
 - Pick a codepoint not otherwise in use. CS1 (`0x20`) is the assumed free value
-  here; confirm no Traffic Shaper or other consumer keys on it.
+  here; confirm that the Traffic Shaper and other consumers do not key on it.
 - This pins the whole device, which is the intended "blunt" behavior. For
   app-only granularity on a shared device, OPNsense would still need a per-app
   classifier, which inherits the same shared-CDN problem.

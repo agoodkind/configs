@@ -4,7 +4,7 @@ OPNsense is the LAN router and services edge for goodkind.io, the box every hous
 
 ## LAN
 
-OPNsense provides the household LAN and separates it into trust zones. It terminates the WireGuard tunnels and runs the NAT64 translator that lets IPv6-only clients reach the IPv4 internet. The guest and captive-portal zone carries no IPv6, by design.
+OPNsense provides the household LAN and separates it into trust zones. It terminates the WireGuard tunnels and runs the NAT64 translator that lets IPv6-only clients reach the IPv4 internet. The guest and captive-portal zone does not support IPv6, by design.
 
 ## Upstream routing
 

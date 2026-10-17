@@ -11,18 +11,17 @@ member.
 
 ## The problem this solves
 
-IPv6 has exactly one translation behavior and no way to express another.
+IPv6 has exactly one translation behavior and cannot express another.
 Every provider gets the same prefix-translation rule set, built
-unconditionally, with no type field anywhere. A provider with no readable
+unconditionally, and the configuration does not include a type field. A provider without a readable
 delegation is dropped from the translation table entirely, so a statically
 routed prefix, a plain address masquerade, and native routing without
 translation are all inexpressible.
 
 The exclusivity is already load-bearing and recorded only as a comment in the
 firewall template, warning that a static masquerade on one provider would
-override prefix translation through rule ordering. Two behaviors that cannot
-coexist, with nothing in configuration saying which applies, is the shape of
-a bug waiting for a fourth provider.
+override prefix translation through rule ordering. The configuration does not specify which of these incompatible behaviors
+applies, which can cause a bug when a fourth provider is added.
 
 IPv4 has the mirror gap. Static one-to-one mapping exists as a separate
 provider field, outside any typed per-family translation policy. The firewall
@@ -40,10 +39,10 @@ They are not a fourth exclusive mode. A matching static mapping takes
 precedence over masquerade. This composition preserves the current IPv4
 behavior and follows RFC 8512's mapping-table structure. NPTv6 already
 provides stateless one-to-one translation for every address in its configured
-prefixes, so it needs no separate static mapping table.
+prefixes, so it does not need a separate static mapping table.
 
-A member whose mode is native routes that family without translation and
-raises no missing-delegation alert. Today the absence of a delegation is
+A member that uses native mode routes that family without translation and
+does not raise a missing-delegation alert. Today the absence of a delegation is
 always an error; under the model it is only an error for a member that
 declared delegated NPTv6.
 
@@ -53,7 +52,7 @@ implementation selects them through the containing interface and family.
 ## Direct and tunneled IPv6 routing
 
 Apply the same translation choices to physical and tunnel interfaces.
-An IPv6 prefix routed to the gateway can use no translation whether routes
+The gateway can forward an IPv6 prefix without translation whether routes
 are configured or learned through BGP. BGP exchanges routes between routers;
 it does not allocate a prefix through DHCP. Require a DHCP delegation only
 when the selected translation configuration depends on one.
@@ -88,7 +87,7 @@ order and use the first word that is not `0xffff`. Drop addresses and subnets
 that RFC 6296 excludes instead of creating another mapping.
 
 The current implementation forces the delegation to a fixed length regardless
-of what was delegated, with no upper bound check, so a provider delegating a
+of what was delegated and does not check the upper bound, so a provider delegating a
 shorter prefix produces translation onto address space the gateway does not
 hold. Only one of the four delegation probes filters by length, and it is not
 the one that runs first.
@@ -102,8 +101,8 @@ adjustment.
 
 Source translation keys on the outgoing interface and the internal source
 address, in both families. The outgoing interface already determines the exit
-path, so a mark adds nothing to the match and removes the rule's ability to
-handle traffic whose mark is stale.
+path, so a mark does not add information to the match and removes the rule's ability to
+handle traffic that has a stale mark.
 
 This is not a change for IPv6, whose rules already key on the interface
 alone, and that property must survive the move to typed instances. It is a
@@ -120,7 +119,7 @@ deploy.
 
 A member whose family cannot translate stops receiving that family's traffic.
 
-Today there is no such coupling. A provider with no delegation is dropped
+Today steering does not depend on translation readiness. A provider without a delegation is dropped
 from the translation table while steering keeps its rules and health still
 passes it on the other family's probes, so half the internal IPv6 flows leave
 with an untranslated source and are discarded upstream. The only signal is a
@@ -135,7 +134,7 @@ reports down, and steering reads that.
 A member that declares inbound reachability keeps it: the reverse translation
 for prefix translation, the mapping entries for one-to-one, and the edge
 address rewrite. Address masquerade is outbound only by nature, and a member
-declaring it declares no inbound reachability, which the model states rather
+declaring it does not declare inbound reachability, which the model states rather
 than leaving to be discovered.
 
 ## Acceptance
@@ -164,7 +163,7 @@ it.
 Two internal clients can complete TCP, UDP, and ICMPv6 exchanges through their
 external addresses without forwarding a packet to an ISP interface.
 
-A member whose IPv6 cannot be realized receives no IPv6 traffic, and its
+A member does not receive IPv6 traffic when its IPv6 cannot be realized, and its
 per-family status reports down.
 
 Outbound traffic is translated while a fallback tier is active, in both
@@ -174,7 +173,7 @@ exercised deliberately.
 ## Failure modes
 
 The testbed provider simulators masquerade what they receive on the way out,
-so nothing observed beyond a simulator proves the gateway produced the right
+so observations beyond a simulator do not prove that the gateway produced the right
 source address. Observe at the simulator's ingress.
 
 Loosening the missing-delegation alert to apply only to members that need one
