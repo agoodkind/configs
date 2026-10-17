@@ -51,13 +51,13 @@ module AnsibleRender
     end
   end
 
-  def run_playbook(password_file, inventory, playbook, extra_vars, timeout_seconds)
+  def run_playbook(password_file, inventory, playbook, extra_vars, timeout_seconds, options = [])
     argv = [
       PLAYBOOK_COMMAND,
       '--inventory', inventory,
       File.join(FIXTURE_DIRECTORY, playbook),
       '--extra-vars', JSON.generate(extra_vars)
-    ]
+    ] + options
     CommandRunner.run(
       { VAULT_PASSWORD_ENV => password_file },
       argv,
