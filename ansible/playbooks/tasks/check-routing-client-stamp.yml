@@ -1,20 +1,20 @@
 ---
+# routing_stamp_family is the nftables family, ip or ip6, of the packets the
+# downstream client sends to routing_stamp_destinations.
 - name: Collect the client stamp
   ansible.builtin.set_fact:
     routing_stamp:
       vmid: "{{ service_mapping[testbed_routing_checks.downstream_client].vmid }}"
       script: >-
-        nft add table ip6 {{ testbed_routing_stamp_table }}
-        && nft flush table ip6 {{ testbed_routing_stamp_table }}
-        && nft add chain ip6 {{ testbed_routing_stamp_table }} output
+        nft add table {{ routing_stamp_family }} {{ testbed_routing_stamp_table }}
+        && nft flush table {{ routing_stamp_family }} {{ testbed_routing_stamp_table }}
+        && nft add chain {{ routing_stamp_family }} {{ testbed_routing_stamp_table }} output
         '{ type filter hook output priority mangle; }'
-        && nft add rule ip6 {{ testbed_routing_stamp_table }} output
-        ip6 daddr '{ {{ routing_stamp_scenario.remote_prefixes | join(', ') }} }'
-        ip6 dscp set {{ testbed_routing_forced_dscp[routing_stamp_connection] }}
-  vars:
-    routing_stamp_scenario: "{{ testbed_routing_scenarios[routing_scenario_name] }}"
+        && nft add rule {{ routing_stamp_family }} {{ testbed_routing_stamp_table }} output
+        {{ routing_stamp_family }} daddr '{ {{ routing_stamp_destinations | join(', ') }} }'
+        {{ routing_stamp_family }} dscp set {{ testbed_routing_forced_dscp[routing_stamp_connection] }}
 
-- name: Stamp the downstream client's packets to the scenario's remote prefixes for {{ routing_stamp_connection }}
+- name: Stamp the downstream client's {{ routing_stamp_family }} packets for {{ routing_stamp_connection }}
   ansible.builtin.command:
     argv: [pct, exec, "{{ routing_stamp.vmid }}", --, sh, -c, "{{ routing_stamp.script }}"]
   changed_when: true

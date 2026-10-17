@@ -149,16 +149,18 @@ RSpec.describe 'routing simulator checks' do
     )
   end
 
-  it 'checks each connection that forwards the scenario IPv6 traffic with its forced DSCP', :aggregate_failures do
+  it 'checks each connection that forwards the scenario traffic with its forced DSCP', :aggregate_failures do
     dscp = inventory.fetch('testbed_routing_forced_dscp')
     {
-      'astound_static' => %w[astound_static_astound], 'etheric_native' => %w[etheric],
-      'tunnel_static' => %w[tunnel_static_sonic_1], 'tunnel_upstream' => %w[tunnel_upstream_sonic_2],
-      'tunnel_vps' => %w[tunnel_vps_sonic_1 tunnel_vps_astound]
-    }.each do |scenario, connections|
+      'astound_static' => [%w[astound_static_astound], []], 'etheric_native' => [%w[etheric], []],
+      'tunnel_static' => [%w[tunnel_static_sonic_1], %w[sonic_1]],
+      'tunnel_upstream' => [%w[tunnel_upstream_sonic_2], %w[sonic_2]],
+      'tunnel_vps' => [%w[tunnel_vps_sonic_1 tunnel_vps_astound], %w[sonic_1]]
+    }.each do |scenario, (connections, ipv4_connections)|
       connections.each do |connection|
         facts = RoutingSimulatorConfig.connection_facts(inventory, scenario, connection)
         expect(facts.fetch('routing_check').fetch('checked_connections')).to eq(connections)
+        expect(facts.fetch('routing_check').fetch('ipv4_connections')).to eq(ipv4_connections)
         expect(facts.fetch('routing_connection').fetch('dscp').to_i).to eq(dscp.fetch(connection))
       end
     end
@@ -175,13 +177,13 @@ RSpec.describe 'routing simulator checks' do
   end
 
   def tunnel_vps_mwan_results
-    connection_checks = ['ordinary ipv4 before', 'packet captures', 'icmp both directions',
-                         'tcp transfer both directions', 'packet size', 'ordinary ipv4 after', 'home route on upstream']
+    connection_checks = ['packet captures', 'icmp both directions', 'tcp transfer both directions', 'packet size']
     ['node tunnel_vps_vps', 'node tunnel_vps_upstream', 'node tunnel_vps_client', 'node isp_sonic',
      'outer transport tunnel_vps_sonic_1', 'outer transport tunnel_vps_astound', 'session tunnel_vps_upstream',
      'remote client gateway', 'transport source tunnel_vps_sonic_1',
      'connection tunnel_vps_sonic_1 gateway session tunnel_vps_home_sonic_1',
-     'connection tunnel_vps_astound gateway session tunnel_vps_home_astound'] +
+     'connection tunnel_vps_astound gateway session tunnel_vps_home_astound',
+     'connection sonic_1 ordinary ipv4 before', 'connection sonic_1 ordinary ipv4 after', 'home route on upstream'] +
       %w[tunnel_vps_sonic_1 tunnel_vps_astound].product(connection_checks).map { |id, check| "connection #{id} #{check}" }
   end
 
@@ -192,6 +194,43 @@ RSpec.describe 'routing simulator checks' do
     expect(valid.call(tunnel_vps_mwan_results - ['connection tunnel_vps_astound packet captures'])).to be(false)
     expect(valid.call(tunnel_vps_mwan_results - ['connection tunnel_vps_astound gateway session tunnel_vps_home_astound']))
       .to be(false)
+    expect(valid.call(tunnel_vps_mwan_results - ['connection sonic_1 ordinary ipv4 after'])).to be(false)
+    expect(valid.call(tunnel_vps_mwan_results - ['home route on upstream'])).to be(false)
+  end
+
+  def gateway_reads(links)
+    reads = [JSON.generate(links), 'tcpdump version 4.99.4'].map do |output|
+      TaskExpressions.command_result(0, JSON.generate('exitcode' => 0, 'exited' => 1, 'out-data' => output), '')
+    end
+    { 'results' => reads }
+  end
+
+  it 'captures ordinary IPv4 packets on the gateway interface with the connection address', :aggregate_failures do
+    address = ->(name) { RoutingSimulatorConfig.interface_address(inventory, 'mwan_suburban', name, 'ipv4') }
+    links = [{ 'ifname' => 'ensonic1', 'addr_info' => [{ 'local' => address.call('sonic_1') }] },
+             { 'ifname' => 'ensonic2', 'addr_info' => [{ 'local' => address.call('sonic_2') }] },
+             { 'ifname' => 'lo', 'addr_info' => [] }]
+    facts = RoutingSimulatorConfig.ipv4_connection_facts(inventory, 'tunnel_upstream', 'sonic_2', gateway_reads(links))
+
+    expect(facts.fetch('routing_ipv4_connection').fetch('dscp').to_i).to eq(inventory.fetch('testbed_routing_forced_dscp').fetch('sonic_2'))
+    expect(facts.fetch('routing_ipv4_interfaces')).to eq('ensonic2')
+  end
+
+  def ipv4_captures_valid?(guest_outputs)
+    block = RoutingSimulatorConfig.task('Check ordinary IPv4 packets through the connection', 'tasks', 'check-routing-ordinary-ipv4.yml')
+    assertion = block.fetch('block').find { |task| task['name'] == 'Require the packets leaving and returning on the gateway interface' }
+    results = guest_outputs.each_with_index.map do |output, index|
+      TaskExpressions.command_result(0, JSON.generate(output), '').merge('item' => { 'item' => [%w[leaving returning][index]] })
+    end
+    RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'routing_ipv4_captures' => { 'results' => results } }, [])
+  end
+
+  it 'requires a guest exit code of zero from both gateway captures', :aggregate_failures do
+    captured = { 'exitcode' => 0, 'exited' => 1 }
+
+    expect(ipv4_captures_valid?([captured, captured])).to be(true)
+    expect(ipv4_captures_valid?([captured, { 'exitcode' => 124, 'exited' => 1 }])).to be(false)
+    expect(ipv4_captures_valid?([captured, { 'pid' => 4242 }])).to be(false)
   end
 
   it 'derives the fault wait from the configured hold time', :aggregate_failures do

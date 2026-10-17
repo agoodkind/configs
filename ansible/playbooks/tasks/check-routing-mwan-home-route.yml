@@ -1,0 +1,28 @@
+---
+- name: Wait for the home route on each upstream router
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.0] }}"
+      - --
+      - ip
+      - -j
+      - "-6"
+      - route
+      - show
+      - exact
+      - "{{ item.1 }}"
+      - proto
+      - bgp
+  loop: "{{ routing_check.upstream_nodes | product(routing_check.scenario.home_prefixes) | list }}"
+  register: routing_upstream_home
+  changed_when: false
+  until: routing_upstream_home.stdout | from_json != []
+  retries: "{{ testbed_routing_checks.session_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+- name: Record the upstream home route
+  ansible.builtin.set_fact:
+    routing_check_results: "{{ routing_check_results + ['home route on upstream'] }}"
+  when: routing_check.scenario.sessions != []

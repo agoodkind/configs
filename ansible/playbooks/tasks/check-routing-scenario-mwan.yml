@@ -8,6 +8,25 @@
   loop_control:
     label: "{{ item.id }}"
 
+- name: Report each underlay connection that the ordinary IPv4 check does not use
+  ansible.builtin.debug:
+    msg: >-
+      Routing scenario {{ routing_check.name }} does not send ordinary IPv4
+      packets through connection {{ item.id }}: {{ item.reason }}
+  loop: "{{ routing_check.unchecked_ipv4_connections }}"
+  loop_control:
+    label: "{{ item.id }}"
+
+- name: Send ordinary IPv4 packets through each underlay connection before the IPv6 checks
+  ansible.builtin.include_tasks:
+    file: check-routing-ordinary-ipv4.yml
+  vars:
+    routing_ordinary_phase: before
+  loop: "{{ routing_check.ipv4_connections }}"
+  loop_control:
+    loop_var: routing_ipv4_connection_id
+    label: "{{ routing_ipv4_connection_id }} dscp {{ testbed_routing_forced_dscp[routing_ipv4_connection_id] }}"
+
 - name: Check each connection of the scenario with its forced DSCP
   ansible.builtin.include_tasks:
     file: check-routing-mwan-connection.yml
@@ -15,3 +34,16 @@
   loop_control:
     loop_var: routing_connection_id
     label: "{{ routing_connection_id }} dscp {{ testbed_routing_forced_dscp[routing_connection_id] }}"
+
+- name: Check the home route on the upstream routers
+  ansible.builtin.import_tasks: check-routing-mwan-home-route.yml
+
+- name: Send ordinary IPv4 packets through each underlay connection after the IPv6 checks
+  ansible.builtin.include_tasks:
+    file: check-routing-ordinary-ipv4.yml
+  vars:
+    routing_ordinary_phase: after
+  loop: "{{ routing_check.ipv4_connections }}"
+  loop_control:
+    loop_var: routing_ipv4_connection_id
+    label: "{{ routing_ipv4_connection_id }} dscp {{ testbed_routing_forced_dscp[routing_ipv4_connection_id] }}"

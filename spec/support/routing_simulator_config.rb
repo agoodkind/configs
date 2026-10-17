@@ -101,6 +101,22 @@ module RoutingSimulatorConfig
     ).fetch('facts')
   end
 
+  # Evaluates the scenario inputs and the ordinary IPv4 connection inputs with
+  # gateway_reads as the registered qm guest exec reads, and returns the facts.
+  def ipv4_connection_facts(inventory, scenario, connection, gateway_reads)
+    file = 'check-routing-ordinary-ipv4.yml'
+    tasks = [task('Collect the scenario check inputs', 'tasks', 'check-routing-scenario-inputs.yml'),
+             task('Collect the ordinary IPv4 connection inputs', 'tasks', file),
+             task('Collect the gateway interface of the connection', 'tasks', file)]
+    TaskExpressions.evaluate(
+      variables: inventory.slice(*LITERAL_VARIABLES).merge(
+        'routing_scenario_name' => scenario, 'routing_scenario_mode' => 'mwan',
+        'routing_ipv4_connection_id' => connection, 'routing_gateway_reads' => gateway_reads
+      ),
+      facts: inventory_facts(inventory) + tasks.map { |item| TaskExpressions.fact_task(item) }
+    ).fetch('facts')
+  end
+
   def captures(inventory, scenario, connection, transport_addresses, node_vmids)
     collect = task('Collect the packet captures', 'tasks', 'check-routing-mwan-captures.yml')
     variables = { 'routing_transport_addresses' => transport_addresses, 'routing_node_vmids' => node_vmids }

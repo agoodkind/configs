@@ -31,6 +31,11 @@
         {{ ((routing_check_scenario.tunnels | map(attribute='id') | list) + routing_check_scenario.connections)
         | reject('in', routing_check_scenario.unchecked_connections | map(attribute='id') | list) | list }}
       unchecked_connections: "{{ routing_check_scenario.unchecked_connections }}"
+      ipv4_connections: >-
+        {{ routing_check_scenario.connections
+        | reject('in', routing_check_scenario.unchecked_ipv4_connections | map(attribute='id') | list) | list }}
+      unchecked_ipv4_connections: "{{ routing_check_scenario.unchecked_ipv4_connections }}"
+      gateway_vmid: "{{ service_mapping[testbed_routing_nodes[routing_check_gateway_nodes[0]].service].vmid }}"
       downstream: "{{ service_mapping[testbed_routing_checks.downstream_client] }}"
   vars:
     routing_check_scenario: "{{ testbed_routing_scenarios[routing_scenario_name] }}"
