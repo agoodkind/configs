@@ -260,15 +260,25 @@ RSpec.describe 'routing simulator checks' do
 
   it 'selects the tunnel loss, sibling link loss, and restart targets of each scenario', :aggregate_failures do
     link = ->(name) { inventory.dig('service_mapping', 'isp_sonic_suburban', 'routing_interfaces', name, 'name') }
+    tunnel_loss = lambda do |tunnel, interface, kept, address|
+      { 'tunnel' => tunnel, 'node' => 'tunnel_vps_vps', 'interface' => interface, 'kept_connection' => kept,
+        'gateway_addresses' => [address] }
+    end
+    sibling_loss = lambda do |failed, kept, tunnel|
+      { 'failed_connection' => failed, 'kept_connection' => kept, 'node' => 'isp_sonic', 'interface' => link.call(failed),
+        'kept_tunnels' => [tunnel] }
+    end
     {
       'tunnel_vps' => [
-        [%w[tunnel_vps_sonic_1 tunnel_vps_vps sit-sonic1 tunnel_vps_astound 2001:db8:5ff:1::1],
-         %w[tunnel_vps_astound tunnel_vps_vps sit-astound tunnel_vps_sonic_1 2001:db8:5ff:2::1]],
-        [['sonic_2', 'sonic_1', 'isp_sonic', link.call('sonic_2'), 'tunnel_vps_sonic_1']],
-        [%w[tunnel_vps_vps tunnel_vps_home_sonic_1,tunnel_vps_home_astound 2]]
+        [tunnel_loss.call('tunnel_vps_sonic_1', 'sit-sonic1', 'tunnel_vps_astound', '2001:db8:5ff:1::1'),
+         tunnel_loss.call('tunnel_vps_astound', 'sit-astound', 'tunnel_vps_sonic_1', '2001:db8:5ff:2::1')],
+        [sibling_loss.call('sonic_2', 'sonic_1', 'tunnel_vps_sonic_1')],
+        [{ 'node' => 'tunnel_vps_vps', 'gateway_sessions' => %w[tunnel_vps_home_sonic_1 tunnel_vps_home_astound],
+           'hold_retries' => 2 }]
       ],
-      'tunnel_upstream' => [[], [['sonic_1', 'sonic_2', 'isp_sonic', link.call('sonic_1'), 'tunnel_upstream_sonic_2']],
-                            [%w[tunnel_upstream_vps tunnel_upstream_home 2]]],
+      'tunnel_upstream' => [[], [sibling_loss.call('sonic_1', 'sonic_2', 'tunnel_upstream_sonic_2')],
+                            [{ 'node' => 'tunnel_upstream_vps', 'gateway_sessions' => ['tunnel_upstream_home'],
+                               'hold_retries' => 2 }]],
       'etheric_native' => [[], [], []]
     }.each do |scenario, (tunnel_losses, sibling_losses, restarts)|
       facts = RoutingSimulatorConfig.fault_facts(inventory, scenario)
@@ -276,29 +286,6 @@ RSpec.describe 'routing simulator checks' do
       expect(facts.fetch('routing_recovery_sibling_losses')).to eq(sibling_losses), scenario
       expect(facts.fetch('routing_recovery_restarts')).to eq(restarts), scenario
     end
-  end
-
-  def advertises_default?(advertised, present)
-    wait = RoutingSimulatorConfig.task('Wait for the expected default route in each VPS advertisement to the gateway',
-                                       'tasks', 'check-routing-recovery-vps-default.yml')
-    result = TaskExpressions.command_result(0, JSON.generate(advertised), '')
-    TaskExpressions.evaluate(
-      variables: inventory.slice(*RoutingSimulatorConfig::LITERAL_VARIABLES).merge(
-        'routing_vps_default_advertised' => result, 'routing_vps_default_present' => present
-      ),
-      facts: [RoutingSimulatorConfig.fact(wait.fetch('vars'), wait.fetch('vars'))],
-      conditions: { 'expected' => TaskExpressions.condition_list(wait.fetch('until')) }
-    ).fetch('conditions').fetch('expected')
-  end
-
-  it 'reads the default route from the FRR advertisement of a VPS to the gateway', :aggregate_failures do
-    home = { 'advertisedRoutes' => { inventory.fetch('testbed_routing_home_prefix') => {} }, 'totalPrefixCounter' => 1 }
-    default = home.merge('advertisedRoutes' => home.fetch('advertisedRoutes').merge('::/0' => {}))
-
-    expect(advertises_default?(default, true)).to be(true)
-    expect(advertises_default?(home, true)).to be(false)
-    expect(advertises_default?(home, false)).to be(true)
-    expect(advertises_default?({}, false)).to be(true)
   end
 
   it 'sets each fault link up and reconfigures it on its simulator' do

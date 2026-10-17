@@ -1,22 +1,18 @@
 ---
-# routing_restart is one restart entry of routing_recovery_restarts. Its fields
-# are the tunnel endpoint node, the comma-separated IDs of the gateway sessions
-# on the node's tunnels, and the session wait retries that fit in the longest
-# hold time of those sessions.
+# routing_restart is one entry of routing_recovery_restarts.
 - name: Collect the simulator restart inputs
   ansible.builtin.set_fact:
     routing_restart_fault:
-      node: "{{ routing_restart[0] }}"
-      vmid: "{{ routing_node_vmids[routing_restart[0]] }}"
-      bgp: "{{ testbed_routing_nodes[routing_restart[0]].router_id != '' }}"
+      node: "{{ routing_restart.node }}"
+      vmid: "{{ routing_node_vmids[routing_restart.node] }}"
+      bgp: "{{ testbed_routing_nodes[routing_restart.node].router_id != '' }}"
       peers: >-
         {{ routing_restart_sessions | map(attribute='remote.node')
         | zip(routing_restart_sessions | map(attribute='local.address')) | list }}
-      hold_retries: "{{ routing_restart[2] | int }}"
+      hold_retries: "{{ routing_restart.hold_retries }}"
   vars:
     routing_restart_sessions: >-
-      {{ routing_recovery.gateway_sessions
-      | selectattr('id', 'in', routing_restart[1].split(',') | reject('equalto', '') | list) | list }}
+      {{ routing_recovery.gateway_sessions | selectattr('id', 'in', routing_restart.gateway_sessions) | list }}
 
 - name: Check the restart of {{ routing_restart_fault.node }}
   vars:

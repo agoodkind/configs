@@ -1,7 +1,8 @@
 ---
 # When routing_vps_default_present is true, the tasks wait until each VPS has
-# the BGP default route and advertises it to VM 213. When it is false, the tasks
-# wait until each VPS has no BGP default route and advertises none to VM 213.
+# the BGP default route and advertises it to the gateway. When it is false, the
+# tasks wait until each VPS has no BGP default route and advertises none to the
+# gateway.
 - name: Wait for the expected BGP default route on each VPS
   ansible.builtin.command:
     argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, ip, -j, "-6", route, show, exact, "{{ item.1 }}", proto, bgp]
@@ -14,8 +15,11 @@
   retries: "{{ routing_recovery.wait_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
 
-# FRR prints the advertised routes as a JSON object. The prefixes are the keys
-# of the mapping values in that object.
+# FRR 10.3 peer_adj_routes in bgpd/bgp_route.c prints the advertised prefixes
+# as the keys of advertisedRoutes, and prints an empty advertisedRoutes object
+# when the peer has nothing advertised. An unknown neighbor or an inactive
+# address family prints only a warning key, and the missing advertisedRoutes
+# key fails the task.
 - name: Wait for the expected default route in each VPS advertisement to the gateway
   ansible.builtin.command:
     argv:
@@ -37,6 +41,4 @@
   retries: "{{ routing_recovery.wait_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
   vars:
-    routing_vps_advertised_prefixes: >-
-      {{ routing_vps_default_advertised.stdout | from_json | dict2items | map(attribute='value')
-      | select('mapping') | map('list') | flatten }}
+    routing_vps_advertised_prefixes: "{{ (routing_vps_default_advertised.stdout | from_json).advertisedRoutes | list }}"

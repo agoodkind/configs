@@ -33,7 +33,7 @@
       loop: "{{ routing_recovery_tunnel_losses }}"
       loop_control:
         loop_var: routing_tunnel_loss
-        label: "{{ routing_tunnel_loss[0] }}"
+        label: "{{ routing_tunnel_loss.tunnel }}"
 
     - name: Check each connection while its sibling on the same simulator fails
       ansible.builtin.include_tasks:
@@ -41,7 +41,7 @@
       loop: "{{ routing_recovery_sibling_losses }}"
       loop_control:
         loop_var: routing_sibling_loss
-        label: "{{ routing_sibling_loss[0] }} keeps {{ routing_sibling_loss[1] }}"
+        label: "{{ routing_sibling_loss.failed_connection }} keeps {{ routing_sibling_loss.kept_connection }}"
 
     - name: Check the restart of each tunnel endpoint simulator
       ansible.builtin.include_tasks:
@@ -49,7 +49,7 @@
       loop: "{{ routing_recovery_restarts }}"
       loop_control:
         loop_var: routing_restart
-        label: "{{ routing_restart[0] }}"
+        label: "{{ routing_restart.node }}"
   always:
     - name: Remove the client stamp
       ansible.builtin.import_tasks: check-routing-client-unstamp.yml
@@ -69,9 +69,10 @@
       + ((routing_recovery.upstream_nodes != []) | ternary(['upstream loss', 'undeclared prefix'], []))
       + ((routing_recovery.scenario.kind == 'tunnel_configured_home')
       | ternary(['tracker probe loss', 'tracker unit stop'], []))
-      + (routing_recovery_tunnel_losses | map('first') | map('regex_replace', '^', 'tunnel loss ') | list)
-      + (routing_recovery_sibling_losses | map('first') | map('regex_replace', '^', 'sibling link loss ') | list)
-      + (routing_recovery_restarts | map('first') | map('regex_replace', '^', 'simulator restart ') | list) }}
+      + (routing_recovery_tunnel_losses | map(attribute='tunnel') | map('regex_replace', '^', 'tunnel loss ') | list)
+      + (routing_recovery_sibling_losses | map(attribute='failed_connection')
+      | map('regex_replace', '^', 'sibling link loss ') | list)
+      + (routing_recovery_restarts | map(attribute='node') | map('regex_replace', '^', 'simulator restart ') | list) }}
 
 - name: Record the fault report
   ansible.builtin.set_fact:

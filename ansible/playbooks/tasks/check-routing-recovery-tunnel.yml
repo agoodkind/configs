@@ -1,16 +1,12 @@
 ---
-# routing_tunnel_loss is one tunnel loss entry of routing_recovery_tunnel_losses.
-# Its fields are the tunnel, its endpoint node, its endpoint interface, the
-# remaining checked tunnel, and the comma-separated gateway addresses of the
-# sessions on the lost tunnel.
+# routing_tunnel_loss is one entry of routing_recovery_tunnel_losses.
 - name: Collect the tunnel loss inputs
   ansible.builtin.set_fact:
     routing_tunnel_fault:
-      tunnel: "{{ routing_tunnel_loss[0] }}"
-      links: [["{{ routing_tunnel_loss[1] }}", "{{ routing_tunnel_loss[2] }}"]]
-      kept_connection: "{{ routing_tunnel_loss[3] }}"
-      peers: >-
-        {{ [routing_tunnel_loss[1]] | product(routing_tunnel_loss[4].split(',') | reject('equalto', '') | list) | list }}
+      tunnel: "{{ routing_tunnel_loss.tunnel }}"
+      links: [["{{ routing_tunnel_loss.node }}", "{{ routing_tunnel_loss.interface }}"]]
+      kept_connection: "{{ routing_tunnel_loss.kept_connection }}"
+      peers: "{{ [routing_tunnel_loss.node] | product(routing_tunnel_loss.gateway_addresses) | list }}"
 
 - name: Check the loss of tunnel {{ routing_tunnel_fault.tunnel }}
   block:
