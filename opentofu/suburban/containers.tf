@@ -162,7 +162,7 @@ resource "proxmox_virtual_environment_container" "isp_webpass_suburban" {
   }
 
   memory {
-    dedicated = 128
+    dedicated = 512
     swap      = 512
   }
 
@@ -255,7 +255,7 @@ resource "proxmox_virtual_environment_container" "isp_att_suburban" {
   }
 
   memory {
-    dedicated = 128
+    dedicated = 512
     swap      = 512
   }
 
@@ -351,7 +351,7 @@ resource "proxmox_virtual_environment_container" "isp_mbrains_suburban" {
   }
 
   memory {
-    dedicated = 128
+    dedicated = 512
     swap      = 512
   }
 
@@ -456,7 +456,7 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
   }
 
   memory {
-    dedicated = 256
+    dedicated = 512
     swap      = 512
   }
 
@@ -552,7 +552,7 @@ resource "proxmox_virtual_environment_container" "isp_routed_suburban" {
   }
 
   memory {
-    dedicated = 256
+    dedicated = 512
     swap      = 512
   }
 
