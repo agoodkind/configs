@@ -2,8 +2,9 @@
 # MWAN installs each BGP route that it learns in the main table with proto bgp
 # and the session peer as the gateway. Configured tunnel routes also use proto
 # bgp. The route match requires the session peer and the session tunnel device.
-# routing_gateway_default_present is true to wait for a default route through
-# each VPS session and false to wait for none.
+# When routing_gateway_default_present is true, Ansible repeats the route read
+# until each VPS session has a default route. When it is false, Ansible repeats
+# the route read until no VPS session has a default route.
 - name: Wait for the expected default route through each VPS session on the gateway
   ansible.builtin.command:
     argv:
