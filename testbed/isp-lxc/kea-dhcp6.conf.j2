@@ -1,6 +1,10 @@
 {
     "Dhcp6": {
-        "interfaces-config": { "interfaces": ["eth0"] },
+        "interfaces-config": {
+            "interfaces": ["eth0"],
+            "service-sockets-max-retries": {{ isp.dhcp6_socket_max_retries }},
+            "service-sockets-retry-wait-time": {{ isp.dhcp6_socket_retry_wait_ms }}
+        },
         "lease-database": { "type": "memfile", "persist": false },
         "preferred-lifetime": {{ isp.dhcp6_preferred_lifetime_seconds }},
         "valid-lifetime": {{ isp.dhcp6_valid_lifetime_seconds }},
