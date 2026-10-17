@@ -15,6 +15,7 @@
         state: directory
         mode: "0700"
       changed_when: false
+      check_mode: false
 
     - name: Render the simulator files
       ansible.builtin.import_tasks: deploy-routing-simulator-stage.yml
@@ -39,6 +40,7 @@
         path: "{{ rsim_temp_dir }}"
         state: absent
       changed_when: false
+      check_mode: false
 
 - name: Require the active firewall and FRR files to equal their candidates
   ansible.builtin.command:
@@ -48,6 +50,7 @@
     - { candidate: /etc/frr/frr.conf.candidate, active: /etc/frr/frr.conf, enabled: "{{ rsim.bgp }}" }
   when: item.enabled | bool
   changed_when: false
+  check_mode: false
 
 - name: Require each home route tracker unit to run
   ansible.builtin.command:
@@ -56,3 +59,4 @@
     {{ rsim_files | selectattr(3, 'equalto', 'tracker') | map(attribute=0)
     | select('search', '\.service$') | list }}
   changed_when: false
+  check_mode: false

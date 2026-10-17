@@ -1,4 +1,8 @@
 ---
+# Check mode also writes the staged files. The template and copy actions
+# return no checksum in check mode, and the push compares the staged checksum
+# with the guest checksum. Each task writes only under rsim_temp_dir, which
+# the caller removes.
 - name: Stage the simulator firewall, sysctl, and FRR files
   ansible.builtin.template:
     src: "{{ rsim_template_dir }}/{{ item.src }}"
@@ -11,6 +15,7 @@
     - { src: daemons.j2, name: daemons, enabled: "{{ rsim.bgp }}" }
   when: item.enabled | bool
   changed_when: false
+  check_mode: false
 
 - name: Stage the simulator interface units
   ansible.builtin.template:
@@ -21,6 +26,7 @@
   loop_control:
     loop_var: rsim_interface
   changed_when: false
+  check_mode: false
 
 - name: Stage the simulator tunnel units
   ansible.builtin.template:
@@ -31,6 +37,7 @@
     rsim_tunnel: "{{ item.0 }}"
   loop: "{{ rsim.tunnels | product(['netdev', 'network']) | list }}"
   changed_when: false
+  check_mode: false
 
 - name: Stage the home route tracker units
   ansible.builtin.template:
@@ -42,6 +49,7 @@
     loop_var: rsim_route
     index_var: rsim_route_index
   changed_when: false
+  check_mode: false
 
 - name: Stage the static simulator files
   ansible.builtin.copy:
@@ -52,3 +60,4 @@
     - networkd.conf
     - home-route-tracker.sh
   changed_when: false
+  check_mode: false

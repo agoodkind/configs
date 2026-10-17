@@ -5,6 +5,7 @@
   register: rsim_applied
   changed_when: false
   failed_when: rsim_applied.rc not in [0, 1]
+  check_mode: false
 
 - name: Collect the service groups with a pending apply
   ansible.builtin.set_fact:

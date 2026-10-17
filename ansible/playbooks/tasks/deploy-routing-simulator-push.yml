@@ -10,13 +10,13 @@
       - pct
       - push
       - "{{ rsim.vmid }}"
-      - "{{ rsim_temp_dir }}/{{ item.0.0 }}"
-      - "{{ item.0.1 }}"
+      - "{{ rsim_temp_dir }}/{{ item.0 }}"
+      - "{{ item.1 }}"
       - --perms
-      - "{{ item.0.2 }}"
-  loop: "{{ rsim_files | zip(rsim_staged.results, rsim_installed.results) | list }}"
+      - "{{ item.2 }}"
+  loop: "{{ rsim_files }}"
   loop_control:
-    label: "{{ item.0.1 }}"
-  when: not item.2.stdout.startswith(item.1.stat.checksum)
+    label: "{{ item.1 }}"
+  when: item.1 in rsim_changed_files
   register: rsim_push
   changed_when: true
