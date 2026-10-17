@@ -87,6 +87,16 @@ locals {
     for name in local.enrolled : name => try(local.service_mapping[name].kind, "lxc")
   }
 
+  suburban_vars = yamldecode(file("${local.group_vars}/suburban_servers.yml"))
+
+  # isp_simulators reads testbed_isp_lxcs from the suburban_servers group variables and
+  # merges each entry over testbed_isp_protocol_defaults. It keys each result by the
+  # service mapping name isp_<name>_suburban.
+  isp_simulators = {
+    for entry in local.suburban_vars.testbed_isp_lxcs :
+    "isp_${entry.name}_suburban" => merge(local.suburban_vars.testbed_isp_protocol_defaults, entry)
+  }
+
   guests = {
     for name in local.enrolled : name => {
       vmid                        = local.service_mapping[name].vmid
@@ -195,4 +205,14 @@ module "base" {
 
   scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
   scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
+}
+
+module "ispsim" {
+  source   = "./ispsim"
+  for_each = local.isp_simulators
+
+  node = local.guests[each.key].node
+  vmid = local.guests[each.key].vmid
+
+  simulator = each.value
 }

@@ -34,28 +34,14 @@
         isp.ra_prefix_valid_lifetime_seconds == 'omit' or
         isp.ra_prefix_preferred_lifetime_seconds <= isp.ra_prefix_valid_lifetime_seconds
 
-- name: Render ISP nftables config to suburban /tmp
-  ansible.builtin.template:
-    src: "{{ repo_root }}/testbed/isp-lxc/nftables.conf.j2"
-    dest: "/tmp/isp-{{ isp.id }}-nftables.conf"
-    mode: "0644"
-
-- name: Render ISP DHCPv6 and RA templates to suburban /tmp
+- name: Render ISP DHCPv6 template to suburban /tmp
   ansible.builtin.template:
     src: "{{ repo_root }}/testbed/isp-lxc/{{ item.src }}"
     dest: "/tmp/isp-{{ isp.id }}-{{ item.name }}"
     mode: "0644"
   loop:
     - { src: kea-dhcp6.conf.j2, name: kea-dhcp6.conf }
-    - { src: radvd.conf.j2, name: radvd.conf }
   when: isp.ipv6_enabled | bool
-
-- name: Render ISP return routes to suburban /tmp
-  ansible.builtin.template:
-    src: "{{ repo_root }}/testbed/isp-lxc/pd-route.service.j2"
-    dest: "/tmp/isp-{{ isp.id }}-pd-route.service"
-    mode: "0644"
-  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool or isp.routed_ipv4_prefix != '' or isp.static_v4_block != ''
 
 - name: Render ISP kea-dhcp4 config (dynamic-v4 ISPs only)
   ansible.builtin.template:
@@ -63,12 +49,6 @@
     dest: "/tmp/isp-{{ isp.id }}-kea-dhcp4.conf"
     mode: "0644"
   when: isp.dynamic_v4 | bool
-
-- name: Copy ISP sysctl to suburban /tmp
-  ansible.builtin.copy:
-    src: "{{ repo_root }}/testbed/isp-lxc/sysctl-isp.conf"
-    dest: "/tmp/isp-{{ isp.id }}-sysctl-isp.conf"
-    mode: "0644"
 
 - name: Copy ISP kea-rebind helpers to suburban /tmp
   ansible.builtin.copy:
@@ -86,12 +66,10 @@
       /tmp/isp-{{ isp.id }}-{{ item.tmp }}
       {{ item.dest }}
   loop:
-    - { tmp: nftables.conf, dest: /etc/nftables.conf }
     - { tmp: kea-rebind.service, dest: /etc/systemd/system/kea-rebind.service }
-    - { tmp: sysctl-isp.conf, dest: /etc/sysctl.d/99-isp.conf }
   changed_when: true
 
-- name: Push ISP DHCPv6 and RA configs into LXC
+- name: Push ISP DHCPv6 config into LXC
   ansible.builtin.command:
     cmd: >-
       pct push {{ isp.id }}
@@ -99,19 +77,7 @@
       {{ item.dest }}
   loop:
     - { tmp: kea-dhcp6.conf, dest: /etc/kea/kea-dhcp6.conf }
-    - { tmp: radvd.conf, dest: /etc/radvd.conf }
   when: isp.ipv6_enabled | bool
-  changed_when: true
-
-- name: Push ISP return routes into LXC
-  ansible.builtin.command:
-    argv:
-      - pct
-      - push
-      - "{{ isp.id }}"
-      - "/tmp/isp-{{ isp.id }}-pd-route.service"
-      - /etc/systemd/system/pd-route.service
-  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool or isp.routed_ipv4_prefix != '' or isp.static_v4_block != ''
   changed_when: true
 
 - name: Push ISP kea-rebind watcher into LXC
@@ -139,34 +105,24 @@
   loop:
     - kea-dhcp6.conf
     - kea-dhcp4.conf
-    - radvd.conf
-    - nftables.conf
-    - pd-route.service
     - kea-rebind.sh
     - kea-rebind.service
-    - sysctl-isp.conf
-
-- name: Apply ISP sysctl
-  ansible.builtin.command:
-    cmd: pct exec {{ isp.id }} -- sysctl --system
-  changed_when: false
-  failed_when: false
 
 - name: Reload and enable ISP services
   ansible.builtin.command:
     cmd: >-
       pct exec {{ isp.id }} -- sh -c
       'systemctl daemon-reload
-      && systemctl enable --now nftables kea-rebind
-      && systemctl restart nftables kea-rebind'
+      && systemctl enable --now kea-rebind
+      && systemctl restart kea-rebind'
   changed_when: true
 
-- name: Enable and restart ISP DHCPv6 and RA services
+- name: Enable and restart ISP DHCPv6 service
   ansible.builtin.command:
     cmd: >-
       pct exec {{ isp.id }} -- sh -c
-      'systemctl enable --now kea-dhcp6-server radvd
-      && systemctl restart kea-dhcp6-server radvd'
+      'systemctl enable --now kea-dhcp6-server
+      && systemctl restart kea-dhcp6-server'
   when: isp.ipv6_enabled | bool
   changed_when: true
 
@@ -204,15 +160,6 @@
        | selectattr('stdout', 'search', 'LoadState=loaded') | list }}
   when: not isp.ipv6_enabled | bool
   changed_when: "'ActiveState=active' in item.stdout or 'UnitFileState=enabled' in item.stdout"
-
-- name: Enable and restart ISP return routes
-  ansible.builtin.command:
-    cmd: >-
-      pct exec {{ isp.id }} -- sh -c
-      'systemctl enable --now pd-route
-      && systemctl restart pd-route'
-  when: isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool or isp.routed_ipv4_prefix != '' or isp.static_v4_block != ''
-  changed_when: true
 
 - name: Enable and restart kea-dhcp4 (dynamic-v4 ISPs only)
   ansible.builtin.command:
