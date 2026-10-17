@@ -22,6 +22,23 @@ RSpec.describe 'routing simulator file deploy' do
     RoutingSimulatorConfig.evaluate_node(inventory, node, facts: [collect, argv]).fetch('facts').fetch('argv')
   end
 
+  # The guest part of a staged configuration check, rendered from the real
+  # task with a staged file of size_bytes.
+  def staged_check_guest_argv(name, file, size_bytes)
+    command = task(name, 'deploy-routing-simulator-services.yml')
+    staged = { 'results' => [{ 'item' => [file], 'stat' => { 'size' => size_bytes } }] }
+    script = File.join(AnsibleRender::REPOSITORY_ROOT, 'testbed', 'routing-simulators', 'check-received-config.sh')
+    argv = RoutingSimulatorConfig.fact({ 'argv' => command.fetch('ansible.builtin.command').fetch('argv') },
+                                       { 'rsim_staged' => staged, 'rsim_received_config_script' => script })
+    rendered = RoutingSimulatorConfig.evaluate_node(inventory, 'tunnel_vps_vps', facts: [argv]).fetch('facts').fetch('argv')
+    rendered.drop(rendered.index('--') + 1).map(&:to_s)
+  end
+
+  def run_guest_check(argv, stdin_data)
+    CommandRunner.capture(argv, stdin_data: stdin_data, chdir: AnsibleRender::REPOSITORY_ROOT,
+                                timeout_seconds: AnsibleRender::PLAYBOOK_TIMEOUT_SECONDS)
+  end
+
   def vmid(node)
     service = inventory.fetch('testbed_routing_nodes').fetch(node).fetch('service')
     inventory.fetch('service_mapping').fetch(service).fetch('vmid').to_s
@@ -74,6 +91,25 @@ RSpec.describe 'routing simulator file deploy' do
 
     expect(service_argv('Read the FRR version', node).map(&:to_s))
       .to eq(['pct', 'exec', vmid(node), '--', 'dpkg-query', '--show', '--showformat', 'FRR ${Version}', 'frr'])
+  end
+
+  {
+    'Check the staged simulator firewall' => ['nftables.conf', %w[nft -c -f]],
+    'Check the staged FRR configuration' => ['frr.conf', %w[vtysh -C -f]]
+  }.each do |name, (file, checker)|
+    it "runs #{checker.first} only on stdin with the staged size in #{name}", :aggregate_failures do
+      content = "flush ruleset\n"
+      guest = staged_check_guest_argv(name, file, content.bytesize)
+      guard = guest.first(guest.length - checker.length)
+
+      expect(guest.last(checker.length)).to eq(checker)
+      complete = run_guest_check(guard + ['cat'], content)
+      expect(complete.exit_status).to be_success, complete.error_output
+      expect(complete.output).to eq(content)
+      empty = run_guest_check(guard + ['cat'], '')
+      expect(empty.exit_status).not_to be_success
+      expect(empty.output).to eq('')
+    end
   end
 
   it 'pushes a file only when the guest checksum differs', :aggregate_failures do
