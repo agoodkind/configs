@@ -18,6 +18,10 @@
       gateway_sessions: >-
         {{ routing_recovery_scenario.sessions | selectattr('local.node', 'in', routing_recovery_gateway_nodes)
         | list }}
+      gateway_vmid: "{{ service_mapping[testbed_routing_nodes[routing_recovery_gateway_nodes[0]].service].vmid }}"
+      vps_gateway_sessions: >-
+        {{ routing_recovery_scenario.sessions | selectattr('local.node', 'in', routing_recovery_gateway_nodes)
+        | selectattr('remote.node', 'in', routing_recovery_vps_nodes) | list }}
       # The router withdraws the peer's route when its hold timer expires.
       wait_retries: >-
         {{ (((routing_recovery_scenario.sessions | map(attribute='hold_seconds') | list + [0]) | max)
@@ -34,6 +38,9 @@
       | map(attribute='key') | list }}
     routing_recovery_gateway_nodes: >-
       {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'gateway')
+      | map(attribute='key') | list }}
+    routing_recovery_vps_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'vps')
       | map(attribute='key') | list }}
     routing_recovery_native_links: >-
       {%- set links = [] -%}
@@ -63,3 +70,57 @@
       - -W
       - "{{ testbed_routing_checks.ping_timeout_seconds | string }}"
       - "{{ routing_recovery.remote_client_address }}"
+
+# A tunnel loss line has the tunnel, its endpoint node and interface, the
+# remaining checked tunnel, and the gateway session addresses on the lost
+# tunnel. A sibling link loss line has the failed connection, the kept
+# connection, their shared simulator and the failed link interface, and the
+# checked tunnels on the kept connection. A restart line has the tunnel
+# endpoint node, the gateway sessions on its tunnels, and the retries that fit
+# in the longest hold time of those sessions.
+- name: Collect the tunnel loss, sibling link loss, and simulator restart targets
+  ansible.builtin.set_fact:
+    routing_recovery_tunnel_losses: "{{ routing_tunnel_loss_lines.split(';') | reject('equalto', '') | map('split', '|') | list }}"
+    routing_recovery_sibling_losses: "{{ routing_sibling_loss_lines.split(';') | reject('equalto', '') | map('split', '|') | list }}"
+    routing_recovery_restarts: "{{ routing_restart_lines.split(';') | reject('equalto', '') | map('split', '|') | list }}"
+  vars:
+    routing_tunnel_loss_lines: >-
+      {%- set lines = [] -%}
+      {%- set tunnels = routing_recovery.scenario.tunnels -%}
+      {%- for tunnel in tunnels -%}
+      {%- set others = tunnels | map(attribute='id') | reject('equalto', tunnel.id) | list -%}
+      {%- if others != [] -%}
+      {%- set remaining = others | select('in', routing_connection_selection.checked) | list -%}
+      {%- set sessions = routing_recovery.gateway_sessions | selectattr('connection', 'equalto', tunnel.id)
+      | map(attribute='local.address') | list -%}
+      {%- set _ = lines.append([tunnel.id, tunnel.remote.node, tunnel.remote.interface, remaining[0],
+      sessions | join(',')] | join('|')) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ lines | join(';') }}
+    routing_sibling_loss_lines: >-
+      {%- set lines = [] -%}
+      {%- for kept in routing_connection_selection.ipv4 -%}
+      {%- set simulator = testbed_routing_connections[kept].simulator -%}
+      {%- set service = service_mapping[testbed_routing_nodes[simulator].service] -%}
+      {%- set tunnels = routing_recovery.scenario.tunnels | selectattr('connection', 'equalto', kept)
+      | map(attribute='id') | select('in', routing_connection_selection.checked) | list -%}
+      {%- for failed, connection in testbed_routing_connections.items()
+      if failed != kept and connection.simulator == simulator -%}
+      {%- for interface in service.routing_interfaces.values() if interface.ipv4 == connection.simulator_link_ipv4 -%}
+      {%- set _ = lines.append([failed, kept, simulator, interface.name, tunnels | join(',')] | join('|')) -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {{ lines | join(';') }}
+    routing_restart_lines: >-
+      {%- set lines = [] -%}
+      {%- for node in routing_recovery.scenario.tunnels | map(attribute='remote.node') | unique -%}
+      {%- set tunnels = routing_recovery.scenario.tunnels | selectattr('remote.node', 'equalto', node)
+      | map(attribute='id') | list -%}
+      {%- set sessions = routing_recovery.gateway_sessions | selectattr('connection', 'in', tunnels) | list -%}
+      {%- set hold = (sessions | map(attribute='hold_seconds') | list + [0]) | max -%}
+      {%- set _ = lines.append([node, sessions | map(attribute='id') | join(','),
+      (hold / testbed_routing_checks.retry_delay_seconds) | round(0, 'ceil') | int] | join('|')) -%}
+      {%- endfor -%}
+      {{ lines | join(';') }}

@@ -1,0 +1,96 @@
+---
+# routing_restart is a line of routing_recovery_restarts.
+- name: Collect the simulator restart inputs
+  ansible.builtin.set_fact:
+    routing_restart_fault:
+      node: "{{ routing_restart[0] }}"
+      vmid: "{{ routing_node_vmids[routing_restart[0]] }}"
+      bgp: "{{ testbed_routing_nodes[routing_restart[0]].router_id != '' }}"
+      peers: >-
+        {{ routing_restart_sessions | map(attribute='remote.node')
+        | zip(routing_restart_sessions | map(attribute='local.address')) | list }}
+      hold_retries: "{{ routing_restart[2] | int }}"
+  vars:
+    routing_restart_sessions: >-
+      {{ routing_recovery.gateway_sessions
+      | selectattr('id', 'in', routing_restart[1].split(',') | reject('equalto', '') | list) | list }}
+
+- name: Check the restart of {{ routing_restart_fault.node }}
+  block:
+    - name: Read the UTC clock before the simulator restart
+      ansible.builtin.command:
+        argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+      register: routing_restart_start
+      changed_when: false
+
+    - name: Reboot the simulator guest
+      ansible.builtin.command:
+        argv: [pct, reboot, "{{ routing_restart_fault.vmid }}"]
+      changed_when: true
+
+    # check-routing-simulator-node.yml checks every service the node declares,
+    # so a degraded state from an undeclared unit does not fail the wait.
+    - name: Wait until systemd in the simulator guest finishes startup
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ routing_restart_fault.vmid }}", --, systemctl, is-system-running, --wait]
+      register: routing_restart_system
+      changed_when: false
+      failed_when: routing_restart_system.stdout not in ['running', 'degraded']
+      until: routing_restart_system.stdout in ['running', 'degraded']
+      retries: "{{ routing_recovery.wait_retries }}"
+      delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+    - name: Restart FRR in the simulator guest
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ routing_restart_fault.vmid }}", --, systemctl, restart, frr.service]
+      changed_when: true
+      when: routing_restart_fault.bgp | bool
+
+    - name: Wait until each gateway session on the node's tunnels is Established within the hold time
+      ansible.builtin.import_tasks: check-routing-recovery-session-state.yml
+      vars:
+        routing_session_peers: "{{ routing_restart_fault.peers }}"
+        routing_session_established: true
+        routing_session_retries: "{{ routing_restart_fault.hold_retries }}"
+
+    - name: Check the restarted simulator node
+      ansible.builtin.include_tasks:
+        file: check-routing-simulator-node.yml
+      vars:
+        rsim_name: "{{ routing_restart_fault.node }}"
+  always:
+    - name: Read the simulator guest status
+      ansible.builtin.command:
+        argv: [pct, status, "{{ routing_restart_fault.vmid }}"]
+      register: routing_restart_status
+      changed_when: false
+
+    - name: Start the simulator guest when it is stopped
+      ansible.builtin.command:
+        argv: [pct, start, "{{ routing_restart_fault.vmid }}"]
+      changed_when: true
+      when: "'running' not in routing_restart_status.stdout"
+
+    - name: Start FRR in the simulator guest
+      ansible.builtin.import_tasks: run-routing-restore-commands.yml
+      vars:
+        routing_restore_commands:
+          - "pct exec {{ routing_restart_fault.vmid }} -- systemctl start frr.service"
+      when: routing_restart_fault.bgp | bool
+
+- name: Read the UTC clock after the simulator restart
+  ansible.builtin.command:
+    argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+  register: routing_restart_end
+  changed_when: false
+
+- name: Record the simulator restart check
+  ansible.builtin.set_fact:
+    routing_recovery_results: >-
+      {{ routing_recovery_results + [{
+        'fault': 'simulator restart ' ~ routing_restart_fault.node,
+        'gateway_sessions': routing_restart_fault.peers | map('join', ' ') | list,
+        'started_utc': routing_restart_start.stdout,
+        'recovered_utc': routing_restart_end.stdout,
+        'result': 'passed'
+      }] }}

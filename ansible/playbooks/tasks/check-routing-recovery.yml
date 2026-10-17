@@ -24,6 +24,30 @@
 
     - name: Check the home route tracker
       ansible.builtin.import_tasks: check-routing-recovery-tracker.yml
+
+    - name: Check the loss of each tunnel while another tunnel remains
+      ansible.builtin.include_tasks:
+        file: check-routing-recovery-tunnel.yml
+      loop: "{{ routing_recovery_tunnel_losses }}"
+      loop_control:
+        loop_var: routing_tunnel_loss
+        label: "{{ routing_tunnel_loss[0] }}"
+
+    - name: Check each connection while its sibling on the same simulator fails
+      ansible.builtin.include_tasks:
+        file: check-routing-recovery-sibling.yml
+      loop: "{{ routing_recovery_sibling_losses }}"
+      loop_control:
+        loop_var: routing_sibling_loss
+        label: "{{ routing_sibling_loss[0] }} keeps {{ routing_sibling_loss[1] }}"
+
+    - name: Check the restart of each tunnel endpoint simulator
+      ansible.builtin.include_tasks:
+        file: check-routing-recovery-restart.yml
+      loop: "{{ routing_recovery_restarts }}"
+      loop_control:
+        loop_var: routing_restart
+        label: "{{ routing_restart[0] }}"
   always:
     - name: Remove the client stamp
       ansible.builtin.import_tasks: check-routing-client-unstamp.yml
@@ -42,7 +66,10 @@
       {{ ['link loss']
       + ((routing_recovery.upstream_nodes != []) | ternary(['upstream loss', 'undeclared prefix'], []))
       + ((routing_recovery.scenario.kind == 'tunnel_configured_home')
-      | ternary(['tracker probe loss', 'tracker unit stop'], [])) }}
+      | ternary(['tracker probe loss', 'tracker unit stop'], []))
+      + (routing_recovery_tunnel_losses | map('first') | map('regex_replace', '^', 'tunnel loss ') | list)
+      + (routing_recovery_sibling_losses | map('first') | map('regex_replace', '^', 'sibling link loss ') | list)
+      + (routing_recovery_restarts | map('first') | map('regex_replace', '^', 'simulator restart ') | list) }}
 
 - name: Record the fault report
   ansible.builtin.set_fact:

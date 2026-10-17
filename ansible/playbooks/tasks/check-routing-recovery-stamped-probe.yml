@@ -1,0 +1,29 @@
+---
+# routing_probe_connection is a checked connection of the scenario. The outer
+# fault block removes the stamp table.
+- name: Stamp the downstream client's packets for {{ routing_probe_connection }}
+  ansible.builtin.import_tasks: check-routing-client-stamp.yml
+  vars:
+    routing_stamp_family: ip6
+    routing_stamp_connection: "{{ routing_probe_connection }}"
+    routing_stamp_destinations: "{{ routing_recovery.scenario.remote_prefixes }}"
+
+- name: Require IPv6 packets and replies through {{ routing_probe_connection }}
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_recovery.downstream.vmid }}"
+      - --
+      - ping
+      - "-6"
+      - -c
+      - "{{ testbed_routing_checks.ping_count }}"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - "{{ routing_recovery.remote_client_address }}"
+  register: routing_stamped_probe
+  changed_when: false
+  until: routing_stamped_probe.rc == 0
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
