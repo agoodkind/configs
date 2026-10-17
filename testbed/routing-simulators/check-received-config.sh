@@ -3,8 +3,8 @@
 # Run check-received-config.sh EXPECTED_BYTES COMMAND [ARGUMENT...] with the
 # configuration on stdin. The script writes stdin to a temp file, requires the
 # file size to equal EXPECTED_BYTES, and runs COMMAND with the temp file path
-# as its last argument. vtysh -C and nft -c accept an empty stdin. The size
-# check fails an empty or short stdin before COMMAND runs.
+# as its last argument. vtysh -C and nft -c accept an empty stdin.
+# The size check fails before COMMAND runs when the stdin byte count differs from EXPECTED_BYTES.
 
 set -euo pipefail
 

@@ -97,7 +97,7 @@ RSpec.describe 'routing simulator file deploy' do
     'Check the staged simulator firewall' => ['nftables.conf', %w[nft -c -f]],
     'Check the staged FRR configuration' => ['frr.conf', %w[vtysh -C -f]]
   }.each do |name, (file, checker)|
-    it "runs #{checker.first} only on stdin with the staged size in #{name}", :aggregate_failures do
+    it "passes staged content through the guest wrapper with the staged size in #{name}", :aggregate_failures do
       content = "flush ruleset\n"
       guest = staged_check_guest_argv(name, file, content.bytesize)
       guard = guest.first(guest.length - checker.length)
