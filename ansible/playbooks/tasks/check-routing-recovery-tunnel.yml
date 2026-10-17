@@ -1,0 +1,89 @@
+---
+# routing_tunnel_loss is one entry of routing_recovery_tunnel_losses.
+- name: Collect the tunnel loss inputs
+  ansible.builtin.set_fact:
+    routing_tunnel_fault:
+      tunnel: "{{ routing_tunnel_loss.tunnel }}"
+      links:
+        - node: "{{ routing_tunnel_loss.node }}"
+          interface: "{{ routing_tunnel_loss.interface }}"
+      kept_connection: "{{ routing_tunnel_loss.kept_connection }}"
+      peers: "{{ [routing_tunnel_loss.node] | product(routing_tunnel_loss.gateway_addresses) | list }}"
+
+- name: Check the loss of tunnel {{ routing_tunnel_fault.tunnel }}
+  block:
+    - name: Read the UTC clock before the tunnel loss
+      ansible.builtin.command:
+        argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+      register: routing_tunnel_loss_start
+      changed_when: false
+
+    - name: Set the tunnel interface down on the tunnel endpoint
+      ansible.builtin.import_tasks: check-routing-recovery-links-down.yml
+      vars:
+        routing_fault_links: "{{ routing_tunnel_fault.links }}"
+
+    - name: Wait until the tunnel endpoint drops each gateway session on the lost tunnel
+      ansible.builtin.import_tasks: check-routing-recovery-session-state.yml
+      vars:
+        routing_session_peers: "{{ routing_tunnel_fault.peers }}"
+        routing_session_established: false
+        routing_session_retries: "{{ routing_recovery.wait_retries }}"
+
+    - name: Read the BGP route to the home prefix on each upstream router
+      ansible.builtin.command:
+        argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, ip, -j, "-6", route, show, exact, "{{ item.1 }}", proto, bgp]
+      loop: "{{ routing_recovery.upstream_nodes | product(routing_recovery.scenario.home_prefixes) | list }}"
+      register: routing_tunnel_loss_home
+      changed_when: false
+
+    - name: Require the home prefix on each upstream router
+      ansible.builtin.assert:
+        that:
+          - item.stdout | from_json != []
+        fail_msg: >-
+          Routing scenario {{ routing_recovery.name }}: {{ item.item.0 }} has no BGP route to
+          {{ item.item.1 }} after the loss of tunnel {{ routing_tunnel_fault.tunnel }}.
+      loop: "{{ routing_tunnel_loss_home.results }}"
+      loop_control:
+        label: "{{ item.item.0 }} {{ item.item.1 }}"
+
+    # The lost tunnel is down. The remaining tunnel is the only tunnel to the
+    # endpoint for the replies.
+    - name: Require IPv6 packets through the remaining tunnel
+      ansible.builtin.include_tasks:
+        file: check-routing-recovery-stamped-probe.yml
+      vars:
+        routing_probe_connection: "{{ routing_tunnel_fault.kept_connection }}"
+        routing_probe_return_rule: kept tunnel
+  always:
+    - name: Set the tunnel interface up on the tunnel endpoint
+      ansible.builtin.import_tasks: check-routing-recovery-links-up.yml
+      vars:
+        routing_fault_links: "{{ routing_tunnel_fault.links }}"
+
+# The session wait runs after the tunnel restore block.
+- name: Wait until the tunnel endpoint establishes each gateway session on the tunnel again
+  ansible.builtin.import_tasks: check-routing-recovery-session-state.yml
+  vars:
+    routing_session_peers: "{{ routing_tunnel_fault.peers }}"
+    routing_session_established: true
+    routing_session_retries: "{{ testbed_routing_checks.session_retries }}"
+
+- name: Read the UTC clock after the tunnel recovery
+  ansible.builtin.command:
+    argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+  register: routing_tunnel_loss_end
+  changed_when: false
+
+- name: Record the tunnel loss check
+  ansible.builtin.set_fact:
+    routing_recovery_results: >-
+      {{ routing_recovery_results + [{
+        'fault': 'tunnel loss ' ~ routing_tunnel_fault.tunnel,
+        'kept_connection': routing_tunnel_fault.kept_connection,
+        'kept_dscp': testbed_routing_forced_dscp[routing_tunnel_fault.kept_connection],
+        'started_utc': routing_tunnel_loss_start.stdout,
+        'recovered_utc': routing_tunnel_loss_end.stdout,
+        'result': 'passed'
+      }] }}
