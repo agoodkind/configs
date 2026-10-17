@@ -59,7 +59,7 @@
       vars:
         routing_fault_links: "{{ routing_tunnel_fault.links }}"
 
-# The session wait runs only after every restore command succeeds.
+# The session wait runs after the tunnel restore block.
 - name: Wait until the tunnel endpoint establishes each gateway session on the tunnel again
   ansible.builtin.import_tasks: check-routing-recovery-session-state.yml
   vars:
