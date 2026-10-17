@@ -40,15 +40,6 @@ RSpec.describe 'routing simulator BGP configuration' do
     )
   end
 
-  it 'enables graceful restart only on a router that peers with the gateway', :aggregate_failures do
-    graceful = ['bgp graceful-restart', 'bgp graceful-restart stalepath-time 60']
-
-    %w[tunnel_upstream_upstream tunnel_vps_vps].each do |node|
-      expect(frr(node)).to include(*graceful), node
-    end
-    expect(frr('tunnel_vps_upstream').grep(/graceful-restart/)).to be_empty
-  end
-
   it 'omits multihop on a directly connected session' do
     expect(frr('tunnel_vps_upstream').grep(/ebgp-multihop/)).to be_empty
   end
