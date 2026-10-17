@@ -176,8 +176,9 @@ deletion fails or no candidate remains.
 Watchdog builds that predate `92e1a93` delete only `known-good-*` snapshots
 to meet the total limit.
 
-Both hypervisors, `vault` and the testbed hypervisor `suburban`, apply
-`max_known_good_snapshots` and set `max_total_snapshots` to 15.
+The host template applies the same `max_known_good_snapshots` and
+`max_total_snapshots` values on every hypervisor, including the testbed
+hypervisor `suburban`. Inventory does not override these values.
 
 A committed deploy keeps its `pre-deploy-*` snapshot until an operator
 deletes it, unless a watchdog that includes `92e1a93` deletes it under a
