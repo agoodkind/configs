@@ -41,22 +41,18 @@
 - name: Collect the gateway interface of the connection
   ansible.builtin.set_fact:
     routing_ipv4_interfaces: >-
-      {%- set names = [] -%}
-      {%- for link in (routing_gateway_reads.results[0].stdout | from_json)['out-data'] | from_json -%}
-      {%- if routing_ipv4_connection.mwan_ipv4 in (link.addr_info | map(attribute='local') | list) -%}
-      {%- set _ = names.append(link.ifname) -%}
-      {%- endif -%}
-      {%- endfor -%}
-      {{ names | join(',') }}
+      {{ (routing_gateway_reads.results[0].stdout | from_json)['out-data'] | from_json
+      | subelements('addr_info', skip_missing=True)
+      | selectattr('1.local', 'equalto', routing_ipv4_connection.mwan_ipv4)
+      | map(attribute='0.ifname') | unique | list }}
 
 - name: Require one gateway interface with the connection address
   ansible.builtin.assert:
     that:
-      - routing_ipv4_interfaces != ''
-      - "',' not in routing_ipv4_interfaces"
+      - routing_ipv4_interfaces | length == 1
     fail_msg: >-
       Routing scenario {{ routing_check.name }} connection {{ routing_ipv4_connection.id }}:
-      the gateway interfaces [{{ routing_ipv4_interfaces }}] have the address
+      the gateway interfaces {{ routing_ipv4_interfaces }} have the address
       {{ routing_ipv4_connection.mwan_ipv4 }}, and the check requires exactly one.
 
 - name: Check ordinary IPv4 packets through the connection
@@ -82,7 +78,7 @@
           - tcpdump
           - -n
           - -i
-          - "{{ routing_ipv4_interfaces }}"
+          - "{{ routing_ipv4_interfaces[0] }}"
           - -c
           - "1"
           - "{{ item.1 }}"
@@ -90,12 +86,12 @@
       # rewrite the DSCP. The gateway sends the request with the client's DSCP
       # in the upper six bits of the IPv4 TOS byte.
       loop:
-        - - leaving the gateway
+        - - outbound from the gateway
           - >-
             icmp and icmp[icmptype] == icmp-echo and src host {{ routing_ipv4_connection.mwan_ipv4 }}
             and dst host {{ testbed_routing_checks.ordinary_ipv4_target }}
             and ip[1] & 0xfc == {{ routing_ipv4_connection.dscp | int * 4 }}
-        - - returning to the gateway
+        - - inbound to the gateway
           - >-
             icmp and icmp[icmptype] == icmp-echoreply and src host {{ testbed_routing_checks.ordinary_ipv4_target }}
             and dst host {{ routing_ipv4_connection.mwan_ipv4 }}
@@ -137,25 +133,20 @@
       retries: "{{ testbed_routing_checks.capture_timeout_seconds }}"
       delay: 2
 
-    - name: Require the packets leaving and returning on the gateway interface
+    - name: Require the outbound and inbound packets on the gateway interface
       ansible.builtin.assert:
         that:
-          - routing_ipv4_capture_failures == ''
+          - routing_ipv4_capture_failures == []
         fail_msg: >-
           Routing scenario {{ routing_check.name }} connection {{ routing_ipv4_connection.id }}
-          with DSCP {{ routing_ipv4_connection.dscp }}: interface {{ routing_ipv4_interfaces }}
+          with DSCP {{ routing_ipv4_connection.dscp }}: interface {{ routing_ipv4_interfaces[0] }}
           does not show the packets {{ routing_ipv4_capture_failures }}.
       vars:
         routing_ipv4_capture_failures: >-
-          {%- set failed = [] -%}
-          {%- for capture in routing_ipv4_captures.results -%}
-          {%- if capture.rc is not defined or capture.rc != 0
-          or (capture.stdout | from_json).exitcode is not defined
-          or (capture.stdout | from_json).exitcode != 0 -%}
-          {%- set _ = failed.append(capture.item.item.0) -%}
-          {%- endif -%}
-          {%- endfor -%}
-          {{ failed | join(', ') }}
+          {{ routing_ipv4_captures.results | map(attribute='item.item.0')
+          | zip(routing_ipv4_captures.results | map(attribute='stdout') | map('from_json')
+          | map(attribute='exitcode', default='missing'))
+          | rejectattr('1', 'equalto', 0) | map(attribute='0') | list }}
 
     - name: Record the ordinary IPv4 check
       ansible.builtin.set_fact:

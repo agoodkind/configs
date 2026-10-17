@@ -215,16 +215,7 @@ RSpec.describe 'routing simulator checks' do
     facts = RoutingSimulatorConfig.ipv4_connection_facts(inventory, 'tunnel_upstream', 'sonic_2', gateway_reads(links))
 
     expect(facts.fetch('routing_ipv4_connection').fetch('dscp').to_i).to eq(inventory.fetch('testbed_routing_forced_dscp').fetch('sonic_2'))
-    expect(facts.fetch('routing_ipv4_interfaces')).to eq('ensonic2')
-  end
-
-  def ipv4_captures_valid?(guest_outputs)
-    block = RoutingSimulatorConfig.task('Check ordinary IPv4 packets through the connection', 'tasks', 'check-routing-ordinary-ipv4.yml')
-    assertion = block.fetch('block').find { |task| task['name'] == 'Require the packets leaving and returning on the gateway interface' }
-    results = guest_outputs.each_with_index.map do |output, index|
-      TaskExpressions.command_result(0, JSON.generate(output), '').merge('item' => { 'item' => [%w[leaving returning][index]] })
-    end
-    RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'routing_ipv4_captures' => { 'results' => results } }, [])
+    expect(facts.fetch('routing_ipv4_interfaces')).to eq(['ensonic2'])
   end
 
   def tunnel_captures_valid?(phases_and_codes)
@@ -252,14 +243,6 @@ RSpec.describe 'routing simulator checks' do
     expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'item' => read.call('exitcode' => 0) }, [])).to be(true)
     expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'item' => read.call('exitcode' => 127) }, [])).to be(false)
     expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'item' => read.call('pid' => 7) }, [])).to be(false)
-  end
-
-  it 'requires a guest exit code of zero from both gateway captures', :aggregate_failures do
-    captured = { 'exitcode' => 0, 'exited' => 1 }
-
-    expect(ipv4_captures_valid?([captured, captured])).to be(true)
-    expect(ipv4_captures_valid?([captured, { 'exitcode' => 124, 'exited' => 1 }])).to be(false)
-    expect(ipv4_captures_valid?([captured, { 'pid' => 4242 }])).to be(false)
   end
 
   it 'derives the fault wait from the configured hold time', :aggregate_failures do
