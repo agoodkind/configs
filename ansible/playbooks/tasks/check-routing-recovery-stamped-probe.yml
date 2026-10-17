@@ -1,9 +1,11 @@
 ---
 # routing_probe_connection is a checked tunnel of the scenario. The outer
-# fault block removes the stamp table. The gateway sends echo requests on that
-# tunnel. When routing_probe_return_rule is "kept tunnel", the gateway must
-# receive the replies on that tunnel. When it is "any tunnel to the endpoint",
-# the tunnel endpoint can send the replies on any of its tunnels to the gateway.
+# fault block removes the stamp table. The gateway sends echo requests on
+# routing_probe_connection. When routing_probe_return_rule is "kept tunnel",
+# the gateway must receive the replies on routing_probe_connection. When
+# routing_probe_return_rule is "any tunnel to the endpoint", the tunnel
+# endpoint can send the replies on any tunnel between the tunnel endpoint and
+# the gateway.
 - name: Require a known reply rule for the stamped probe
   ansible.builtin.assert:
     that:
@@ -30,7 +32,8 @@
         {%- endfor -%}
         {%- endif -%}
         {{ captures }}
-      # qm guest exec waits for the capture, which ends at its own timeout.
+      # qm guest exec waits for the capture. The timeout command ends the
+      # capture.
       guest_exec_timeout: "{{ testbed_routing_checks.capture_timeout_seconds * 2 }}"
       ping_argv:
         - pct
@@ -113,7 +116,7 @@
   delay: 2
 
 # qm guest exec exits 0 when the guest command fails. The guest command
-# status is the exitcode field of its JSON output.
+# status is the exitcode field of the qm guest exec JSON output.
 - name: Require the requests on the kept tunnel and the replies by the reply rule
   ansible.builtin.assert:
     that:

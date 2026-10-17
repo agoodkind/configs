@@ -27,8 +27,9 @@
         {{ (((routing_recovery_scenario.sessions | map(attribute='hold_seconds') | list + [0]) | max)
         / testbed_routing_checks.retry_delay_seconds) | round(0, 'ceil') | int
         + testbed_routing_checks.recovery_retries }}
-      # The link loss check sets each tunnel interface down on its endpoint. In
-      # a scenario without tunnels, it sets each simulator link down.
+      # The link loss check sets each tunnel interface down on the tunnel
+      # endpoint. In a scenario without tunnels, the link loss check sets each
+      # simulator link down.
       links: >-
         {%- set links = [] -%}
         {%- for tunnel in routing_recovery_scenario.tunnels -%}
@@ -71,14 +72,15 @@
       - "{{ testbed_routing_checks.ping_timeout_seconds | string }}"
       - "{{ routing_recovery.remote_client_address }}"
 
-# Each tunnel loss entry has the lost tunnel, its endpoint node and
-# interface, the remaining checked tunnel, and the gateway addresses of the
-# sessions on the lost tunnel. Each sibling link loss entry has the failed
-# connection, the kept connection, their shared simulator node, the simulator
-# interface of the failed connection, and the checked tunnels on the kept
-# connection. Each restart entry has the tunnel endpoint node, the IDs of the
-# gateway sessions on its tunnels, and the session wait retries that fit in
-# the longest hold time of those sessions.
+# Each tunnel loss entry has the lost tunnel, the endpoint node and interface
+# of the lost tunnel, the remaining checked tunnel, and the gateway addresses
+# of the sessions on the lost tunnel. Each sibling link loss entry has the
+# failed connection, the kept connection, the simulator node of both
+# connections, the simulator interface of the failed connection, and the
+# checked tunnels on the kept connection. Each restart entry has the tunnel
+# endpoint node, the IDs of the gateway sessions on the tunnels of the node,
+# and the session wait retries that fit in the longest hold time of the
+# gateway sessions.
 - name: Collect the tunnel loss, sibling link loss, and simulator restart targets
   ansible.builtin.set_fact:
     routing_recovery_tunnel_losses: >-
