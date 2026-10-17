@@ -34,6 +34,60 @@ RSpec.describe 'routing simulator scenario contracts' do
     expect(valid).to be(false)
   end
 
+  def contract_valid_without_dscp?(scenario, connection)
+    changed = RoutingSimulatorInventory.changed_scenario(scenario) do |data, copy|
+      copy.fetch('testbed_routing_forced_dscp').delete(connection)
+      yield data
+    end
+    RoutingSimulatorInventory.scenario_valid?(changed, scenario)
+  end
+
+  it 'rejects a declared connection without a forced DSCP or an unchecked declaration' do
+    valid = contract_valid_without_dscp?('astound_static', 'astound') do |scenario|
+      scenario['unchecked_connections'] = []
+      scenario['unchecked_ipv4_connections'] = [{ 'id' => 'astound', 'reason' => 'The check skips IPv4 on astound.' }]
+    end
+
+    expect(valid).to be(false)
+  end
+
+  it 'rejects an unchecked declaration with an empty or null reason', :aggregate_failures do
+    expect(contract_valid?('tunnel_vps') { |scenario| scenario['unchecked_connections'][1]['reason'] = '' }).to be(false)
+    expect(contract_valid?('tunnel_vps') { |scenario| scenario['unchecked_connections'][1]['reason'] = nil }).to be(false)
+    expect(contract_valid?('etheric_native') { |scenario| scenario['unchecked_ipv4_connections'][0]['reason'] = nil }).to be(false)
+  end
+
+  it 'rejects an unchecked declaration for a connection the scenario does not declare', :aggregate_failures do
+    unknown = { 'id' => 'sonic_2', 'reason' => 'The scenario does not use sonic_2.' }
+
+    expect(contract_valid?('tunnel_vps') { |scenario| scenario['unchecked_connections'] << unknown }).to be(false)
+    expect(contract_valid?('tunnel_vps') { |scenario| scenario['unchecked_ipv4_connections'] << unknown }).to be(false)
+  end
+
+  it 'rejects a scenario that excludes every connection' do
+    excluded = { 'id' => 'astound_static_astound', 'reason' => 'The check skips the tunnel.' }
+
+    expect(contract_valid?('astound_static') { |scenario| scenario['unchecked_connections'] << excluded }).to be(false)
+  end
+
+  it 'rejects an ordinary IPv4 connection without a forced DSCP' do
+    expect(contract_valid_without_dscp?('tunnel_vps', 'astound') { |scenario| scenario['unchecked_ipv4_connections'] = [] })
+      .to be(false)
+  end
+
+  it 'reports the scenario of a missing unchecked connections declaration' do
+    result = key_verdict('tunnel_static') { |scenario| scenario.delete('unchecked_connections') }
+
+    expect(result).to eq(
+      valid: false, message: 'Routing scenario tunnel_static lacks required keys: scenario key unchecked_connections'
+    )
+  end
+
+  it 'rejects a gateway session without a checked connection', :aggregate_failures do
+    expect(contract_valid?('tunnel_vps') { |scenario| scenario['sessions'][0].delete('connection') }).to be(false)
+    expect(contract_valid?('tunnel_vps') { |scenario| scenario['sessions'][0]['connection'] = 'sonic_1' }).to be(false)
+  end
+
   it 'rejects an upstream router that two scenarios reference' do
     valid = contract_valid?('tunnel_vps') do |scenario|
       scenario['nodes'] = %w[tunnel_vps_vps tunnel_static_upstream tunnel_vps_client]

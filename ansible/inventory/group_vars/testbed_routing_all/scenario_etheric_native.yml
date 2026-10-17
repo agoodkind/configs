@@ -2,6 +2,13 @@
 testbed_routing_scenario_etheric_native:
   kind: native_bgp
   connections: [etheric]
+  unchecked_connections: []
+  unchecked_ipv4_connections:
+    - id: etheric
+      reason: >-
+        The etheric_native_router simulator has the provider_router role. Only transport
+        simulators masquerade their provider link networks to an uplink, and the
+        etheric_native_router forward chain drops packets to its management interface.
   nodes: [etheric_native_router, etheric_native_upstream, etheric_native_client]
   home_prefixes: ["{{ testbed_routing_home_prefix }}"]
   remote_prefixes: ["{{ testbed_routing_networks.etheric_native_remote.ipv6_net }}"]
@@ -14,6 +21,7 @@ testbed_routing_scenario_etheric_native:
         {{ service_mapping.routing_etheric_native_upstream_suburban.routing_interfaces.remote.ipv6 }}
   sessions:
     - id: etheric_native_home
+      connection: etheric
       address_family: ipv6_unicast
       hops: 1
       multihop_ttl: 0
