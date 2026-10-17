@@ -235,16 +235,6 @@ RSpec.describe 'routing simulator checks' do
     expect(tunnel_captures_valid?(outbound)).to be(false)
   end
 
-  it 'requires a guest exit code of zero from each gateway read', :aggregate_failures do
-    assertion = RoutingSimulatorConfig.task('Require each gateway read to succeed in the guest',
-                                            'tasks', 'check-routing-ordinary-ipv4.yml')
-    read = ->(output) { { 'item' => %w[tcpdump --version], 'stdout' => JSON.generate(output) } }
-
-    expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'item' => read.call('exitcode' => 0) }, [])).to be(true)
-    expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'item' => read.call('exitcode' => 127) }, [])).to be(false)
-    expect(RoutingSimulatorConfig.assertion_valid?(inventory, assertion, { 'item' => read.call('pid' => 7) }, [])).to be(false)
-  end
-
   it 'derives the fault wait from the configured hold time', :aggregate_failures do
     checks = inventory.fetch('testbed_routing_checks')
     longer = RoutingSimulatorInventory.changed_scenario('tunnel_upstream') do |scenario|

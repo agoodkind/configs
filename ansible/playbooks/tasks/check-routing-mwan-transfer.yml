@@ -21,7 +21,7 @@
       - (item.stdout | from_json).end.sum_received.bytes > 0
     fail_msg: >-
       Routing scenario {{ routing_check.name }} connection {{ routing_connection.id }}
-      with DSCP {{ routing_connection.dscp }}: the TCP transfer {{ item.item }} moved no data
+      with DSCP {{ routing_connection.dscp }}: the TCP transfer {{ item.item }} sent no data
   loop: "{{ routing_transfers.results }}"
   loop_control:
     label: "{{ item.item }}"
