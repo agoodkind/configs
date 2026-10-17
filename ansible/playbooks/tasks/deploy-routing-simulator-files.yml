@@ -13,6 +13,7 @@
         state: directory
         mode: "0700"
       changed_when: false
+      check_mode: false
 
     - name: Stage the simulator files
       ansible.builtin.import_tasks: deploy-routing-simulator-stage.yml
@@ -28,6 +29,7 @@
         path: "{{ rsim_temp_dir }}"
         state: absent
       changed_when: false
+      check_mode: false
 
 - name: Read the simulator network units in the guest
   ansible.builtin.command:
@@ -44,6 +46,7 @@
       - "%f\n"
   register: rsim_installed_units
   changed_when: false
+  check_mode: false
 
 # Every service group is pending after the removal deletes the applied record.
 - name: Remove each network unit that the inventory no longer declares

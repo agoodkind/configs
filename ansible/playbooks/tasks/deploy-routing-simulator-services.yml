@@ -27,6 +27,7 @@
   register: rsim_frr_version
   when: rsim.bgp | bool
   changed_when: false
+  check_mode: false
 
 - name: Report the FRR version
   ansible.builtin.debug:
