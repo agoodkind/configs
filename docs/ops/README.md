@@ -61,5 +61,6 @@ auto-approved `apply` or `destroy` write to a file.
 
 - [MWAN](mwan/layout.md)
 - [OPNsense](opnsense/operations.md)
+- [Deploy and restore Kea configuration](opnsense/kea.md)
 - [Ansible](ansible/quality.md)
 - [Infrastructure](infra/access.md)

@@ -179,7 +179,7 @@ The value never reaches stdout, so the global redactor needs no carve-out for
 ## Migration and caller impact
 
 - No caller captures `configs secret` stdout (verified: zero invocations across
-  scripts, Makefiles, Rakefile, and tofu), so moving the value to a file breaks
+  scripts, Makefiles, and tofu), so moving the value to a file breaks
   no automation.
 - `inventory-dump` output keeps its shape; secret values now render as
   `<redacted:KEY>` via the shared layer.

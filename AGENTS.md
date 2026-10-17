@@ -13,7 +13,7 @@ It holds no Go module, and the deploy installs the `mwan` and
 [docs/README.md](docs/README.md) for area pages and operator runbooks.
 
 Run every deploy as `./configsctl deploy <name>` from the repository root, and
-run OpenTofu as `./configsctl tofu`. A rake deploy task runs the same command.
+run OpenTofu as `./configsctl tofu`.
 Do not invoke `ansible`, `ansible-vault`, `ansible-playbook`,
 `ansible-inventory`, or `ansible-console` directly, do not pipe decrypted vault
 contents into chat.
