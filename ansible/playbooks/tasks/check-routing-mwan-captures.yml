@@ -14,6 +14,9 @@
   register: routing_transport_addresses
   changed_when: false
 
+# The forced DSCP selects the outbound tunnel. The tunnel endpoint selects the
+# return tunnel from its own routes. The return capture runs on every tunnel to
+# that endpoint.
 - name: Collect the packet captures
   ansible.builtin.set_fact:
     routing_captures: "{{ routing_capture_lines.split(';') | map('split', '|') | list }}"
@@ -30,27 +33,30 @@
       {%- endfor -%}
       {%- set inner = 'icmp6 and ip6[40] == 128 and src host ' ~ routing_check.downstream.ipv6 ~ ' and dst host '
       ~ routing_check.remote_client_address -%}
-      {%- for tunnel in routing_check.scenario.tunnels -%}
+      {%- for tunnel in routing_connection.tunnels -%}
       {%- set connection = testbed_routing_connections[tunnel.connection] -%}
       {%- set transport = routing_node_vmids[connection.simulator] -%}
       {%- set outbound = 'ip proto 41 and src host ' ~ tunnel.local.outer_ipv4 ~ ' and dst host '
       ~ tunnel.remote.outer_ipv4 -%}
-      {%- set inbound = 'ip proto 41 and src host ' ~ tunnel.remote.outer_ipv4 ~ ' and dst host '
-      ~ tunnel.local.outer_ipv4 -%}
       {%- set link = interfaces[tunnel.connection ~ ' ' ~ connection.simulator_link_ipv4] -%}
       {%- set outer = interfaces[tunnel.connection ~ ' ' ~ connection.simulator_outer_ipv4] -%}
       {%- set _ = lines.append(['before provider', tunnel.id, transport, link, outbound] | join('|')) -%}
       {%- set _ = lines.append(['after provider', tunnel.id, transport, outer, outbound] | join('|')) -%}
-      {%- set _ = lines.append(['return through provider', tunnel.id, transport, link, inbound] | join('|')) -%}
+      {%- for returning in routing_check.scenario.tunnels if returning.remote.node == tunnel.remote.node -%}
+      {%- set return_connection = testbed_routing_connections[returning.connection] -%}
+      {%- set inbound = 'ip proto 41 and src host ' ~ returning.remote.outer_ipv4 ~ ' and dst host '
+      ~ returning.local.outer_ipv4 -%}
+      {%- set _ = lines.append(['return through provider', returning.id,
+      routing_node_vmids[return_connection.simulator],
+      interfaces[returning.connection ~ ' ' ~ return_connection.simulator_link_ipv4], inbound] | join('|')) -%}
+      {%- endfor -%}
       {%- set _ = lines.append(['inner at endpoint', tunnel.id, routing_node_vmids[tunnel.remote.node],
       tunnel.remote.interface, inner] | join('|')) -%}
       {%- endfor -%}
-      {%- if routing_check.scenario.tunnels == [] -%}
-      {%- for name in routing_check.scenario.connections -%}
-      {%- set connection = testbed_routing_connections[name] -%}
-      {%- set _ = lines.append(['native at provider', 'native', routing_node_vmids[connection.simulator],
-      interfaces[name ~ ' ' ~ connection.simulator_link_ipv4], inner] | join('|')) -%}
-      {%- endfor -%}
+      {%- if routing_connection.tunnels == [] -%}
+      {%- set connection = testbed_routing_connections[routing_connection.underlay] -%}
+      {%- set _ = lines.append(['native at provider', routing_connection.id, routing_node_vmids[connection.simulator],
+      interfaces[routing_connection.underlay ~ ' ' ~ connection.simulator_link_ipv4], inner] | join('|')) -%}
       {%- endif -%}
       {{ lines | join(';') }}
 

@@ -1,4 +1,7 @@
 ---
+- name: Collect the connections that the checks stamp
+  ansible.builtin.import_tasks: check-routing-connection-selection.yml
+
 - name: Collect the scenario check inputs
   ansible.builtin.set_fact:
     routing_check_results: []
@@ -27,9 +30,11 @@
         | map(attribute='address') | list)[0] }}
       remote_client_node: >-
         {{ (routing_check_scenario.nodes | select('in', routing_check_client_nodes) | list)[0] }}
-      mtu: >-
-        {{ (routing_check_scenario.tunnels | map(attribute='mtu') | list
-        + [testbed_routing_checks.native_mtu]) | min }}
+      checked_connections: "{{ routing_connection_selection.checked }}"
+      unchecked_connections: "{{ routing_check_scenario.unchecked_connections }}"
+      ipv4_connections: "{{ routing_connection_selection.ipv4 }}"
+      unchecked_ipv4_connections: "{{ routing_check_scenario.unchecked_ipv4_connections }}"
+      gateway_vmid: "{{ service_mapping[testbed_routing_nodes[routing_check_gateway_nodes[0]].service].vmid }}"
       downstream: "{{ service_mapping[testbed_routing_checks.downstream_client] }}"
   vars:
     routing_check_scenario: "{{ testbed_routing_scenarios[routing_scenario_name] }}"

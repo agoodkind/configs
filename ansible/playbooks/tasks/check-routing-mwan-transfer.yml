@@ -19,14 +19,17 @@
     that:
       - "'error' not in (item.stdout | from_json)"
       - (item.stdout | from_json).end.sum_received.bytes > 0
-    fail_msg: "Routing scenario {{ routing_check.name }}: the TCP transfer {{ item.item }} moved no data"
+    fail_msg: >-
+      Routing scenario {{ routing_check.name }} connection {{ routing_connection.id }}
+      with DSCP {{ routing_connection.dscp }}: the TCP transfer {{ item.item }} sent no data
   loop: "{{ routing_transfers.results }}"
   loop_control:
     label: "{{ item.item }}"
 
 - name: Record the TCP transfers
   ansible.builtin.set_fact:
-    routing_check_results: "{{ routing_check_results + ['tcp transfer both directions'] }}"
+    routing_check_results: >-
+      {{ routing_check_results + ['connection ' ~ routing_connection.id ~ ' tcp transfer both directions'] }}
 
 - name: Send one packet at the path MTU and one packet above it
   ansible.builtin.command:
@@ -49,8 +52,8 @@
   vars:
     routing_icmpv6_overhead_bytes: 48
   loop:
-    - "{{ routing_check.mtu | int - routing_icmpv6_overhead_bytes }}"
-    - "{{ routing_check.mtu | int - routing_icmpv6_overhead_bytes + 1 }}"
+    - "{{ routing_connection.mtu | int - routing_icmpv6_overhead_bytes }}"
+    - "{{ routing_connection.mtu | int - routing_icmpv6_overhead_bytes + 1 }}"
   register: routing_size_pings
   changed_when: false
   failed_when: false
@@ -64,9 +67,10 @@
         or (routing_size_pings.results[1].stdout ~ routing_size_pings.results[1].stderr)
         is search('too big|too long|mtu', ignorecase=true)
     fail_msg: >-
-      Routing scenario {{ routing_check.name }}: a packet at the MTU failed, or
+      Routing scenario {{ routing_check.name }} connection {{ routing_connection.id }}
+      with DSCP {{ routing_connection.dscp }}: a packet at the MTU failed, or
       a larger packet disappeared without a packet-too-big error.
 
 - name: Record the packet size check
   ansible.builtin.set_fact:
-    routing_check_results: "{{ routing_check_results + ['packet size'] }}"
+    routing_check_results: "{{ routing_check_results + ['connection ' ~ routing_connection.id ~ ' packet size'] }}"
