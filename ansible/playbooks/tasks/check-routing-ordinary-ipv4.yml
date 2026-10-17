@@ -87,7 +87,7 @@
           - "1"
           - "{{ item.1 }}"
       # MWAN matches the forced DSCP to choose the connection and does not
-      # rewrite the DSCP. The request leaves the gateway with the client's DSCP
+      # rewrite the DSCP. The gateway sends the request with the client's DSCP
       # in the upper six bits of the IPv4 TOS byte.
       loop:
         - - leaving the gateway

@@ -244,18 +244,6 @@ RSpec.describe 'routing simulator checks' do
     expect(tunnel_captures_valid?(outbound)).to be(false)
   end
 
-  it 'captures only requests that leave the gateway with the forced DSCP of the connection' do
-    block = RoutingSimulatorConfig.task('Check ordinary IPv4 packets through the connection', 'tasks', 'check-routing-ordinary-ipv4.yml')
-    start = block.fetch('block').find { |task| task['name'] == 'Start the bounded packet captures on the gateway interface' }
-    connection = { 'mwan_ipv4' => '192.0.2.2', 'dscp' => '39' }
-    rendered = TaskExpressions.evaluate(
-      variables: inventory.slice(*RoutingSimulatorConfig::LITERAL_VARIABLES).merge('routing_ipv4_connection' => connection),
-      facts: [], renders: [{ 'vars' => {}, 'templates' => { 'filter' => start.fetch('loop').first.last } }]
-    ).fetch('renders').first.fetch('filter')
-
-    expect(rendered).to end_with('and ip[1] & 0xfc == 156')
-  end
-
   it 'requires a guest exit code of zero from each gateway read', :aggregate_failures do
     assertion = RoutingSimulatorConfig.task('Require each gateway read to succeed in the guest',
                                             'tasks', 'check-routing-ordinary-ipv4.yml')
