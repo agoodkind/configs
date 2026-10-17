@@ -10,6 +10,11 @@ locals {
   enrolled = toset([
     "clyde_suburban",
     "dns64_suburban",
+    "isp_astound_suburban",
+    "isp_att_suburban",
+    "isp_mbrains_suburban",
+    "isp_routed_suburban",
+    "isp_webpass_suburban",
     "mwan_failover_suburban",
     "mwan_suburban",
     "seaweedfs_suburban",
@@ -43,6 +48,21 @@ locals {
   # service mapping name of the guest.
   authorized_key_lines_overrides = {}
 
+  # This map supplies key-file paths that the module appends after the global
+  # key-file path for individual guests.
+  # Each map key is the service mapping name of the guest.
+  # ISP simulators use /etc/ssh/authorized_keys.d/mwan-testbed.
+  # The MWAN testbed deploy writes that file.
+  authorized_keys_files_overrides = {
+    isp_astound_suburban = local.isp_simulator_key_files
+    isp_att_suburban     = local.isp_simulator_key_files
+    isp_mbrains_suburban = local.isp_simulator_key_files
+    isp_routed_suburban  = local.isp_simulator_key_files
+    isp_webpass_suburban = local.isp_simulator_key_files
+  }
+
+  isp_simulator_key_files = ["/etc/ssh/authorized_keys.d/mwan-testbed"]
+
   scripts_updater_timer_default = {
     activation_run           = true
     randomized_delay_seconds = 300
@@ -69,10 +89,11 @@ locals {
 
   guests = {
     for name in local.enrolled : name => {
-      vmid                 = local.service_mapping[name].vmid
-      kind                 = local.guest_kinds[name]
-      node                 = local.guest_sites[name]
-      authorized_key_lines = try(local.authorized_key_lines_overrides[name], null)
+      vmid                        = local.service_mapping[name].vmid
+      kind                        = local.guest_kinds[name]
+      node                        = local.guest_sites[name]
+      authorized_key_lines        = try(local.authorized_key_lines_overrides[name], null)
+      extra_authorized_keys_files = try(local.authorized_keys_files_overrides[name], [])
       scripts_updater_timer = try(
         local.scripts_updater_timer_overrides[name],
         local.scripts_updater_timer_default,
@@ -163,13 +184,14 @@ module "base" {
   kind = each.value.kind
   name = each.key
 
-  authorized_key_lines = each.value.authorized_key_lines
-  public_keys          = each.value.authorized_key_lines == null ? local.github_keys : []
-  restricted_key_lines = each.value.authorized_key_lines == null ? local.sshpiper_lines : []
-  mail_relay           = try(local.mail_relays[each.key], null)
-  login_dir            = local.shared_vars.login_dir
-  revision             = local.shared_vars.guest_prep_revision
-  revision_file        = local.shared_vars.guest_prep_revision_file
+  authorized_key_lines        = each.value.authorized_key_lines
+  extra_authorized_keys_files = each.value.extra_authorized_keys_files
+  public_keys                 = each.value.authorized_key_lines == null ? local.github_keys : []
+  restricted_key_lines        = each.value.authorized_key_lines == null ? local.sshpiper_lines : []
+  mail_relay                  = try(local.mail_relays[each.key], null)
+  login_dir                   = local.shared_vars.login_dir
+  revision                    = local.shared_vars.guest_prep_revision
+  revision_file               = local.shared_vars.guest_prep_revision_file
 
   scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
   scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds

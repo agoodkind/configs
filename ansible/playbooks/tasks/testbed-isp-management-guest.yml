@@ -99,31 +99,6 @@
   when: item.rc != 0 or item.stdout != '755:directory:0:0'
   changed_when: true
 
-- name: Read the current simulator SSH configuration
-  ansible.builtin.command:
-    argv: [pct, exec, "{{ isp_management_guest.id }}", --, /usr/sbin/sshd, -T]
-  register: isp_management_sshd_before
-  changed_when: false
-
-- name: Define the simulator management key paths
-  ansible.builtin.set_fact:
-    isp_management_key_paths: >-
-      {{ (isp_management_sshd_before.stdout
-          | regex_findall('(?m)^authorizedkeysfile (.+)$'))[0].split()
-         | reject('equalto', '/etc/ssh/authorized_keys.d/mwan-testbed')
-         | list + ['/etc/ssh/authorized_keys.d/mwan-testbed'] }}
-
-- name: Define the simulator management SSH configuration bytes
-  ansible.builtin.set_fact:
-    isp_management_sshd_configuration: >-
-      {{ 'AuthorizedKeysFile ' ~ (isp_management_key_paths | join(' ')) ~ isp_management_newline }}
-
-- name: Stage the simulator management SSH configuration
-  ansible.builtin.copy:
-    dest: "/var/lib/mwan-testbed/management-ssh/{{ isp_management_guest.id }}-sshd.conf"
-    content: "{{ isp_management_sshd_configuration }}"
-    mode: "0600"
-
 - name: Copy the simulator management inputs into the guest
   ansible.builtin.command:
     argv: [pct, push, "{{ isp_management_guest.id }}", "{{ item.source }}",
@@ -131,8 +106,6 @@
   loop:
     - source: /var/lib/mwan-testbed/management-ssh/authorized_keys
       staged: /run/mwan-testbed-authorized_keys
-    - source: "/var/lib/mwan-testbed/management-ssh/{{ isp_management_guest.id }}-sshd.conf"
-      staged: /run/mwan-testbed-sshd.conf
   changed_when: false
 
 - name: Read the installed simulator management key digest
@@ -156,27 +129,12 @@
       isp_management_key_bundle | hash('sha256'))
   changed_when: true
 
-- name: Read the installed simulator management configuration digest
+- name: Remove the simulator management SSH drop-in
   ansible.builtin.command:
-    argv: [pct, exec, "{{ isp_management_guest.id }}", --, sha256sum,
+    argv: [pct, exec, "{{ isp_management_guest.id }}", --, rm, -v, -f,
            /etc/ssh/sshd_config.d/00-mwan-testbed-management.conf]
-  register: isp_management_config_digest
-  changed_when: false
-  failed_when: >-
-    isp_management_config_digest.rc != 0
-    and not (isp_management_config_digest.rc == 1
-             and 'No such file or directory' in isp_management_config_digest.stderr)
-
-- name: Install the dedicated simulator management SSH configuration
-  ansible.builtin.command:
-    argv: [pct, exec, "{{ isp_management_guest.id }}", --, install, -m, "0644",
-           /run/mwan-testbed-sshd.conf, /etc/ssh/sshd_config.d/00-mwan-testbed-management.conf]
-  when: >-
-    isp_management_config_digest.rc != 0
-    or not isp_management_config_digest.stdout.startswith(
-      isp_management_sshd_configuration | hash('sha256'))
-  register: isp_management_config_install
-  changed_when: true
+  register: isp_management_config_removal
+  changed_when: isp_management_config_removal.stdout | length > 0
 
 - name: Validate the simulator SSH server configuration
   ansible.builtin.command:
@@ -189,14 +147,22 @@
   register: isp_management_sshd_after
   changed_when: false
 
-- name: Require the existing and managed simulator key paths
+- name: Require both global and MWAN testbed key files in the simulator SSH configuration
   ansible.builtin.assert:
     that:
       - >-
+        '/etc/ssh/authorized_keys.d/authorized_keys' in
         (isp_management_sshd_after.stdout
          | regex_findall('(?m)^authorizedkeysfile (.+)$'))[0].split()
-        == isp_management_key_paths
-    fail_msg: The simulator SSH configuration does not include the management key file
+      - >-
+        '/etc/ssh/authorized_keys.d/mwan-testbed' in
+        (isp_management_sshd_after.stdout
+         | regex_findall('(?m)^authorizedkeysfile (.+)$'))[0].split()
+    fail_msg: >-
+      The simulator sshd configuration does not list both
+      /etc/ssh/authorized_keys.d/authorized_keys and
+      /etc/ssh/authorized_keys.d/mwan-testbed. Apply the OpenTofu guest
+      enrollment for this simulator before deploy-testbed.
 
 - name: Read the simulator SSH service state
   ansible.builtin.command:
@@ -221,7 +187,7 @@
   ansible.builtin.command:
     argv: [pct, exec, "{{ isp_management_guest.id }}", --, systemctl, reload, ssh.service]
   when:
-    - isp_management_config_install.changed
+    - isp_management_config_removal.changed
     - "'ActiveState=active' in isp_management_ssh_service.stdout_lines"
   changed_when: true
 
@@ -308,5 +274,5 @@
 - name: Remove staged simulator management inputs
   ansible.builtin.command:
     argv: [pct, exec, "{{ isp_management_guest.id }}", --, rm, -f,
-           /run/mwan-testbed-authorized_keys, /run/mwan-testbed-sshd.conf]
+           /run/mwan-testbed-authorized_keys]
   changed_when: false
