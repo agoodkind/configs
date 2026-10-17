@@ -8,6 +8,12 @@
       register: routing_upstream_loss_start
       changed_when: false
 
+    - name: Read the UTC clock before the upstream loss
+      ansible.builtin.command:
+        argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+      register: routing_upstream_loss_start_utc
+      changed_when: false
+
     - name: Stop FRR on each upstream router
       ansible.builtin.command:
         argv: [pct, exec, "{{ routing_node_vmids[item] }}", --, systemctl, stop, frr.service]
@@ -29,6 +35,11 @@
         that:
           - routing_upstream_loss_probe.rc != 0
         fail_msg: "Routing scenario {{ routing_recovery.name }}: packets still pass after the upstream loss"
+
+    - name: Wait until the gateway has no default route through each VPS session
+      ansible.builtin.import_tasks: check-routing-recovery-gateway-default.yml
+      vars:
+        routing_gateway_default_present: false
   always:
     - name: Start FRR on each upstream router and require active FRR
       ansible.builtin.import_tasks: run-routing-restore-commands.yml
@@ -51,10 +62,23 @@
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
   when: routing_recovery.upstream_nodes != []
 
+- name: Wait until the gateway has a default route through each VPS session again
+  ansible.builtin.import_tasks: check-routing-recovery-gateway-default.yml
+  vars:
+    routing_gateway_default_present: true
+  when: routing_recovery.upstream_nodes != []
+
 - name: Read the clock after the upstream recovery
   ansible.builtin.command:
     argv: [date, +%s]
   register: routing_upstream_loss_end
+  changed_when: false
+  when: routing_recovery.upstream_nodes != []
+
+- name: Read the UTC clock after the upstream recovery
+  ansible.builtin.command:
+    argv: [date, -u, +%Y-%m-%dT%H:%M:%SZ]
+  register: routing_upstream_loss_end_utc
   changed_when: false
   when: routing_recovery.upstream_nodes != []
 
@@ -64,6 +88,10 @@
       {{ routing_recovery_results + [{
         'fault': 'upstream loss',
         'seconds_from_fault_to_recovery':
-          routing_upstream_loss_end.stdout | int - routing_upstream_loss_start.stdout | int
+          routing_upstream_loss_end.stdout | int - routing_upstream_loss_start.stdout | int,
+        'vps_gateway_sessions': routing_recovery.vps_gateway_sessions | map(attribute='id') | list,
+        'started_utc': routing_upstream_loss_start_utc.stdout,
+        'recovered_utc': routing_upstream_loss_end_utc.stdout,
+        'result': 'passed'
       }] }}
   when: routing_recovery.upstream_nodes != []

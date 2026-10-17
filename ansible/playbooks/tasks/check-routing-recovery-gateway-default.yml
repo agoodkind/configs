@@ -1,0 +1,35 @@
+---
+# MWAN installs each BGP route that it learns in the main table with proto bgp
+# and the session peer as the gateway. routing_gateway_default_present is true
+# to wait for a default route through each VPS session and false to wait for
+# none.
+- name: Wait for the expected default route through each VPS session on the gateway
+  ansible.builtin.command:
+    argv:
+      - qm
+      - guest
+      - exec
+      - "{{ routing_recovery.gateway_vmid }}"
+      - --
+      - ip
+      - -j
+      - "-6"
+      - route
+      - show
+      - table
+      - main
+      - default
+      - proto
+      - bgp
+      - via
+      - "{{ item.remote.address }}"
+  loop: "{{ routing_recovery.vps_gateway_sessions }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: routing_gateway_default
+  changed_when: false
+  until: >-
+    (routing_gateway_default.stdout | from_json).exitcode == 0
+    and (((routing_gateway_default.stdout | from_json)['out-data'] | from_json) != []) == routing_gateway_default_present
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
