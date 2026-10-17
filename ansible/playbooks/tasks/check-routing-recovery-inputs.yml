@@ -10,6 +10,8 @@
       remote_client_address: >-
         {{ (routing_recovery_scenario.probe_targets | selectattr('id', 'equalto', 'remote_client')
         | map(attribute='address') | list)[0] }}
+      remote_client_node: >-
+        {{ (routing_recovery_scenario.nodes | select('in', routing_recovery_client_nodes) | list)[0] }}
       upstream_nodes: >-
         {{ routing_recovery_scenario.nodes | select('in', routing_recovery_upstream_nodes) | list }}
       upstream_sessions: >-
@@ -55,6 +57,9 @@
       | map(attribute='key') | list }}
     routing_recovery_vps_nodes: >-
       {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'vps')
+      | map(attribute='key') | list }}
+    routing_recovery_client_nodes: >-
+      {{ testbed_routing_nodes | dict2items | selectattr('value.role', 'equalto', 'remote_client')
       | map(attribute='key') | list }}
 
 - name: Collect the recovery probe
