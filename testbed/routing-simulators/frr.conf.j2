@@ -66,6 +66,13 @@ router bgp {{ bgp.asn }}
  bgp router-id {{ rsim.router_id }}
  no bgp default ipv4-unicast
  bgp network import-check
+{% if bgp.peers | selectattr('remote.node', 'equalto', 'mwan') | list != [] %}
+ ! The gateway advertises its restart time. bgpd keeps the stale gateway
+ ! paths for that time, then waits for the gateway End-of-RIB marker at most
+ ! the stale path time after the session returns.
+ bgp graceful-restart
+ bgp graceful-restart stalepath-time {{ testbed_routing_graceful_restart_stalepath_seconds }}
+{% endif %}
 {% for peer in bgp.peers %}
  neighbor {{ peer.remote.address }} remote-as {{ peer.remote.asn }}
  neighbor {{ peer.remote.address }} description {{ peer.session.id }}

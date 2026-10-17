@@ -10,7 +10,7 @@ module RoutingSimulatorConfig
   ASSERT_KEY = RoutingSimulatorInventory::ASSERT_KEY
   LITERAL_VARIABLES = (RoutingSimulatorInventory::LITERAL_VARIABLES + %w[
     testbed_routing_checks testbed_routing_home_route_tracker testbed_routing_unreachable_metric
-    testbed_routing_unreachable_rule_priority
+    testbed_routing_unreachable_rule_priority testbed_routing_graceful_restart_stalepath_seconds
   ]).freeze
 
   module_function
