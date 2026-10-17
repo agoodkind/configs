@@ -278,6 +278,28 @@ RSpec.describe 'routing simulator checks' do
     end
   end
 
+  def advertises_default?(advertised, present)
+    wait = RoutingSimulatorConfig.task('Wait for the expected default route in each VPS advertisement to the gateway',
+                                       'tasks', 'check-routing-recovery-vps-default.yml')
+    result = TaskExpressions.command_result(0, JSON.generate(advertised), '')
+    TaskExpressions.evaluate(
+      variables: inventory.slice(*RoutingSimulatorConfig::LITERAL_VARIABLES).merge(
+        'routing_vps_default_advertised' => result, 'routing_vps_default_present' => present
+      ),
+      facts: [], conditions: { 'expected' => TaskExpressions.condition_list(wait.fetch('until')) }
+    ).fetch('conditions').fetch('expected')
+  end
+
+  it 'reads the default route from the FRR advertisement of a VPS to the gateway', :aggregate_failures do
+    home = { 'advertisedRoutes' => { inventory.fetch('testbed_routing_home_prefix') => {} }, 'totalPrefixCounter' => 1 }
+    default = home.merge('advertisedRoutes' => home.fetch('advertisedRoutes').merge('::/0' => {}))
+
+    expect(advertises_default?(default, true)).to be(true)
+    expect(advertises_default?(home, true)).to be(false)
+    expect(advertises_default?(home, false)).to be(true)
+    expect(advertises_default?({}, false)).to be(true)
+  end
+
   it 'sets each fault link up and reconfigures it on its simulator' do
     restore = RoutingSimulatorConfig.tasks('tasks', 'check-routing-recovery-links-up.yml').first
     variables = { 'routing_fault_links' => [%w[isp_sonic eth3], %w[tunnel_vps_vps sit-sonic1]],

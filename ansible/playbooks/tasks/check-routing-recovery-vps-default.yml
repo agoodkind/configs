@@ -1,0 +1,36 @@
+---
+# routing_vps_default_present is true to wait for the default route on each
+# VPS and in its advertisement to the gateway, and false to wait for neither.
+- name: Wait for the expected BGP default route on each VPS
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, ip, -j, "-6", route, show, exact, "{{ item.1 }}", proto, bgp]
+  loop: >-
+    {{ routing_recovery.vps_gateway_sessions | map(attribute='remote.node') | unique
+    | product(routing_simulator_default_routes) | list }}
+  register: routing_vps_default_route
+  changed_when: false
+  until: (routing_vps_default_route.stdout | from_json != []) == routing_vps_default_present
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+
+- name: Wait for the expected default route in each VPS advertisement to the gateway
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ routing_node_vmids[item.remote.node] }}"
+      - --
+      - vtysh
+      - -c
+      - "show bgp ipv6 unicast neighbors {{ item.local.address }} advertised-routes json"
+  loop: "{{ routing_recovery.vps_gateway_sessions }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: routing_vps_default_advertised
+  changed_when: false
+  until: >-
+    ((routing_simulator_default_routes | difference(routing_vps_default_advertised.stdout | from_json
+    | dict2items | map(attribute='value') | select('mapping') | map('list') | flatten)) == [])
+    == routing_vps_default_present
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"

@@ -36,6 +36,11 @@
           - routing_upstream_loss_probe.rc != 0
         fail_msg: "Routing scenario {{ routing_recovery.name }}: packets still pass after the upstream loss"
 
+    - name: Wait until each VPS has no default route and advertises none to the gateway
+      ansible.builtin.import_tasks: check-routing-recovery-vps-default.yml
+      vars:
+        routing_vps_default_present: false
+
     - name: Wait until the gateway has no default route through each VPS session
       ansible.builtin.import_tasks: check-routing-recovery-gateway-default.yml
       vars:
@@ -58,6 +63,23 @@
   register: routing_upstream_recovery_probe
   changed_when: false
   until: routing_upstream_recovery_probe.rc == 0
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+  when: routing_recovery.upstream_nodes != []
+
+- name: Wait until each VPS learns and advertises the default route again
+  ansible.builtin.import_tasks: check-routing-recovery-vps-default.yml
+  vars:
+    routing_vps_default_present: true
+  when: routing_recovery.upstream_nodes != []
+
+- name: Wait until each upstream router has a BGP route to the home prefix again
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, ip, -j, "-6", route, show, exact, "{{ item.1 }}", proto, bgp]
+  loop: "{{ routing_recovery.upstream_nodes | product(routing_recovery.scenario.home_prefixes) | list }}"
+  register: routing_upstream_home_restored
+  changed_when: false
+  until: routing_upstream_home_restored.stdout | from_json != []
   retries: "{{ routing_recovery.wait_retries }}"
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
   when: routing_recovery.upstream_nodes != []
