@@ -4,6 +4,7 @@ require 'fileutils'
 require 'tmpdir'
 require 'yaml'
 require_relative '../support/tack_search_inventory'
+require_relative '../support/task_expressions'
 
 # These examples render the second QA application process (TACK-544) from the
 # real inventory. They check the QA owner's audit broker listener and firewall,
@@ -83,6 +84,18 @@ module TackQaSecondApp
     services = YAML.safe_load(file(directory, host, 'override'), aliases: true).fetch('services', {}) || {}
     services.values.flat_map { |service| (service || {}).fetch('ports', []) }
   end
+
+  def credential_conditions(flags)
+    playbook = File.join(AnsibleRender::ANSIBLE_DIRECTORY, 'playbooks', 'deploy-tack.yml')
+    tasks = YAML.safe_load_file(playbook).flat_map { |play| play.fetch('tasks', []) }
+    names = ['Provision isolated service credential files', 'Verify the new runtime identity before replacing client settings']
+    conditions = names.to_h do |name|
+      task = tasks.find { |candidate| candidate['name'] == name }
+      [name, TaskExpressions.condition_list(task.fetch('when'))]
+    end
+    variables = flags.merge('tack_cluster_role' => 'app', 'tack_search_enabled' => true)
+    TaskExpressions.evaluate(variables: variables, facts: [], conditions: conditions).fetch('conditions')
+  end
 end
 
 RSpec.describe TackQaSecondApp do
@@ -102,6 +115,13 @@ RSpec.describe TackQaSecondApp do
     flags = described_class.pairs(described_class.production_render, TackQaSecondApp::PRODUCTION_APP_GUEST, 'flags')
 
     expect(flags).to include('tack_app_guest' => 'false', 'tack_provision_owner' => 'false')
+  end
+
+  it 'skips credentials and runtime authentication for the inactive production application guest', :aggregate_failures do
+    inactive = described_class.pairs(described_class.production_render, TackQaSecondApp::PRODUCTION_APP_GUEST, 'flags')
+    active = described_class.pairs(described_class.qa_render, TackQaSecondApp::QA_APP_GUEST, 'flags')
+    expect(described_class.credential_conditions(inactive).values).to all(be(false))
+    expect(described_class.credential_conditions(active).values).to all(be(true))
   end
 
   it 'gives the QA owner broker an external listener on its pinned address', :aggregate_failures do

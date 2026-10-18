@@ -391,6 +391,7 @@
 
     - name: Provision isolated service credential files
       ansible.builtin.include_tasks: tasks/tack-service-secrets.yml
+      when: tack_provision_owner | bool or tack_app_guest | bool or tack_cluster_role in ['data', 'search']
 
     - name: Run the OpenSearch member
       ansible.builtin.include_tasks: tasks/tack-search-node.yml
@@ -405,7 +406,7 @@
         ca_path: "{{ tack_search_ca_path }}"
         status_code: 200
       when:
-        - tack_cluster_role == 'app'
+        - tack_provision_owner | bool or tack_app_guest | bool
         - tack_search_enabled | bool
       no_log: true
 
