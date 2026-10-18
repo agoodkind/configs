@@ -33,7 +33,7 @@ AT&T authenticates the line with 802.1X, so the MWAN VM holds AT&T's certificate
 The failures you meet, with their recovery, are these.
 
 - `wpa-authenticated.path` sits in `failed (unit-start-limit-hit)` when the path started `bringup-att-vlan` too many times at boot. Clear it with `systemctl reset-failed wpa-authenticated.path`, then `systemctl start wpa-authenticated.path`.
-- A completed TLS handshake followed by `EAP-Failure` means AT&T's authentication server rejected the certificate identity. The supplicant port can stay authorized from the boot-time authentication while DHCP gets no replies, because the authentication session is invalid. Reboot the terminal over SSH to clear AT&T's session state; it returns in about thirty seconds and re-presents its authentication frames, which starts a fresh session.
+- A completed TLS handshake followed by `EAP-Failure` means AT&T's authentication server rejected the certificate identity. The supplicant port can stay authorized from the boot-time authentication while DHCP does not receive replies, because the authentication session is invalid. Reboot the terminal over SSH to clear AT&T's session state; it returns in about thirty seconds and re-presents its authentication frames, which starts a fresh session.
 - `Supplicant PAE state=AUTHENTICATING` with `wpa_state=COMPLETED` means re-authentication is failing in the background, and the same terminal reboot recovers it.
 
 Inspect the chain on the MWAN VM.

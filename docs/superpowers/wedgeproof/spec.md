@@ -20,12 +20,12 @@ Proven this session by sub-second register sampling on the testbed OPNsense gues
 
 - fd-store OFF, drainer `kill -9` mid-pull: the host fd closed on process death, qemu saw a
   disconnect, and the guest wedged permanently (the positive control).
-- fd-store ON, the same `kill -9`: the fd stayed open in the systemd store, so qemu saw no
+- fd-store ON, the same `kill -9`: the fd stayed open in the systemd store, so qemu did not see a
   disconnect. The guest showed the wedge signature for ~2.7s, then self-cleared the instant the
   respawned drainer logged "adopted reclaimed chardev fd". Health returned at +8s.
 
 A qemu-layer fix was ruled out. qemu 11.0.0 still strands; the chardev is a server-mode socket
-(`server=on,wait=off`); `reconnect=` is client-mode only; there is no flush-on-disconnect flag.
+(`server=on,wait=off`); `reconnect=` is client-mode only; qemu does not provide a flush-on-disconnect flag.
 
 The wedge signature is a CPU at RIP `ffffffff809e3xx` (virtqueue_poll) AND a CPU at
 `ffffffff80c32c5x` (lock_delay), both with HLT=0. Idle is both CPUs HLT=1 at `ffffffff810b37c6`.

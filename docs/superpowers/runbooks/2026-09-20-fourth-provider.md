@@ -7,13 +7,13 @@ output did not happen.
 Astound is an IPv4-only link. Its entry declares `link_files: rendered`, a
 hardware-address match, IPv4 by DHCP at route metric 6000, an `ipv6` block with
 `dhcp: false` and `accept_ra: false`, table 600, mark 4, mark priority 600,
-source priority 58, and no translation prefix. The daemon renders
+and source priority 58. The entry does not declare a translation prefix. The daemon renders
 `20-enastound0.link` and `20-enastound0.network` from it. The simulator is LXC
 903 on `suburban`; its ingress from the gateway is `veth903i0` and its uplink is
 `veth903i1`. The LAN IPv4 client for every fetch below is the testbed router,
 VM 201, driven with `qm guest exec 201` on `suburban`; its default route is
 `10.240.240.3`, the gateway's address on `enmwanbr0`. The LAN guests on the
-management network have no IPv4 and cannot serve that role.
+management network do not have IPv4 and cannot serve that role.
 
 The testbed gateway is the guest named `mwan.suburban.goodkind.io` on the
 hypervisor `suburban`. Commands marked "gateway" ran there over ssh through
@@ -42,8 +42,8 @@ templates `mwan/networkd/testbed/30-astound.link.j2` and
 deploy gate: the entry's `ipv6` block declared `accept_ra` alone, the loader
 refused the whole document with `interface enastound0: ipv6/dhcp is required`,
 and `mwan-ifmgr@wan` restarted every 10 seconds into the same error. The prune
-had already deleted the two old templates, the daemon wrote no replacement, and
-the gateway ran with no policy rules until the fix. That outage is MWAN-506.
+had already deleted the two old templates, the daemon did not write a replacement, and
+the gateway ran without policy rules until the fix. That outage is MWAN-506.
 configs #464 (8541c585) added `dhcp: false`.
 
 Controller, 14:58, from main 8541c585:
@@ -72,7 +72,7 @@ Observed at 15:10: `astound:healthy`, `att:healthy`, `monkeybrains:healthy`,
 and `RouteMetric=6000`, equal to the deleted template, and the `.link` matches
 `MACAddress=bc:24:11:a5:70:06` and sets `Name=enastound0`. `enastound0` had
 `10.240.207.2/24 metric 6000` from the simulator's reservation. IPv4 rules
-included `600: from all fwmark 0x4 lookup astound`; IPv6 had no astound rule;
+included `600: from all fwmark 0x4 lookup astound`; IPv6 did not have an astound rule;
 table 600 was `default via 10.240.207.1 dev enastound0`.
 
 ## Health
@@ -115,7 +115,7 @@ Gateway: AT&T and webpass unhealthy at 15:22:48. Monkeybrains unhealthy at
 about 15:28; its probe cycle takes about 110 seconds, because each of its two
 HTTP probes waits out a 22-second timeout before the cycle ends. At 15:28:20
 both families had `50: from all iif enmwanbr0 lookup astound`, IPv4 kept rule
-600, and IPv6 kept no other provider rule.
+600, and IPv6 did not keep any other provider rule.
 
 Suburban and the router at 15:28:
 

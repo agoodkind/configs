@@ -60,7 +60,7 @@ never leak a fragment.
   `Close` resolves them, so a secret split across two writes is still matched.
   The held-back length is the buffer's longest suffix that is a prefix of some
   secret, which the automaton reports as the trie depth of the state its scan
-  ends in. Text that ends in no such suffix is emitted whole on the write that
+  ends in. Text that does not end in such a suffix is emitted whole on the write that
   produced it. That matters for the deploy log, which an operator tails: a fixed
   `maxPatternLen-1` hold-back would leave the reader thousands of bytes behind
   the play.
@@ -69,9 +69,9 @@ never leak a fragment.
   pattern whose non-empty value is shorter than `MinLen`, returning its label so
   the caller can build an error that names a key, never a value.
 
-The package depends on nothing in this repo and is fully unit tested without a
+The package does not depend on anything in this repo and is fully unit tested without a
 vault. A test asserts the overlap case (`SECRETab` + `abVALUE` over
-`xSECRETabVALUEx` yields no surviving `VALUE`), which a non-merging matcher
+`xSECRETabVALUEx` does not leave any surviving `VALUE`), which a non-merging matcher
 fails.
 
 ### 2. Secret source (vault side)
@@ -109,9 +109,9 @@ the patterns never arrive on the fail-closed path.
    never interleaved mid-write with the other stream, preserving readable
    ordering. An empty pattern set is a no-op that leaves the real descriptors in
    place. A pipe-creation failure is fatal: with secrets present and no way to
-   filter, the tool must not run, so the error propagates and no command
-   dispatches.
-3. Dispatch the subcommand. `inventory-dump` needs no command-specific code; its
+   filter, the tool must not run, so the error propagates and commands do not
+   dispatch.
+3. Dispatch the subcommand. `inventory-dump` does not need command-specific code; its
    output and its child process's output (via `cmd.Stdout = os.Stdout`) flow
    through the pipes. The commands that stream progress for minutes are the
    exception: a deploy, and a `tofu` run that does not stop for an approval
@@ -138,8 +138,8 @@ directly.
    not cat, paste, log, or commit it; delete it after use.
 4. Does not auto-delete; the caller needs to read it.
 
-The value never reaches stdout, so the global redactor needs no carve-out for
-`secret`; its path-and-warning output contains no secret and passes through.
+The value never reaches stdout, so the global redactor does not need a carve-out for
+`secret`; its path-and-warning output does not contain a secret and passes through.
 
 ## Fail-closed semantics
 
@@ -148,10 +148,10 @@ The value never reaches stdout, so the global redactor needs no carve-out for
   non-zero, for every command except `set-secrets`. Because the check precedes
   dispatch, a side-effecting command like `deploy` never starts.
 - Vault present but undecryptable (wrong or missing password against an existing
-  vault): same fail-closed path. Printing nothing is safer than risking
+  vault): same fail-closed path. Not printing output is safer than risking
   unredacted output, and ansible would fail the same way.
 - Vault and password file both absent: empty pattern set, tool runs normally,
-  because nothing decrypts anywhere in that case.
+  because decryption does not occur anywhere in that case.
 - Teardown always flushes the redactors before process exit.
 
 ## Error handling
@@ -178,9 +178,9 @@ The value never reaches stdout, so the global redactor needs no carve-out for
 
 ## Migration and caller impact
 
-- No caller captures `configs secret` stdout (verified: zero invocations across
-  scripts, Makefiles, Rakefile, and tofu), so moving the value to a file breaks
-  no automation.
+- Callers do not capture `configs secret` stdout (verified: zero invocations across
+  scripts, Makefiles, and tofu), so moving the value to a file does not break
+  automation.
 - `inventory-dump` output keeps its shape; secret values now render as
   `<redacted:KEY>` via the shared layer.
 
