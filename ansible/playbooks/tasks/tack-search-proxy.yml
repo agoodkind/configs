@@ -15,7 +15,10 @@
     mode: "0700"
 
 - name: Provision the proxy readiness credential source
-  ansible.builtin.include_tasks: tack-service-secret-source.yml
+  ansible.builtin.include_tasks:
+    file: tack-service-secret-source.yml
+    apply:
+      tags: [tack-search-proxy]
   vars:
     tack_service_secret_source: "{{ tack_search_proxy_secret_source }}"
     tack_secrets_dir: "{{ hostvars[tack_search_proxy_secret_source].tack_secrets_dir }}"
