@@ -3,8 +3,8 @@
         "interfaces-config": {
             "interfaces": ["eth0"],
             "service-sockets-require-all": true,
-            "service-sockets-max-retries": 60,
-            "service-sockets-retry-wait-time": 1000
+            "service-sockets-max-retries": {{ isp.dhcp4_socket_max_retries }},
+            "service-sockets-retry-wait-time": {{ isp.dhcp4_socket_retry_wait_ms }}
         },
         "lease-database": { "type": "memfile", "persist": false },
         "valid-lifetime": {{ isp.dhcp4_valid_lifetime_seconds }},

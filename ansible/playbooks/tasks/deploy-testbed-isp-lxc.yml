@@ -18,6 +18,10 @@
       - isp.dhcp6_renew_seconds == 'omit' or isp.dhcp6_renew_seconds > 0
       - isp.dhcp6_rebind_seconds == 'omit' or isp.dhcp6_rebind_seconds > 0
       - isp.dhcp6_dns_servers | type_debug == 'list'
+      - isp.dhcp4_socket_max_retries >= 0
+      - isp.dhcp4_socket_retry_wait_ms > 0
+      - isp.dhcp6_socket_max_retries >= 0
+      - isp.dhcp6_socket_retry_wait_ms > 0
       - isp.ra_dns_servers | type_debug == 'list'
       - isp.ra_dns_servers == [] or isp.ra_dns_lifetime_seconds != 'omit'
       - isp.ra_dns_lifetime_seconds == 'omit' or isp.ra_dns_lifetime_seconds > 0
