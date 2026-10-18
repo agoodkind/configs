@@ -63,3 +63,4 @@ auto-approved `apply` or `destroy` write to a file.
 - [OPNsense](opnsense/operations.md)
 - [Ansible](ansible/quality.md)
 - [Infrastructure](infra/access.md)
+- [Configure PowerEdge NIC firmware](infra/firmware.md)

@@ -26,6 +26,9 @@ tofu:
           suburban: suburban
           poweredge: poweredge
           vault: vault
+    opentofu/firmware:
+      module_hosts:
+        module.poweredge: poweredge
     opentofu/guest:
       lock_free_types:
         - mwan_network_config
