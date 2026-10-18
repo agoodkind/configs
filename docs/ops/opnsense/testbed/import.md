@@ -19,7 +19,7 @@ again.
 Use the serial console while reloads or reboots are in progress. If SSH drops,
 continue observing through the console path.
 
-An import swaps the entire `/conf/config.xml`, which includes the `<apikeys>` block. The testbed substitutions transform produces an XML with no API keys at all, so the freshly-imported OPNsense has no API access until you mint one. After every import, mint a fresh root API key via the PHP `OPNsense\Auth\API->createKey('root')` helper and store the resulting key and secret in the vault with `configsctl set-secrets`.
+An import swaps the entire `/conf/config.xml`, which includes the `<apikeys>` block. The testbed substitutions transform does not include any API keys in the XML. The freshly imported OPNsense does not provide API access until a new key exists. After every import, mint a fresh root API key via the PHP `OPNsense\Auth\API->createKey('root')` helper and store the resulting key and secret in the vault with `configsctl set-secrets`.
 
 ## Every Change Gate
 
@@ -28,7 +28,7 @@ Run this gate for every config change, including small XML edits.
 ### 1. Scope Check
 
 - Confirm the target is the testbed OPNsense guest, `router.suburban.goodkind.io`.
-- Confirm no command names `vault` or a production guest. No testbed guest
+- Confirm that commands do not name `vault` or a production guest. No testbed guest
   shares a VMID with production, so a command aimed at the wrong hypervisor
   fails rather than reaching a counterpart, but the target still has to be
   right.

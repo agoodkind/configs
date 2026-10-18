@@ -17,7 +17,7 @@ Prefer non-disruptive actions on the MWAN VM. Avoid
 
 ## Jinja and templating strategy
 
-- Do not keep a `.j2` file if it contains no Jinja (no `{{`, no `{%`, no
+- Do not keep a `.j2` file if it does not contain Jinja (`{{`, `{%`, or
   `{#}`). Use a normal extension and deploy with `ansible.builtin.copy`.
 - If a shell script, hook, or service only uses templating to inject
   variables, prefer one templated env file (for example `/etc/mwan/mwan.env`)

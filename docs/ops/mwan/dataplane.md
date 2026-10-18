@@ -32,7 +32,7 @@ thrash.
 
 The `npt` module owns the runtime `table ip6 nat`. It runs as a second module
 in the `mwan-ifmgr@wan` instance alongside `wan.routes` and self-disables when
-the network configuration lists no WANs.
+the network configuration does not list any WANs.
 
 npt derives every WAN's `/60` from the live DHCPv6-PD delegation on that WAN's
 interface, with no static fallback. A WAN with no delegated prefix is skipped for
@@ -40,10 +40,10 @@ that reconcile, rather than translated against a guessed prefix.
 
 npt alerts on a missing delegation only when the network configuration assigns
 that provider a translation prefix, and clears the alert once the delegation
-returns. A provider the configuration assigns no prefix is never expected to
-carry one, because its link is IPv4-only or its ISP delegates nothing by
-DHCPv6-PD, so npt raises nothing for it. That keeps the alert meaningful for the
-case it exists to catch: a provider that should hold a delegation and lost it.
+returns. A provider without a configured prefix is never expected to
+carry one, because its link is IPv4-only or its ISP does not delegate a prefix by
+DHCPv6-PD. npt does not raise an alert for it. That keeps the alert meaningful for
+the case it exists to catch: a provider that should hold a delegation and lost it.
 
 npt owns the `prerouting` and `postrouting` chains and replaces each chain's
 full rule set in one atomic `google/nftables` transaction, so no packet sees an
@@ -67,9 +67,9 @@ scratch, so a verdict rests on the probes of the run that reports it. No file
 records a verdict across a restart.
 
 The warmup state decides the first email after a restart. A provider that comes
-back healthy transitions `unknown -> healthy`, which has no earlier alert to
-resolve and sends nothing. A provider that is broken at startup transitions
-`unknown -> unhealthy` and raises its alert immediately, rather than staying
+back healthy transitions `unknown -> healthy` and does not send an email because
+it does not have an earlier alert to resolve. A provider that is broken at startup
+transitions `unknown -> unhealthy` and raises its alert immediately, rather than staying
 silent until it has been healthy once.
 
 Failure modes worth knowing:

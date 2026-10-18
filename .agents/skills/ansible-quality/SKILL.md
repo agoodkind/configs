@@ -15,8 +15,8 @@ When a variable is missing or a validation fails, investigate **why** before add
 
 ### Anti-pattern: Bandaid Defaults and Defensive `when`
 
-- **Rule (enforced)**: Never infer a value from whether it was set, in any form: not `| default(...)`, not `is defined`, not `.get(key, default)` (a default in disguise), not any `| length` comparison (an "is this set" or "how big" check in disguise), and not `lookup(..., default=...)` (an env-presence default in disguise). The linter lists every banned line, not one per repeated snippet. Declare every input value explicitly in the service's group_vars (or `service_mapping.yml` or OpenTofu) and read it bare; a missing value must fail at load time, not silently default. There is no automatic exception, not even for a register or command result. The only defensible defensive read is a command result from an outside service that is unset more often than not, and that is the author's judgment to defend in review. Otherwise restructure: declare the value, gate with the module's own `failed_when`/`changed_when`, or initialize an accumulator with `set_fact`. `when:` is for logic branches between actions, driven by an explicit flag, not defensive programming.
-- **Enforcement**: `configsctl lint` flags every occurrence. The deploy command runs it before each deploy, the lint path runs it, and pre-commit runs it on staged files. There is no per-line escape hatch and no allowlist; the check grants no exception, so a genuine outside-service case is the author's call to defend, not the check's to allow.
+- **Rule (enforced)**: Never infer a value from whether it was set, in any form: not `| default(...)`, not `is defined`, not `.get(key, default)` (a default in disguise), not any `| length` comparison (an "is this set" or "how big" check in disguise), and not `lookup(..., default=...)` (an env-presence default in disguise). The linter lists every banned line, not one per repeated snippet. Declare every input value explicitly in the service's group_vars (or `service_mapping.yml` or OpenTofu) and read it bare; a missing value must fail at load time, not silently default. The rule does not grant automatic exceptions, including for a register or command result. The only defensible defensive read is a command result from an outside service that is unset more often than not, and that is the author's judgment to defend in review. Otherwise restructure: declare the value, gate with the module's own `failed_when`/`changed_when`, or initialize an accumulator with `set_fact`. `when:` is for logic branches between actions, driven by an explicit flag, not defensive programming.
+- **Enforcement**: `configsctl lint` flags every occurrence. The deploy command runs it before each deploy, the lint path runs it, and pre-commit runs it on staged files. The check does not permit per-line overrides or exceptions. Authors must justify genuine outside-service cases during review.
 - **Symptoms**:
   - Validation tasks failing for values that should exist
   - Variables unexpectedly empty despite being "set"
@@ -111,7 +111,7 @@ url: >-
 
 - **Problem**: YAML `>-` in `blockinfile` content can be included literally in output files, such as systemd service files.
 - **Check**: Any `blockinfile` task with `block: |` or `block: >-` containing `ExecStart` or other commands.
-- **Fix**: Use `block: |` and ensure no `>-` appears in the block content itself.
+- **Fix**: Use `block: |` and confirm that the block content does not include `>-`.
 
 ### YAML Operators Inside `shell:` Blocks
 
