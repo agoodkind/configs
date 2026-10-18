@@ -1,0 +1,70 @@
+---
+- name: Inspect and clean only the mounted synthetic authority material
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    - name: Check the fixture operation
+      ansible.builtin.assert:
+        that:
+          - fixture_action in ['inspect', 'stage-legacy', 'cleanup']
+          - fixture_uid | int > 0
+          - fixture_gid | int >= 0
+
+    - name: Stage the preserved authority at its previous location
+      ansible.builtin.command:
+        argv: [mv, /material/authority, /material/runtime/ca]
+      when: fixture_action == 'stage-legacy'
+
+    - name: Inspect the root-owned authority files
+      when: fixture_action == 'inspect'
+      block:
+        - name: Hash each authority file without exporting its contents
+          ansible.builtin.find:
+            paths: /material/authority
+            file_type: file
+            recurse: true
+            hidden: true
+            get_checksum: true
+            checksum_algorithm: sha256
+          register: fixture_authority_files
+
+        - name: Read the protected path metadata
+          ansible.builtin.stat:
+            path: "{{ item }}"
+            checksum_algorithm: sha256
+          loop:
+            - /material
+            - /material/authority
+            - /material/authority/ca.key
+            - /material/authority/ca.crt
+            - /material/runtime/ca
+            - /material/runtime/ca.crt
+          register: fixture_authority_paths
+
+        - name: Export only hashes and path metadata to the test runner
+          ansible.builtin.copy:
+            content: >-
+              {{ {'files': fixture_authority_files.files,
+                  'paths': fixture_authority_paths.results} | to_json }}
+            dest: /report/metadata.json
+            owner: "{{ fixture_uid }}"
+            group: "{{ fixture_gid }}"
+            mode: "0600"
+
+    - name: Clean the exact root-owned fixture paths
+      when: fixture_action == 'cleanup'
+      block:
+        - name: Remove the synthetic authority and runtime directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop: [/material/authority, /material/runtime]
+
+        - name: Restore the empty mount directory to the test runner
+          ansible.builtin.file:
+            path: /material
+            state: directory
+            owner: "{{ fixture_uid }}"
+            group: "{{ fixture_gid }}"
+            mode: "0700"

@@ -23,7 +23,7 @@ RSpec.describe 'Tack service credential provisioning' do
   end
 
   def provision(repository, image, directory)
-    CommandRunner.run({}, ['docker', 'run', '--rm',
+    CommandRunner.run({}, ['docker', 'run', '--rm', '--user', "#{Process.uid}:#{Process.gid}",
                            '--mount', "type=bind,src=#{repository},dst=/repo,readonly",
                            '--mount', "type=bind,src=#{directory},dst=/secrets", image,
                            '/repo/tack/provision-secrets.sh', '/secrets',
@@ -43,10 +43,14 @@ RSpec.describe 'Tack service credential provisioning' do
       passwords = password_names.map { |name| File.join(directory, name) }
       passwords.each do |path|
         expect(File.read(path).strip.match?(/\A[0-9a-f]{64}\z/)).to be(true), File.basename(path)
-        expect(File.stat(path).mode & 0o777).to eq(0o600)
       end
       names = password_names + %w[OPENSEARCH_PASSWORD.hash OPENSEARCH_MAINTENANCE_PASSWORD.hash OPENSEARCH_HEALTH_PASSWORD.hash OPENSEARCH_CURSOR_KEY]
       protected_files = names.map { |name| File.join(directory, name) }
+      protected_files.each do |path|
+        metadata = File.stat(path)
+        expect(metadata.mode & 0o777).to eq(0o600)
+        expect([metadata.uid, metadata.gid]).to eq([Process.uid, Process.gid])
+      end
       before = protected_files.to_h { |path| [path, fingerprint(path)] }
       expect(before.values.uniq.length).to eq(names.length)
       second = provision(repository, image, directory)

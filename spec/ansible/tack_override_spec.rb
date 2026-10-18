@@ -15,7 +15,7 @@ RSpec.describe 'Tack connection file rendering' do
   end
 
   def generate_credentials(repository, directory)
-    CommandRunner.run({}, ['docker', 'run', '--rm',
+    CommandRunner.run({}, ['docker', 'run', '--rm', '--user', "#{Process.uid}:#{Process.gid}",
                            '--mount', "type=bind,src=#{repository},dst=/repo,readonly",
                            '--mount', "type=bind,src=#{directory},dst=/secrets",
                            'configs-service-secret-tests', '/repo/tack/provision-secrets.sh',
@@ -24,7 +24,7 @@ RSpec.describe 'Tack connection file rendering' do
   end
 
   def render_connections(repository, directory)
-    CommandRunner.run({}, ['docker', 'run', '--rm',
+    CommandRunner.run({}, ['docker', 'run', '--rm', '--user', "#{Process.uid}:#{Process.gid}",
                            '--mount', "type=bind,src=#{directory},dst=/secrets",
                            'configs-service-secret-tests', '/secrets/render-connections.sh'],
                       chdir: repository, timeout_seconds: 60)
