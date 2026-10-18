@@ -23,19 +23,6 @@ variable "poweredge_idrac_insecure" {
   default     = false
 }
 
-variable "poweredge_nic_functions" {
-  description = "Discovered BCM57504 network device function IDs mapped to their Redfish network adapter IDs."
-  type        = map(string)
-
-  validation {
-    condition = length(var.poweredge_nic_functions) == 4 && alltrue([
-      for function_id, adapter_id in var.poweredge_nic_functions :
-      trimspace(function_id) != "" && trimspace(adapter_id) != ""
-    ])
-    error_message = "Supply the four discovered BCM57504 device function IDs and their adapter IDs."
-  }
-}
-
 variable "poweredge_maintenance_window" {
   description = "Explicit iDRAC maintenance window for a separately controlled host reset."
   type = object({

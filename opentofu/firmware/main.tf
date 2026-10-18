@@ -1,7 +1,12 @@
 module "poweredge" {
   source = "./poweredge"
 
-  nic_functions      = var.poweredge_nic_functions
+  nic_functions = {
+    "NIC.Embedded.1-1-1" = "NIC.Embedded.1"
+    "NIC.Embedded.2-1-1" = "NIC.Embedded.1"
+    "NIC.Embedded.3-1-1" = "NIC.Embedded.1"
+    "NIC.Embedded.4-1-1" = "NIC.Embedded.1"
+  }
   maintenance_window = var.poweredge_maintenance_window
 }
 

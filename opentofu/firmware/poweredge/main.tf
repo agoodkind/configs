@@ -4,6 +4,10 @@ terraform {
       source  = "registry.terraform.io/dell/redfish"
       version = "1.6.2"
     }
+    restful = {
+      source  = "registry.terraform.io/magodo/restful"
+      version = "0.25.2"
+    }
   }
 }
 
@@ -57,17 +61,37 @@ data "redfish_network" "poweredge" {
       ]
     }]
   }
+}
+
+data "restful_resource" "nic_attributes" {
+  for_each = var.nic_functions
+
+  id     = "/redfish/v1/Chassis/System.Embedded.1/NetworkAdapters/${each.value}/NetworkDeviceFunctions/${each.key}/Oem/Dell/DellNetworkAttributes/${each.key}"
+  method = "GET"
+  output_attrs = toset([
+    for attribute in local.observed_attribute_names : "Attributes.${attribute}"
+  ])
 
   lifecycle {
     postcondition {
       condition = alltrue([
-        for required_attribute in keys(local.desired_attributes) : anytrue([
-          for attribute in keys(self.nic_attributes) :
-          endswith(attribute, ".${required_attribute}")
-        ])
+        for attribute in local.observed_attribute_names :
+        can(self.output.Attributes[attribute])
       ])
-      error_message = "iDRAC did not return independent NIC attribute readback for the requested settings. Verify the Dell network attributes endpoint before applying."
+      error_message = "iDRAC did not return the required active NIC attributes. Verify the DellNetworkAttributes endpoint before applying."
     }
+  }
+}
+
+check "active_nic_attributes" {
+  assert {
+    condition = alltrue(flatten([
+      for function_id, readback in data.restful_resource.nic_attributes : [
+        for attribute, value in local.desired_attributes :
+        tostring(readback.output.Attributes[attribute]) == value
+      ]
+    ]))
+    error_message = "Active BCM57504 attributes differ from the declared values. Read pending iDRAC jobs and verify after the controlled reset."
   }
 }
 
@@ -95,13 +119,16 @@ resource "redfish_network_adapter" "bcm57504" {
     prevent_destroy = true
   }
 
-  depends_on = [data.redfish_network.poweredge]
+  depends_on = [
+    data.redfish_network.poweredge,
+    data.restful_resource.nic_attributes,
+  ]
 }
 
 output "observed_nic_attributes" {
   description = "Current iDRAC NIC values for the requested changes and preserved virtualization settings."
   value = {
-    for attribute, value in data.redfish_network.poweredge.nic_attributes : attribute => value
-    if contains(local.observed_attribute_names, element(reverse(split(".", attribute)), 0))
+    for function_id, readback in data.restful_resource.nic_attributes :
+    function_id => readback.output.Attributes
   }
 }

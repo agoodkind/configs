@@ -18,15 +18,13 @@ controlled reset within an explicit maintenance window. Do not substitute
    credentials in each NIC resource. Follow the existing
    [secret input procedure](../../../opentofu/backend.md#add-a-secret).
 
-2. Read the authenticated Redfish network inventory and the matching
-   `NetworkAttributesRegistry` before selecting identifiers. Confirm that the
-   selected functions belong to the BCM57504 and that the registry allows both
-   requested attributes and their declared values. Preserve the existing
-   virtualization mode, advertised VF count, PF vector limit, and MAC addresses.
+2. Compare the authenticated Redfish network inventory with the function IDs in
+   the workspace. Confirm that the functions belong to the BCM57504 and that
+   each `NetworkAttributesRegistry` allows the declared values. Preserve the
+   existing virtualization mode, advertised VF count, PF vector limit, and MAC addresses.
 
-3. Prepare a private variable file with `poweredge_nic_functions`, a map from
-   each discovered device function ID to its network adapter ID. Include every
-   BCM57504 function. Set `poweredge_maintenance_window.start_time` to an RFC 3339
+3. Prepare a private variable file. Set
+   `poweredge_maintenance_window.start_time` to an RFC 3339
    timestamp with its UTC offset and set `duration` in seconds. The workspace
    does not supply a maintenance window default.
 
@@ -70,10 +68,15 @@ Coordinate the state import with the operator who controls PowerEdge maintenance
 
 ## Apply and verify active settings
 
-The provider preserves configured OEM values in resource state instead of
-refreshing them from the NIC. A clean plan does not prove that the NIC applied
-the settings. The plan's `observed_nic_attributes` output uses a separate Redfish
-data source, and active RACADM readback remains required after maintenance.
+The Dell resource preserves configured OEM values instead of refreshing them
+from the NIC. Its resource diff cannot detect an external attribute change.
+The plan's `observed_nic_attributes` output reads the actual DellNetworkAttributes
+endpoints through a separate REST data source with provider-level credentials.
+That data source stores only the selected NIC attributes.
+
+The active-value check warns when the NIC differs from the declaration. It also
+warns before a planned change becomes active. The warning does not block a
+legitimate update or automatically repair the Dell resource's refresh behavior.
 
 1. Apply the reviewed plan only during coordinated maintenance:
 
@@ -100,4 +103,6 @@ data source, and active RACADM readback remains required after maintenance.
 The [tagged NIC implementation](https://github.com/dell/terraform-provider-redfish/blob/v1.6.2/redfish/provider/resource_redfish_nic.go)
 defines the apply modes and reset behavior. The
 [OEM state conversion](https://github.com/dell/terraform-provider-redfish/blob/v1.6.2/redfish/provider/resource_redfish_nic_schema_helper.go#L377-L414)
-preserves configured values during refresh.
+preserves configured values during refresh. The
+[REST data source](https://github.com/magodo/terraform-provider-restful/blob/v0.25.2/docs/data-sources/resource.md)
+supports direct GET requests and limits the stored response to selected attributes.
