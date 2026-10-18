@@ -80,7 +80,7 @@ moved to 202609182217-9c-7cbeb2cd in #430:
 
 The first run failed at "Create stack directories": the ssh master to the
 gateway went silent 62 seconds after the nghttp2 apt task and
-`ServerAliveCountMax` ended it. The gateway showed no package or service
+`ServerAliveCountMax` ended it. The gateway did not show a package or service
 change. The rerun completed: `ok=197 changed=21 failed=0`, release 9c
 installed (commit 7cbeb2cd, binhash 6c946872e27d), and the play's own reboot
 verdict and egress verdict passed.
@@ -145,10 +145,10 @@ qm set 213 --delete net4
 ```
 
 Gateway reboot. The boot completed (`running`, all targets active, ssh up),
-but the gateway held no policy rule for any provider for over a minute:
+but the gateway did not have a policy rule for any provider for over a minute:
 `wan.routes` returned from its pass on the missing-link error before
-installing anything. Filed as MWAN-504 and fixed in #432: a provider whose
-link does not exist gets no rules, and the other providers are reconciled in
+installing anything. Filed as MWAN-504 and fixed in #432: a provider does not get
+rules when its link does not exist, and the other providers are reconciled in
 the same pass.
 
 Suburban, 16:18:05, reattaching:
@@ -270,9 +270,9 @@ three providers healthy, and policy rules equal to the pre-deploy capture.
 
 Controller, 2026-09-19 09:26, a deploy from main 0d205b67 to the testbed
 gateway: `ok=196 changed=15 failed=0`. Every networkd file reported `ok`, the
-prune task removed nothing, and no "Reload networkd" handler ran. Gateway,
-after its reboot: the previous boot's networkd journal has no "Reloading"
-and no "Reconfiguring" line, and the twelve files keep their 2026-09-18
+prune task did not remove anything, and the "Reload networkd" handler did not run. Gateway,
+after its reboot: the previous boot's networkd journal does not contain a "Reloading"
+or "Reconfiguring" line, and the twelve files keep their 2026-09-18
 timestamps.
 
 ### Check mode, second run
@@ -286,7 +286,7 @@ Controller, 2026-09-19 09:40, from main 0d205b67:
 `failed=0`. Changes: `/etc/mwan/mwan.env`, `/etc/mwan/config.toml` and the
 sysctl file from #440, the daemon restart handler they notify, apt lists, the
 deploy timestamp, and `/etc/msmtprc` with its password hidden. All ten
-networkd files reported unchanged and no reload handler was queued.
+networkd files reported unchanged and the play did not queue a reload handler.
 
 ### Cutover
 
@@ -324,4 +324,4 @@ firewall ruleset differed only in the elements of the pinned-address sets,
 which the refresher timer rewrites.
 
 Vault's and mini's cloudflared tunnels lost their connections from 09:47:31
-to 09:47:42, the reboot itself, and none at the daemon restart.
+to 09:47:42, the reboot itself, and did not lose connections at the daemon restart.

@@ -15,8 +15,8 @@ the schema in-process on the default path; migration happens on the next boot.
 If the uploaded XML fails to parse, the previous config is restored and
 nothing changes on disk.
 
-The REST API has no upload-and-replace endpoint. Its revert endpoint only
-swaps in an existing local backup by name, without migration, service
+The REST API does not have an upload-and-replace endpoint. Its revert endpoint
+only swaps in an existing local backup by name, without migration, service
 reconfigure, or reboot, so the live system keeps running the old state until
 something reboots it.
 
@@ -62,12 +62,12 @@ rollback target.
   on disk, but the next boot migrates it forward again, and a missing
   downgrade path surfaces then, not at swap time.
 - Rollback swaps must write the same backup snapshot forward imports write,
-  or the GUI history shows no record of the rollback.
-- There is no hot apply. Bringing a swapped config live without a reboot
-  would require running the boot chain's ordered reconfigure calls
+  or the GUI history does not show a record of the rollback.
+- OPNsense does not provide a hot apply operation. Bringing a swapped config live
+  without a reboot would require running the boot chain's ordered reconfigure calls
   individually; no single helper does this.
-- There is no transaction across services. Once interfaces reconfigure, a
-  later plugin failure does not roll them back. Design around apply, observe,
+- OPNsense does not provide a transaction across services. Once interfaces
+  reconfigure, a later plugin failure does not roll them back. Design around apply, observe,
   decide, never all-or-nothing.
 
 The testbed import runbook with its per-change gates is
