@@ -18,24 +18,24 @@ provider inventory, each provider's routing numbers, translation prefix,
 IPv4 source pin, health probe settings, and link identity, and the
 group-wide translation, internal-link, and probe-timeout values. Each
 provider's configuration hangs off the interface that carries it, and
-health settings live inside the provider they probe, one to one, with no
+health settings live inside the provider they probe, one to one, and do not use a
 shared policy object. Link identity is what the network manager needs to
 bring the link up: how the device is matched, its name and hardware
 address, each family's addressing, the delegation client's identity and
 hint, and any free-form unit-file sections the provider needs. The
 delegation client identity is a public identifier, not a secret.
 
-Everything else stays in `config.toml` with no schema node: alert mail,
+Everything else stays in `config.toml` and does not have a schema node: alert mail,
 notify cadence, the agent, the watchdog, the Proxmox API, the OPNsense
 sections, the BGP speaker, the failover section, the publish gate, the
 host identity leaves, the interface manager's plumbing scalars, the
-standalone policy rules, and every credential. No secret ever enters the
+standalone policy rules, and every credential. Secrets do not enter the
 JSON. The daemon reads both files, and exactly one file owns each
 section.
 
 The inventory remains the source of truth: group_vars render the file,
-and a provider change is an inventory edit plus a deploy. No value
-conversion exists anywhere, because the inventory stores bare integers
+and a provider change is an inventory edit plus a deploy. The system does not
+convert values anywhere, because the inventory stores bare integers
 and the schema's time spans are integers that name their unit. Writing
 configuration over the management API, with `network.json` becoming the
 source of truth, is deferred work (MWAN-440).
@@ -72,8 +72,8 @@ any of it. The deploy runs that same loader against the rendered bytes before
 it changes the gateway. A file that does not satisfy the schema stops the
 daemon before it programs anything, which is the existing failure contract.
 The TOML loader stops reading a network section in the same change the JSON
-loader starts owning it, so no state exists where both files feed one
-setting.
+loader starts owning it, so the files do not supply the same setting at any
+point.
 
 The provider values stay in the two gateway groups the TOML template
 already reads, so the JSON template and the TOML template render from one
@@ -95,7 +95,7 @@ makes that easier to enforce, since a leaf is either present or it is
 not.
 
 The failover container and the hypervisor keep their TOML-only
-configuration untouched; their roles run none of the sections the JSON
+configuration untouched; their roles do not run any of the sections the JSON
 carries.
 
 ## Acceptance

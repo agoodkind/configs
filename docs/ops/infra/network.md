@@ -93,9 +93,9 @@ ssh root@<host> "ip link show eth0 | grep -i link/ether"
 ssh <kea-host> "sudo cat /var/db/kea/kea-leases6.csv | grep -i '<mac>'"
 ```
 
-The [kea/Rakefile](../../../kea/Rakefile) provides higher-level helpers, for
-example `rake lease:get6_by_ip[<ip>]` and
-`rake lease:cleanup6_by_mac[<mac>]`.
+Open **Services > Kea DHCP > Leases DHCPv6** to inspect leases by address,
+MAC address, and DUID. Compare the lease identifiers with the client and its
+reservation before deleting a lease.
 
 ### 3. Identify DUID instability
 
@@ -113,24 +113,33 @@ grep "mac-sources" /path/to/kea-dhcp6.conf
 
 ### 5. Clean up stale leases
 
-By MAC, when DUID has changed:
+Deleting a lease removes the server's record; it does not remove the address
+from a running client. Confirm that the stale client has stopped using the
+address before deletion.
 
-```bash
-cd /path/to/bind-kea
-rake lease:cleanup6_by_mac[<mac>,<subnet_id>]
-```
+1. On the router, verify the Control Agent's configured loopback address and
+   port under **Services > Kea DHCP > Control Agent**. The commands below use
+   the existing local endpoint at `http://127.0.0.1:8000/`.
+2. Query leases for the affected DUID. For a changed DUID, inspect the lease
+   page for every DUID associated with the MAC and the affected subnet.
 
-By DUID, when you have a specific DUID:
+   ```sh
+   sudo curl --fail --silent --show-error --header 'Content-Type: application/json' --data '{"command":"lease6-get-by-duid","service":["dhcp6"],"arguments":{"duid":"<duid>"}}' http://127.0.0.1:8000/
+   ```
 
-```bash
-rake lease:cleanup6_conflicts[<duid>,<subnet_id>]
-```
+3. Delete each confirmed stale address individually. Replace `<stale-ip>` with
+   the address from the preceding inspection. Check the JSON `result`, since
+   an HTTP success does not establish that Kea accepted the command.
 
-By IP, when the wrong IP is known:
+   ```sh
+   sudo curl --fail --silent --show-error --header 'Content-Type: application/json' --data '{"command":"lease6-del","service":["dhcp6"],"arguments":{"ip-address":"<stale-ip>"}}' http://127.0.0.1:8000/
+   ```
 
-```bash
-rake lease:delete6_by_ip[<ip>]
-```
+   Kea returns `0` for deletion, `3` when the lease does not exist, and `1` for
+   an error. Stop on an error and inspect the response. These commands apply
+   to address leases; prefix-delegation leases require the matching lease
+   type. The [Kea lease-command reference](https://kea.readthedocs.io/en/stable/arm/hooks.html#lease-cmds-lease-commands)
+   defines the request fields and results.
 
 ### 6. Renew DHCP on the client
 
@@ -205,9 +214,8 @@ ssh <kea-host> "sudo cat /var/db/kea/kea-leases6.csv | grep '<expected-ip>'"
 
 Root cause: the DUID changed over time and created multiple lease entries.
 
-```bash
-rake lease:cleanup6_by_mac[<mac>,<subnet_id>]
-```
+Use the stale-lease cleanup steps above after matching the MAC, DUID, subnet,
+and address. Retain the current client's valid lease.
 
 ## Last resort: hardcoded DUID
 

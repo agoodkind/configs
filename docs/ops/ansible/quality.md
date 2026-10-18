@@ -73,8 +73,8 @@ Inferring a value from whether it was set is banned in every form: `| default(..
 `is defined`, `.get(key, default)` (a default in disguise), any `| length`
 comparison (an "is this set" or "how big" check in disguise), and
 `lookup(..., default=...)` (an env-presence default in disguise; the place the
-declared value stops being deterministic). There is no automatic exception and no
-escape hatch, and the linter lists every banned line, not one per repeated
+declared value stops being deterministic). The policy does not allow automatic
+exceptions or escape hatches, and the linter lists every banned line, not one per repeated
 snippet. The only defensible reason to read a
 value defensively is a command result from an outside service that is unset more
 often than not, and that judgment is the author's to make and defend in review.
@@ -84,8 +84,8 @@ before the loop.
 
 Enforced by `configsctl lint`: the deploy command runs it before every deploy, the
 lint path runs it, and pre-commit runs it on staged files. The check flags every
-occurrence; it grants no exception, so a genuine outside-service case is the
-author's call to defend, not the check's to allow.
+occurrence and does not grant exceptions. The author must defend a genuine
+outside-service case; the check does not allow it.
 
 The linter parses each Jinja expression with a Go engine and resolves the operand
 each default or presence construct reads. A few Ansible-Jinja forms the Go engine

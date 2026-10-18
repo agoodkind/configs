@@ -7,11 +7,11 @@ MWAN runs as one binary spread across a few hosts, and each host runs only the s
 - The MWAN VM is the WAN router. It runs `mwan agent` under `mwan-agent.service` and `mwan ifmgr` in the wan role under `mwan-ifmgr@wan.service`. Where the rendered configuration turns publishing on, the testbed gateway today, that ifmgr also publishes its loaded configuration into the wanconfig management datastore at startup, so the RESTCONF surface serves what the running daemon holds.
 - The failover LXC is the backup BGP peer. It runs `mwan agent` under the same agent unit and `mwan ifmgr` in the failover role under `mwan-ifmgr.service`.
 - The Proxmox host watches and recovers the VM from outside it. It runs `mwan ifmgr` for its own out-of-band interface and `mwan watchdog`. The testbed host additionally runs `opnsensectl host serve`, the Unix-socket bridge to the testbed OPNsense serial channel.
-- The OPNsense VM runs `opnsensectl daemon serve`, the FreeBSD daemon that edits the router config over the serial channel. It has no `/etc/mwan/`; its runtime settings are in `/usr/local/etc/opnsensectl.conf`, and its supervision settings are FreeBSD `rc.conf.d` entries.
+- The OPNsense VM runs `opnsensectl daemon serve`, the FreeBSD daemon that edits the router config over the serial channel. It does not have `/etc/mwan/`; its runtime settings are in `/usr/local/etc/opnsensectl.conf`, and its supervision settings are FreeBSD `rc.conf.d` entries.
 
-The ISP-simulator containers and the unrelated service containers on these hosts run no MWAN command.
+The ISP-simulator containers and the unrelated service containers on these hosts do not run any MWAN command.
 
-Each host's MWAN units come from the released binary, not from this repository. After the deploy installs the binary, it runs `mwan install --role <role> --apply`, which writes and enables the units and restarts no unit. The MWAN VM deploy restarts no unit before it reboots the VM. The failover LXC and Proxmox host deploys restart units through their handlers. The roles are `wan` for the MWAN VM, `failover` for the failover LXC, and `host` for a Proxmox host.
+Each host's MWAN units come from the released binary, not from this repository. After the deploy installs the binary, it runs `mwan install --role <role> --apply`, which writes and enables the units without restarting any unit. The MWAN VM deploy does not restart any unit before it reboots the VM. The failover LXC and Proxmox host deploys restart units through their handlers. The roles are `wan` for the MWAN VM, `failover` for the failover LXC, and `host` for a Proxmox host.
 
 ## Binary rollout order
 

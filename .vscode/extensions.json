@@ -1,8 +1,6 @@
 {
     "recommendations": [
         "randomchance.logstash",
-        "lorankloeze.ruby-rubocop-revived",
-        "shopify.ruby-extensions-pack",
         "fbaligand.vscode-logstash-editor",
         "hangxingliu.vscode-systemd-support",
         "samuelcolvin.jinjahtml",
