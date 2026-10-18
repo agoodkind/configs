@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'digest'
+require 'securerandom'
 require 'tmpdir'
 require_relative '../support/ansible_render'
 
@@ -30,36 +32,73 @@ RSpec.describe 'Tack connection file rendering' do
                       chdir: repository, timeout_seconds: 60)
   end
 
-  it 'keeps credentials in files and retains database failover and connection bounds', :aggregate_failures do
-    Dir.mktmpdir('tack-connection-files') do |directory|
-      generation = generate_credentials(repository, directory)
-      expect(generation.exit_status.success?).to be(true), generation.output
-      File.write(File.join(directory, 'TACK_APP_PASSWORD'), File.read(File.join(directory, 'TACK_APP_PASSWORD')).strip)
-      AnsibleRender.render(
-        inventory: 'localhost,', playbook: 'render_tack_connections.yml',
-        extra_vars: {
-          'repository_root' => repository, 'output_directory' => directory,
-          'group_vars_file' => File.join(repository, 'ansible/inventory/group_vars/tack_all.yml'),
-          'tack_secrets_dir' => '/secrets', 'tack_store_host' => '2001:db8::20',
-          'tack_ledger_node_addresses' => addresses, 'tack_ledger_consumers_repointed' => true,
-          'tack_provision_owner' => true, 'tack_app_guest' => false, 'tack_ledger_bootstrap' => false,
-          'tack_ops_migrator_login' => true
-        }
-      )
-      rendering = render_connections(repository, directory)
-      expect(rendering.exit_status.success?).to be(true), rendering.output
-      expect(rendering.output).to be_empty
-      app = File.read(File.join(directory, 'DATABASE_URL'))
-      operator = File.read(File.join(directory, 'TACK_OPS_DATABASE_URL'))
-      expect(app.include?('@yb1:5433,yb2:5433,yb3:5433/tack?')).to be(true)
-      expect(app.include?('connect_timeout=1')).to be(true)
-      expect(operator.include?('host=2001:db8::21,2001:db8::22,2001:db8::23')).to be(true)
-      expect(operator.include?('user=tack_migrator')).to be(true)
-      expect(operator.include?('connect_timeout=1')).to be(true)
-      clickhouse = File.read(File.join(directory, 'AUDIT_CONSUMER_CLICKHOUSE_DSN'))
-      expect(clickhouse.start_with?('clickhouse://tack_audit_consumer:')).to be(true)
-      expect(clickhouse.end_with?("@clickhouse:9000/audit\n")).to be(true)
-      expect(File.stat(File.join(directory, 'DATABASE_URL')).mode & 0o777).to eq(0o600)
+  def adopt_awkward_credentials(directory)
+    names = %w[YUGABYTE_PASSWORD AUDIT_WRITER_PASSWORD AUDIT_READER_PASSWORD
+               AUDIT_REDACTOR_PASSWORD AUDIT_OPERATOR_PASSWORD TACK_MIGRATOR_PASSWORD]
+    passwords = names.to_h { |name| [name, "#{awkward_password}\n"] }
+    previous = passwords.map { |name, password| "#{name}=#{password}" }.join
+    File.write(File.join(directory, 'previous.env'), previous, perm: 0o600)
+    passwords['TACK_APP_PASSWORD'] = awkward_password
+    passwords['CLICKHOUSE_PASSWORD'] = "#{awkward_password}\n"
+    File.write(File.join(directory, 'app-db.password'), passwords.fetch('TACK_APP_PASSWORD'), perm: 0o600)
+    File.write(File.join(directory, 'CLICKHOUSE_PASSWORD'), passwords.fetch('CLICKHOUSE_PASSWORD'), perm: 0o600)
+    passwords.transform_values { |password| Digest::SHA256.hexdigest(password) }
+  end
+
+  def awkward_password
+    " \t#{SecureRandom.hex(16)}#{(' '..'~').to_a.shuffle.join}é\t\\' "
+  end
+
+  def check_connections(directory, phase)
+    environment = ENV.keys.grep(/\APG/).to_h { |name| [name, nil] }
+    passfile = File.join(directory, 'pgpass')
+    File.write(passfile, '', perm: 0o600)
+    environment['PGPASSFILE'] = passfile
+    CommandRunner.run(environment, ['go', 'run', '.', directory, phase],
+                      chdir: File.join(AnsibleRender::REPOSITORY_ROOT, 'spec/fixtures/service_secrets'),
+                      timeout_seconds: 120)
+  end
+
+  def expect_protected_files(directory)
+    Dir.glob(File.join(directory, '*')).each do |path|
+      metadata = File.stat(path)
+      expect(metadata.mode & 0o777).to eq(0o600) unless File.basename(path) == 'render-connections.sh'
+      expect([metadata.uid, metadata.gid]).to eq([Process.uid, Process.gid])
+    end
+  end
+
+  [[true, true], [false, true], [true, false]].each do |repointed, adopted|
+    it "preserves passwords and connection settings with repointed=#{repointed} and adopted=#{adopted}", :aggregate_failures do
+      Dir.mktmpdir('tack-connection-files') do |directory|
+        expected = {}
+        expected = adopt_awkward_credentials(directory) if adopted
+        generation = generate_credentials(repository, directory)
+        expect(generation.exit_status.success?).to be(true), generation.output
+        expected.each do |name, fingerprint|
+          expect(Digest::SHA256.file(File.join(directory, name)).hexdigest).to eq(fingerprint)
+        end
+        AnsibleRender.render(
+          inventory: 'localhost,', playbook: 'render_tack_connections.yml',
+          extra_vars: {
+            'repository_root' => repository, 'output_directory' => directory,
+            'group_vars_file' => File.join(repository, 'ansible/inventory/group_vars/tack_all.yml'),
+            'tack_secrets_dir' => '/secrets', 'tack_store_host' => '2001:db8::20',
+            'tack_ledger_node_addresses' => addresses, 'tack_ledger_consumers_repointed' => repointed,
+            'tack_ledger_tls_enabled' => false,
+            'tack_provision_owner' => true, 'tack_app_guest' => false, 'tack_ledger_bootstrap' => false,
+            'tack_ops_migrator_login' => true
+          }
+        )
+        rendering = render_connections(repository, directory)
+        expect(rendering.exit_status.success?).to be(true), rendering.output
+        expect(rendering.output).to be_empty
+        phase = 'legacy'
+        phase = 'repointed' if repointed
+        parsing = check_connections(directory, phase)
+        expect(parsing.exit_status.success?).to be(true), parsing.output
+        expect(parsing.output).to be_empty
+        expect_protected_files(directory)
+      end
     end
   end
 end
