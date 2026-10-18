@@ -93,7 +93,7 @@ Confirm the version with `sysctl kern.conftxt` and the kernel git hash it prints
 1. Free disk. The build needs 5 to 10 GB. Grow the VM disk from the Proxmox host if needed with
    `qm disk resize <vmid> scsi0 +24G`. Then on the guest, run `gpart recover da0`,
    `gpart resize -i 4 da0`, and `zpool online -e zroot da0p4`.
-2. Stage the source. The guest has no internet. Clone `opnsense/src` at the tag on the host and
+2. Stage the source. The guest cannot access the internet. Clone `opnsense/src` at the tag on the host and
    copy it into the guest `/usr/src`, or clone directly if the guest can reach GitHub.
 3. Write the config. In `/usr/src/sys/amd64/conf`, create a file named `SMP-WITNESS`:
 

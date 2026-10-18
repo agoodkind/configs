@@ -6,7 +6,6 @@
         "**/.DS_Store": true,
         "**/Thumbs.db": true,
         "**/CVS": true,
-        "**/.ruby-lsp": true,
         "**/.retool_types/**": true,
         "**/*tsconfig.json": true,
         ".cache": true,
@@ -17,18 +16,6 @@
     "files.trimTrailingWhitespace": true,
     "files.associations": {
         "*.sh.j2": "jinja-shell"
-    },
-    "rubyLsp.rubyVersionManager": {
-        "rbenv": {
-            "versionFile": ".ruby-version"
-        }
-    },
-    "ruby.rubocop.useBundler": true,
-    "rubyLsp.enabledFeatures": {
-        "documentHighlights": true,
-        "documentSymbols": true,
-        "foldingRanges": true,
-        "formatting": true
     },
     "ansible.lightspeed.enabled": false,
     "ansible.ansible.configFile": "${workspaceFolder}/ansible/ansible.cfg",

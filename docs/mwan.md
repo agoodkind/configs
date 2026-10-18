@@ -217,7 +217,7 @@ flowchart LR
 
 
 Adding `router-2` is a future iBGP peer that announces what it routes and
-needs no MWAN configuration change, as described in
+does not need a MWAN configuration change, as described in
 [multiple downstream routers](superpowers/multirouter/spec.md).
 
 
@@ -250,7 +250,7 @@ runs first and sets the mark, so the load balancer's unmarked-only rule
 leaves that flow alone.
 
 Each ISP entry in the gateway inventory may carry one forced DSCP value,
-and no two ISPs may share it. The rule matches only new flows arriving on
+and two ISPs must not share it. The rule matches only new flows arriving on
 the internal link, because senders on the internet already stamp the same
 codepoints on inbound traffic.
 
@@ -288,7 +288,7 @@ flowchart LR
 
 ### Failover
 
-Failover reuses ordinary iBGP, so the primary speaker and the failover speaker both announce a default. Routers should prefer the primary speaker with local-pref and use the failover speaker when that default goes away, because there is no extra failover protocol.
+Failover reuses ordinary iBGP, so the primary speaker and the failover speaker both announce a default. Routers should prefer the primary speaker with local-pref and use the failover speaker when that default goes away, because failover does not use an extra protocol.
 
 ```mermaid
 flowchart LR
@@ -336,7 +336,7 @@ masquerades egress onto ISP-3 and does not accept inbound traffic.
 - **Deploy rollback:** The watchdog restores the chokepoint from a snapshot
 when a config push on `gateway.example.test` breaks connectivity. The
 watchdog prefers the latest `pre-deploy-*` snapshot and uses a
-`known-good-*` snapshot when no pre-deploy snapshot exists.
+`known-good-*` snapshot when a pre-deploy snapshot does not exist.
 - **Future ISP-N:** The operator adds ISP-N with `192.0.2.16/29` and
 `2001:db8:10::/56`. `router-1` still sees one upstream, so the router
 firewall does not change.
@@ -402,7 +402,7 @@ to one guest skips that copy on that hop.
 A LAN client on the worked-example path ran a public speedtest on
 16 August 2026 and reached 1782 Mbit/s upload and 693 Mbit/s download.
 Hypervisor copy threads peaked at 1.11 cores on a 12-core host. Faster
-links were not measured, so this page has no figure for them.
+links were not measured, so this page does not provide a figure for them.
 
 ### Sample scenarios
 
@@ -413,7 +413,7 @@ These hops choose their attach independently:
 
 **PCI passthrough:** Proxmox PCI passthrough gives the ISP NIC to the
 chokepoint, so the NIC places packets directly into that guest's kernel.
-The WAN hop has no hypervisor copy of those packets, as described in
+The hypervisor does not copy those packets on the WAN hop, as described in
 [PCI(e) Passthrough](https://pve.proxmox.com/wiki/PCI(e)_Passthrough).
 
 ```mermaid
@@ -472,7 +472,7 @@ flowchart LR
 
 | Scenario                      | Where host copies run                                  |
 | ----------------------------- | ------------------------------------------------------ |
-| PCI passthrough               | No host copy runs on the WAN hop                       |
+| PCI passthrough               | The hypervisor does not copy packets on the WAN hop                       |
 | Virtual WAN                   | A host copy runs on the WAN hop                        |
 | Two guests on one host bridge | A host copy runs on every LAN packet to the chokepoint |
 
@@ -492,7 +492,7 @@ chokepoint stay separate guests on one bridge.
 ### Measured path
 
 Client `fd06::10` sits behind `router-1` and leaves on ISP-1, which uses
-PCI passthrough so the WAN hop has no host copy. The packet then crosses
+PCI passthrough, so the hypervisor does not copy packets on the WAN hop. The packet then crosses
 the two-guest bridge and DMAs out ISP-1.
 
 On 16 August 2026, a LAN client ran a public speedtest on this path and

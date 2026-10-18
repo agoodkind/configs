@@ -11,12 +11,12 @@ watchdog blaming the gateway and lets it recover the router instead.
 
 On 2026-08-01 the hypervisor API added two virtio NICs to the router guest
 under the OpenTofu provider's token. Nothing on either host compares a guest's
-live hardware against its declared shape, and a hot-added NIC binds nothing
+live hardware against its declared shape, and a hot-added NIC does not bind anything
 until reconfigured, so the drift stayed invisible for thirty-two days. On
 2026-09-02 an operator upgraded the router firmware from the web interface.
 That was the guest's first boot carrying four NICs. FreeBSD numbered them by
 PCI slot, so the transit link landed on the LAN bridge. No BGP session
-formed, and the router held no default route in either family.
+formed, and the router did not have a default route in either family.
 
 Two guards existed and neither helped. The router's own guarded upgrade path
 snapshots the guest and validates BGP sessions and kernel default routes at
@@ -58,7 +58,7 @@ from the name that device carries today.
 
 Per-driver numbering is what makes the answer right, in both directions. A
 device that resolves to a different driver, inserted anywhere, counts in its
-own group and moves no name in another, so the guest passes. A device
+own group and does not change a name in another, so the guest passes. A device
 resolving to the same driver, inserted before or between the existing slots,
 takes a unit already in use in that group and pushes every later one up, so
 the guest refuses. Numbering every device in one sequence would refuse the
@@ -104,8 +104,8 @@ this reboot breaks the configuration that names it. The hypervisor's own
 configuration disagreeing with the declared record means hardware nobody
 declared is present, which is the condition that sat unnoticed for thirty-two
 days before the outage. Neither implies the other. A device appended after the
-existing slots and left undeclared changes no name and still refuses, on the
-declared comparison alone. The same device once declared changes no name and
+existing slots and left undeclared does not change a name and still refuses, on the
+declared comparison alone. The same device once declared does not change a name and
 passes both. The hypervisor holds both facts, so it answers with both.
 
 A copy of the declared baseline rendered onto the guest cannot answer this.
@@ -164,7 +164,7 @@ for the gateway, because a snapshot taken once the guest is already shutting
 down would capture a staged upgrade rather than the state before it.
 
 7. **The hooks never wedge their caller, and they fail in opposite
-directions.** The hook dispatcher runs each hook synchronously with no
+directions.** The hook dispatcher runs each hook synchronously and does not impose a
 timeout of its own, so each hook bounds its own work. There the two part
 company. The upgrade-stage hook treats every failure as a refusal, because
 refusing costs a postponed upgrade while proceeding blind costs the router.
@@ -192,7 +192,7 @@ The command line upgrade path keeps its own snapshot, validation matrix and
 rollback. This work guards the reboot rather than replacing that tool, and
 does not require an operator to use it.
 
-Drift is reported, never repaired. A hot-added device binds nothing until
+Drift is reported, never repaired. A hot-added device does not bind anything until
 reconfigured, so automatic removal is its own foot-gun.
 
 A router that fails on its own rather than deliberately stays out of scope and
@@ -205,7 +205,7 @@ AC1: with a spare device added to the testbed router after its existing slots
 and no reboot taken, an upgrade started from that router's web interface
 aborts naming undeclared hardware, the firmware log carries the hook's
 reason, and the guest still runs its previous firmware. This placement
-renumbers nothing, so the refusal comes from the declared comparison rather
+does not renumber any interface, so the refusal comes from the declared comparison rather
 than the order one.
 
 AC2: with the spare device removed, the same upgrade proceeds and completes.
@@ -261,8 +261,8 @@ not booted into it safe to reboot, and this is the case that separates the
 two comparisons: the declared one now passes while the order one refuses.
 
 AC14: with a device appended after the testbed router's existing slots and
-the declared record edited to match, an upgrade proceeds. Appending renumbers
-nothing, so a refusal here would be a false one.
+the declared record edited to match, an upgrade proceeds. Appending does not renumber
+any interface, so a refusal here would be a false one.
 
 AC15: an answer to a request that already timed out is refused by the next
 hook run, including when the guest daemon restarted between the two, and
@@ -277,7 +277,7 @@ guest already has.
 
 AC17: with a device resolving to a different driver inserted before the
 testbed router's existing slots and the declared record edited to match, an
-upgrade proceeds. It counts in its own driver's sequence and moves no name in
+upgrade proceeds. It counts in its own driver's sequence and does not change a name in
 another, so numbering every device in one sequence would have refused this
 falsely.
 
@@ -298,5 +298,5 @@ AC20: with one of the testbed router's devices changed to a model the
 resolution table does not carry, and the declared record edited to match, an
 upgrade aborts naming the unknown model, because a driver the hook cannot
 resolve is a name it cannot predict. Editing the record is what isolates the
-cause: left unedited, the declared comparison refuses on its own and proves
-nothing about resolution.
+cause: left unedited, the declared comparison refuses on its own and does not prove
+anything about resolution.

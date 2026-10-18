@@ -11,7 +11,7 @@ Would the file change if the same binary were deployed to a different site, mean
 
 The testbed and production are two such sites already. A file identical on both belongs to the program.
 
-There is no third category. A templated file stays in `configs` whether its values come from inventory, `config.toml`, or `network.json`.
+A third category does not exist. A templated file stays in `configs` whether its values come from inventory, `config.toml`, or `network.json`.
 
 One exception: the daemon renders the per-provider networkd units at runtime under `MWAN-491`, because their values change while the daemon runs.
 
@@ -25,9 +25,9 @@ The 802.1X chain and the console getty drop-ins stay in `configs` by ruling, wha
 - The quiet-console sysctl file: each key written through the sysctl runner.
 - The schema and the RESTCONF policy: install or update each module into sysrepo and import the policy, through the sysrepo binding.
 
-The verb renders no template and reads no site value. Every file it writes is byte-identical at every site.
+The verb does not render templates or read site values. Every file it writes is byte-identical at every site.
 
-The verb prints one line per file that changed and exits non-zero on any failure. Running it twice changes nothing the second time. It never restarts the daemon that runs it; the playbook keeps the restart decision.
+The verb prints one line per file that changed and exits non-zero on any failure. Running it twice does not change anything the second time. It never restarts the daemon that runs it; the playbook keeps the restart decision.
 
 `opnsensectl install` has the same contract on the router and on the hypervisor.
 
@@ -40,6 +40,6 @@ The embedded files are files in each repository, embedded with `go:embed`, not G
 
 ## What the playbooks do
 
-The playbook installs the binary from the staged release, renders every templated file from inventory, runs `mwan install --apply`, and decides restarts. It copies no static application file from the checkout. The `yanglint` validation on the controller reads the schema the binary carries: `mwan install --print-schema <dir>` writes the embedded modules to a directory on the controller, so the validation and the gateway install read the same bytes.
+The playbook installs the binary from the staged release, renders every templated file from inventory, runs `mwan install --apply`, and decides restarts. It does not copy static application files from the checkout. The `yanglint` validation on the controller reads the schema the binary carries: `mwan install --print-schema <dir>` writes the embedded modules to a directory on the controller, so the validation and the gateway install read the same bytes.
 
 Release staging lives in the playbooks under `MWAN-490`: each deploy pulls the pinned release with `get_url` against a sha256 pinned in `group_vars`, then `unarchive`, then `gh attestation verify --owner agoodkind` on each archive. `configsctl` keeps only lint, validation, and safe running.
