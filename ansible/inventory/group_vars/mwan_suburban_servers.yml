@@ -703,7 +703,7 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.etheric_native_home.local.address }}"
         local_as: "{{ mwan_routing_sessions.etheric_native_home.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.etheric_native_home.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.etheric_native_home.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.etheric_native_home.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.etheric_native_home.hold_seconds }}"
@@ -844,7 +844,7 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.tunnel_upstream_home.local.address }}"
         local_as: "{{ mwan_routing_sessions.tunnel_upstream_home.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.tunnel_upstream_home.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.tunnel_upstream_home.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.tunnel_upstream_home.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.tunnel_upstream_home.hold_seconds }}"
@@ -901,7 +901,7 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.local.address }}"
         local_as: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.hold_seconds }}"
@@ -958,7 +958,7 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.tunnel_vps_home_astound.local.address }}"
         local_as: "{{ mwan_routing_sessions.tunnel_vps_home_astound.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.tunnel_vps_home_astound.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.tunnel_vps_home_astound.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.tunnel_vps_home_astound.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.tunnel_vps_home_astound.hold_seconds }}"
