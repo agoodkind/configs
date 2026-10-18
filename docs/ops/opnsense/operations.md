@@ -118,8 +118,8 @@ foreach ($fw->getInterfaceMapping() as $intf => $ifcfg) {
 }
 ```
 
-When the WAN interface has no configured gateway, this condition is false and
-OPNsense does not generate auto-NAT for v4 LAN to WAN traffic.
+When the WAN interface does not have a configured gateway, this condition is
+false and OPNsense does not generate auto-NAT for v4 LAN to WAN traffic.
 
 Replacement: the two manual rules in the steady-state section. They cover
 the same ground regardless of gateway state.
@@ -153,7 +153,7 @@ those routes cover, not the default. So it's safe assuming Rule 1 holds.
 
 ### Rule 6: Duplicate `<if>device</if>` declarations silently drop the loser
 
-`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but binds no address to any kernel interface. The testbed substitutions transform strips `opt6` so MANAGEMENT remains the only untagged interface mapped to `vtnet0`.
+`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but does not bind an address to any kernel interface. The testbed substitutions transform strips `opt6` so MANAGEMENT remains the only untagged interface mapped to `vtnet0`.
 
 ### Rule 7: `pkg upgrade -y` must run BEFORE `pkg install`
 

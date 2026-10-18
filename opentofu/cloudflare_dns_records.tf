@@ -167,6 +167,14 @@ locals {
       ttl     = 1
       proxied = false
     }
+    "goodkind.io/AAAA/mini.home.goodkind.io/f55c5de8" = {
+      zone    = "goodkind.io"
+      name    = "mini.home.goodkind.io"
+      type    = "AAAA"
+      content = "3d06:bad:b01:1::2"
+      ttl     = 1
+      proxied = false
+    }
     "goodkind.io/AAAA/nas-jetkvm.goodkind.io/383f88d9" = {
       zone    = "goodkind.io"
       name    = "nas-jetkvm.goodkind.io"

@@ -2,8 +2,8 @@
 
 How name resolution works on the suburban testbed, and how to recover it when a
 rebuilt testbed OPNsense comes up with DNS broken. The testbed is IPv6 primary:
-its simulated ISPs carry IPv4 transit only and no public IPv6, so IPv6-only
-guests reach the IPv4 internet through NAT64 plus DNS64. The config owns the
+its simulated ISPs carry only IPv4 transit and do not provide public IPv6.
+IPv6-only guests reach the IPv4 internet through NAT64 plus DNS64. The config owns the
 live definitions; this page carries the behavior and the recovery steps.
 
 ## Components
@@ -40,7 +40,7 @@ order you hit them.
 1. **Unbound will not start because the python DNSBL module file is missing.**
    The prod config import leaves Unbound configured with `module-config: "python
    validator iterator"` and `python-script: unbound-dnsbl/dnsbl_module.py`, but
-   the rebuilt box has no `dnsbl_module.py`, so Unbound exits at init with
+   the rebuilt box does not have `dnsbl_module.py`. Unbound exits at init with
    `fatal error: bad config during init for python module`. DNSBL is
    `<enabled>0</enabled>` in the config yet the python wrapper still renders on
    26.1. Recover by regenerating the module and clearing the stale pid:
@@ -52,8 +52,8 @@ order you hit them.
    ```
 
 2. **Tayga daemon is down.** The `nat64` tun interface and the `2664::/96` route
-   can persist while the translator is not running. There is no `rc.d/tayga`
-   script (the plugin uses `opnsense-tayga` via configd), so start it with:
+   can persist while the translator is not running. The plugin does not provide a
+   `rc.d/tayga` script and uses `opnsense-tayga` via configd. Start it with:
 
    ```sh
    configctl tayga start
@@ -66,7 +66,7 @@ order you hit them.
    it with `pct start`, and confirm `named` runs inside it.
 
 Diagnostic note: `sockstat` and `pgrep` need `sudo` on the OPNsense to show the
-root-owned Unbound and Tayga; without it they falsely report nothing on `:53`.
+root-owned Unbound and Tayga; without it they do not show the listeners on `:53`.
 
 ## How the testbed MWAN VM reaches DNS
 
@@ -96,4 +96,5 @@ These still need to move from manual recovery into the deploy path:
   (`3d06:bad:b01:200::53`) to a public resolver (`2606:4700:4700::1111`). On the
   IPv6-only testbed that target is only reachable through NAT64, so forwarding
   still depends on the testbed having working upstream transit; a rebuilt
-  OPNsense that has not converged BGP/DNS yet returns no answers until it does.
+  OPNsense that has not converged BGP/DNS yet does not return answers until it
+  does.

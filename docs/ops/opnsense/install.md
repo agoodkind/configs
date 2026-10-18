@@ -25,7 +25,7 @@ Confirm the VMID is free first:
 ssh "$PVE" "qm list; qm config $VMID 2>&1 || true"
 ```
 
-Proceed only if the VMID has no existing config.
+Proceed only if the VMID does not have an existing config.
 
 ## Create the VM with a named serial port
 

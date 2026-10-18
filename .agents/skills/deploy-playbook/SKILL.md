@@ -68,20 +68,6 @@ doubt.
 ./configsctl deploy deploy-testbed --limit suburban
 ```
 
-## Rake Shortcuts
-
-The [ansible/Rakefile](../../../ansible/Rakefile) wraps the same invocations.
-Its `deploy` and `check` tasks run `./configsctl deploy` from the repository
-root, so a rake deploy and a direct deploy are the same run:
-
-```bash
-rake help
-rake deploy:proxmox[vault]
-rake check:mwan
-rake syntax:all
-rake inventory
-```
-
 ## Notes
 
 - configsctl runs the play from [ansible/](../../../ansible/) so `ansible.cfg`
