@@ -28,7 +28,7 @@ module TackOpsPlaybook
   # Remove these constants and examples when removing ops backfill
   # once-drop-killtest-schema (TACK-560; command removal day 2026-12-06).
   KILLTEST_COMMAND = 'ops backfill once-drop-killtest-schema'
-  SUPERUSER_URL = 'render-only-superuser-url'
+  SUPERUSER_FILE = '/run/secrets/TACK_LEDGER_SUPERUSER_DATABASE_URL'
   MANIFEST_ARGUMENT = '--manifest=/etc/tack/search-projections.json'
   OTHER_COMMANDS = ['ops deploy verify', 'ops audit prove-schema-guard', 'audit signers', 'audit query',
                     'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
@@ -80,7 +80,7 @@ module TackOpsPlaybook
   end
 
   ENVIRONMENT_INVENTORY = "environment-test ansible_connection=local\n"
-  ENVIRONMENT_NAMES = '(TACK_IMAGE_TAG|DATABASE_URL)='
+  ENVIRONMENT_NAMES = '(TACK_IMAGE_TAG|DATABASE_URL_FILE)='
 
   # One env task per command task, with the environment value of that command
   # task, and one debug task that prints the two variables env reported.
@@ -208,7 +208,8 @@ RSpec.describe TackOpsPlaybook do
     dry_run = described_class.command_line(TackOpsPlaybook::DRY_RUN_TASK, command: 'ops qa datagen seed', args: ['--scale=small'])
     execute = described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: 'ops deploy verify')
 
-    expect(dry_run).to eq(%w[docker compose run --rm app ops qa datagen seed --scale=small] + flags)
+    prefix = %w[docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml]
+    expect(dry_run).to eq(prefix + %w[run --rm app ops qa datagen seed --scale=small] + flags)
     expect(execute).to eq(%w[docker compose run --rm tack-ops ops deploy verify] + flags + ['--execute'])
   end
 
@@ -223,23 +224,51 @@ RSpec.describe TackOpsPlaybook do
     expect(execute).to eq(%w[docker compose run --rm tack-ops ops audit prove-schema-guard] + flags + ['--execute'])
   end
 
-  it 'accepts audit query with a verb and an RFC3339 window and runs it in the app service', :aggregate_failures do
+  it 'runs search maintenance commands in the tack-ops service', :aggregate_failures do
+    %w[provision reindex verify].each do |verb|
+      command = "ops search #{verb}"
+      line = %w[docker compose run --rm tack-ops] + command.split + TackOpsPlaybook::AGENT_FLAGS.split
+
+      expect(described_class.command_line(TackOpsPlaybook::DRY_RUN_TASK, command: command)).to eq(line)
+      expect(described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: command)).to eq(line + ['--execute'])
+    end
+  end
+
+  it 'adds the reader only for reviewed app network audit commands', :aggregate_failures do
+    prefix = %w[docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml run --rm app]
+    ['ops audit dlq inspect', 'ops audit dlq replay', 'ops audit consumer-offsets'].each do |command|
+      expect(described_class.request_passes('tack_ops_command' => command)).to be(true)
+      expect(described_class.request_passes('tack_ops_command' => command, 'ansible_play_hosts_all' => ['tack'])).to be(false)
+      line = described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: command)
+      expect(line).to eq(prefix + command.split + TackOpsPlaybook::AGENT_FLAGS.split + ['--execute'])
+    end
+  end
+
+  it 'grants the redactor only when the seed requests audit redaction', :aggregate_failures do
+    %w[--redact-audit-pii --redact-audit-pii=true].each do |argument|
+      line = described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: 'ops qa datagen seed', args: [argument])
+      expect(line).to include('docker-compose.audit-reader.yml', 'docker-compose.audit-redactor.yml')
+    end
+    line = described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: 'ops qa datagen seed')
+    expect(line).not_to include('docker-compose.audit-redactor.yml')
+  end
+
+  it 'accepts audit query with a verb and an RFC3339 window and runs it in the tack-ops service', :aggregate_failures do
     args = ['--org=0190a3c4-7d2e-7c1a-9f3b-2b6e8d4c1a5f', '--action=ops.audit_schema_guard_proof',
             '--oldest=2026-10-06T10:00:00Z', '--latest=2026-10-06T11:00:00Z']
     execute = described_class.command_line(TackOpsPlaybook::EXECUTE_TASK, command: 'audit query', args: args)
 
     expect(described_class.request_passes('tack_ops_command' => 'audit query', 'tack_ops_args' => args)).to be(true)
-    expect(execute).to eq(%w[docker compose run --rm app audit query] + args + TackOpsPlaybook::AGENT_FLAGS.split + ['--execute'])
+    expect(execute).to eq(%w[docker compose run --rm tack-ops audit query] + args + TackOpsPlaybook::AGENT_FLAGS.split + ['--execute'])
   end
 
-  it 'accepts the killtest schema backfill and passes it the superuser URL by variable name', :aggregate_failures do
+  it 'uses the protected superuser connection file for the killtest schema backfill', :aggregate_failures do
     flags = TackOpsPlaybook::AGENT_FLAGS.split
-    line = %w[docker compose run --rm -e DATABASE_URL tack-ops ops backfill once-drop-killtest-schema] + flags
-    variables = { 'tack_ledger_superuser_database_url' => TackOpsPlaybook::SUPERUSER_URL }
-    environment = { 'DATABASE_URL' => TackOpsPlaybook::SUPERUSER_URL }
+    line = %w[docker compose run --rm -e DATABASE_URL_FILE tack-ops ops backfill once-drop-killtest-schema] + flags
+    environment = { 'DATABASE_URL_FILE' => TackOpsPlaybook::SUPERUSER_FILE }
     command = TackOpsPlaybook::KILLTEST_COMMAND
-    dry_run = described_class.command_and_environment(TackOpsPlaybook::DRY_RUN_TASK, command: command, variables: variables)
-    execute = described_class.command_and_environment(TackOpsPlaybook::EXECUTE_TASK, command: command, variables: variables)
+    dry_run = described_class.command_and_environment(TackOpsPlaybook::DRY_RUN_TASK, command: command)
+    execute = described_class.command_and_environment(TackOpsPlaybook::EXECUTE_TASK, command: command)
 
     expect(described_class.request_passes('tack_ops_command' => command)).to be(true)
     expect(dry_run).to eq('cmd' => line, 'environment' => environment)
@@ -248,30 +277,29 @@ RSpec.describe TackOpsPlaybook do
 
   # The request has no superuser URL variable. A task that read the variable
   # for another command would fail to render.
-  it 'passes no DATABASE_URL to any other command', :aggregate_failures do
+  it 'does not pass a superuser file reference for other commands', :aggregate_failures do
     TackOpsPlaybook::OTHER_COMMANDS.each do |command|
       [TackOpsPlaybook::DRY_RUN_TASK, TackOpsPlaybook::EXECUTE_TASK].each do |name|
         rendered = described_class.command_and_environment(name, command: command)
 
         expect(rendered['environment']).to eq({}), "#{name}: #{command}"
-        expect(rendered['cmd']).not_to include('-e', 'DATABASE_URL'), "#{name}: #{command}"
+        expect(rendered['cmd']).not_to include('-e', 'DATABASE_URL_FILE'), "#{name}: #{command}"
       end
     end
   end
 
-  it 'gives both command tasks the play TACK_IMAGE_TAG together with the task DATABASE_URL', :aggregate_failures do
+  it 'gives both command tasks the play TACK_IMAGE_TAG together with the task DATABASE_URL_FILE', :aggregate_failures do
     tag = "TACK_IMAGE_TAG=#{TackOpsPlaybook::COMMIT}"
-    killtest = described_class.environment_run('tack_ops_command' => TackOpsPlaybook::KILLTEST_COMMAND,
-                                               'tack_ledger_superuser_database_url' => TackOpsPlaybook::SUPERUSER_URL)
+    killtest = described_class.environment_run('tack_ops_command' => TackOpsPlaybook::KILLTEST_COMMAND)
     other = described_class.environment_run('tack_ops_command' => 'ops search verify')
 
     expect(killtest.exit_status.success?).to be(true), killtest.output
     expect(other.exit_status.success?).to be(true), other.output
     [TackOpsPlaybook::DRY_RUN_TASK, TackOpsPlaybook::EXECUTE_TASK].each do |name|
-      expect(killtest.output).to include("#{name}: DATABASE_URL=#{TackOpsPlaybook::SUPERUSER_URL} #{tag}")
+      expect(killtest.output).to include("#{name}: DATABASE_URL_FILE=#{TackOpsPlaybook::SUPERUSER_FILE} #{tag}")
       expect(other.output).to include("#{name}: #{tag}")
     end
-    expect(other.output).not_to include('DATABASE_URL=')
+    expect(other.output).not_to include('DATABASE_URL_FILE=')
   end
 
   it 'prints the --execute output only after the --execute task ran', :aggregate_failures do

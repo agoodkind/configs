@@ -14,15 +14,15 @@ module TackSearchEnvironment
   # Most settings lack compiled defaults in Tack. The deployment plan requires
   # OPENSEARCH_PUBLIC_ENABLED. Configs renders OPENSEARCH_MODEL_REPAIR_ENABLED
   # explicitly for each environment despite Tack's compiled default of false.
-  # PUBLIC_SETTING_NAMES adds OPENSEARCH_CURSOR_KEY. Tack reads the key only
-  # while public search is on. The env file renders OPENSEARCH_CURSOR_KEY only
+  # PUBLIC_SETTING_NAMES adds OPENSEARCH_CURSOR_KEY_FILE. Tack reads the key only
+  # while public search is on. The env file renders OPENSEARCH_CURSOR_KEY_FILE only
   # while public search is on.
   SETTING_NAMES = %w[
-    OPENSEARCH_CA OPENSEARCH_ENDPOINT OPENSEARCH_MODEL_REPAIR_ENABLED OPENSEARCH_PASSWORD
+    OPENSEARCH_CA OPENSEARCH_ENDPOINT OPENSEARCH_MODEL_REPAIR_ENABLED OPENSEARCH_PASSWORD_FILE
     OPENSEARCH_PUBLIC_ENABLED OPENSEARCH_REPLICAS OPENSEARCH_ROUTING_SHARDS OPENSEARCH_SHARDS
-    OPENSEARCH_USERNAME
+    OPENSEARCH_USERNAME OPENSEARCH_MAINTENANCE_USERNAME OPENSEARCH_MAINTENANCE_PASSWORD_FILE
   ].freeze
-  PUBLIC_SETTING_NAMES = (SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY]).sort.freeze
+  PUBLIC_SETTING_NAMES = (SETTING_NAMES + %w[OPENSEARCH_CURSOR_KEY_FILE]).sort.freeze
   PUBLIC = { 'tack_search_public_enabled' => true }.freeze
 
   module_function
@@ -85,14 +85,16 @@ RSpec.describe TackSearchEnvironment do
     expect(described_class.search_settings(rendered)).to eq(
       'OPENSEARCH_ENDPOINT' => TackSearchEnvironment::QA_ENDPOINT,
       'OPENSEARCH_CA' => '/etc/tack/search-ca.crt',
-      'OPENSEARCH_USERNAME' => 'render-only-vault_tack_qa_search_username',
-      'OPENSEARCH_PASSWORD' => 'render-only-vault_tack_qa_search_password',
+      'OPENSEARCH_USERNAME' => 'tack_runtime',
+      'OPENSEARCH_PASSWORD_FILE' => '/run/secrets/OPENSEARCH_PASSWORD',
+      'OPENSEARCH_MAINTENANCE_USERNAME' => 'tack_maintenance',
+      'OPENSEARCH_MAINTENANCE_PASSWORD_FILE' => '/run/secrets/OPENSEARCH_MAINTENANCE_PASSWORD',
       'OPENSEARCH_SHARDS' => '1',
       'OPENSEARCH_ROUTING_SHARDS' => '8',
       'OPENSEARCH_REPLICAS' => '0',
       'OPENSEARCH_PUBLIC_ENABLED' => 'true',
       'OPENSEARCH_MODEL_REPAIR_ENABLED' => 'true',
-      'OPENSEARCH_CURSOR_KEY' => 'render-only-vault_tack_qa_search_cursor_key'
+      'OPENSEARCH_CURSOR_KEY_FILE' => '/run/secrets/OPENSEARCH_CURSOR_KEY'
     )
     expect(described_class.search_settings(rendered).keys.sort).to eq(TackSearchEnvironment::PUBLIC_SETTING_NAMES)
   end
@@ -103,14 +105,16 @@ RSpec.describe TackSearchEnvironment do
     expect(described_class.search_settings(rendered)).to eq(
       'OPENSEARCH_ENDPOINT' => TackSearchEnvironment::PRODUCTION_ENDPOINT,
       'OPENSEARCH_CA' => '/etc/tack/search-ca.crt',
-      'OPENSEARCH_USERNAME' => 'render-only-vault_tack_search_username',
-      'OPENSEARCH_PASSWORD' => 'render-only-vault_tack_search_password',
+      'OPENSEARCH_USERNAME' => 'tack_runtime',
+      'OPENSEARCH_PASSWORD_FILE' => '/run/secrets/OPENSEARCH_PASSWORD',
+      'OPENSEARCH_MAINTENANCE_USERNAME' => 'tack_maintenance',
+      'OPENSEARCH_MAINTENANCE_PASSWORD_FILE' => '/run/secrets/OPENSEARCH_MAINTENANCE_PASSWORD',
       'OPENSEARCH_SHARDS' => '1',
       'OPENSEARCH_ROUTING_SHARDS' => '8',
       'OPENSEARCH_REPLICAS' => '0',
       'OPENSEARCH_PUBLIC_ENABLED' => 'true',
       'OPENSEARCH_MODEL_REPAIR_ENABLED' => 'false',
-      'OPENSEARCH_CURSOR_KEY' => 'render-only-vault_tack_search_cursor_key'
+      'OPENSEARCH_CURSOR_KEY_FILE' => '/run/secrets/OPENSEARCH_CURSOR_KEY'
     )
     expect(rendered.settings(rendered.member_host('tack_search1'))).to include(
       'TACK_SEARCH_INITIAL_CLUSTER_MANAGER_NODES' => ''
@@ -118,15 +122,14 @@ RSpec.describe TackSearchEnvironment do
   end
 
   { production: 'false', qa: 'true' }.each do |environment, model_repair|
-    it "renders the #{environment} cursor key from the vault when public search is on" do
+    it "renders the #{environment} cursor key file when public search is on" do
       rendered = TackSearchInventory.rendered(environment, overrides: TackSearchEnvironment::PUBLIC)
-      prefix = environment == :qa ? 'vault_tack_qa' : 'vault_tack'
       settings = described_class.search_settings(rendered)
 
       expect(settings).to include(
         'OPENSEARCH_PUBLIC_ENABLED' => 'true',
         'OPENSEARCH_MODEL_REPAIR_ENABLED' => model_repair,
-        'OPENSEARCH_CURSOR_KEY' => "render-only-#{prefix}_search_cursor_key"
+        'OPENSEARCH_CURSOR_KEY_FILE' => '/run/secrets/OPENSEARCH_CURSOR_KEY'
       )
       expect(settings.keys.sort).to eq(TackSearchEnvironment::PUBLIC_SETTING_NAMES)
     end

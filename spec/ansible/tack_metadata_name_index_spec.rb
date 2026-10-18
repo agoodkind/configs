@@ -163,7 +163,7 @@ RSpec.describe TackMetadataNameIndex do
   describe 'the place of the backfill in the deploy' do
     let(:tasks) { described_class.playbook_tasks }
 
-    it 'runs the backfill on the owner guest after provision and before the app and every search step', :aggregate_failures do
+    it 'runs the backfill after provision and starts search identities before the app', :aggregate_failures do
       block = described_class.owner_block(tasks)
       names = block['block'].map { |task| task['name'] }
       order = [TackMetadataNameIndex::PROVISION_TASK, *TackMetadataNameIndex::BACKFILL_TASKS, TackMetadataNameIndex::APP_START_TASK]
@@ -174,7 +174,8 @@ RSpec.describe TackMetadataNameIndex do
       expect(positions).to all(be_an(Integer))
       expect(positions).to eq(positions.sort)
       expect(described_class.position(tasks, TackMetadataNameIndex::ASSUME_TASK)).to be < described_class.position(tasks, TackMetadataNameIndex::LIST_TASK)
-      expect(described_class.position(tasks, TackMetadataNameIndex::READY_TASK)).to be < described_class.position(tasks, TackMetadataNameIndex::SEARCH_MEMBER_TASK)
+      expect(described_class.position(tasks, TackMetadataNameIndex::READY_TASK)).to be < described_class.position(tasks, TackMetadataNameIndex::APP_START_TASK)
+      expect(described_class.position(tasks, TackMetadataNameIndex::SEARCH_MEMBER_TASK)).to be < described_class.position(tasks, TackMetadataNameIndex::APP_START_TASK)
     end
 
     it 'puts the guard directly before every search index build' do

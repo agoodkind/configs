@@ -2,70 +2,24 @@
 
 require_relative '../support/tack_search_inventory'
 
-# `ops audit seed-roles` refuses an empty TACK_MIGRATOR_PASSWORD (TACK-554).
-RSpec.describe 'the tack_migrator password in the Tack environment file' do
-  {
-    qa: 'render-only-vault_tack_qa_migrator_password',
-    production: 'render-only-vault_tack_migrator_password'
-  }.each do |environment, migrator_value|
-    it "renders the #{environment} vault key on the owner guest" do
+RSpec.describe 'Tack credential references in the environment file' do
+  %i[qa production].each do |environment|
+    it "renders #{environment} file references without credential values", :aggregate_failures do
       rendered = TackSearchInventory.rendered(environment)
-
-      expect(rendered.settings(rendered.owner).fetch('TACK_MIGRATOR_PASSWORD')).to eq(migrator_value)
+      settings = rendered.settings(rendered.owner)
+      expect(settings.fetch('TACK_MIGRATOR_PASSWORD_FILE')).to eq('/run/secrets/TACK_MIGRATOR_PASSWORD')
+      expect(settings.fetch('TACK_OPS_DATABASE_URL_FILE')).to eq('/run/secrets/TACK_OPS_DATABASE_URL')
+      expect(settings.fetch('TACK_SECRETS_DIR')).to eq('/var/lib/tack/secrets')
+      expect(settings.keys).not_to include('YUGABYTE_PASSWORD', 'TACK_MIGRATOR_PASSWORD', 'TACK_APP_PASSWORD',
+                                           'AUDIT_OPERATOR_PASSWORD', 'AUDIT_WRITER_DSN', 'TACK_OPS_DATABASE_URL')
+      expect(rendered.file(rendered.owner, 'env')).not_to include('render-only-vault_', TackSearchInventory::APP_PASSWORD)
     end
   end
 
-  it 'renders the QA ops sidecar URL with tack_migrator', :aggregate_failures do
-    rendered = TackSearchInventory.rendered(:qa)
-    url = rendered.settings(rendered.owner).fetch('TACK_OPS_DATABASE_URL')
-
-    expect(url).to include('user=tack_migrator', 'password=render-only-vault_tack_qa_migrator_password')
-  end
-
-  it 'does not render superuser credentials for qa', :aggregate_failures do
-    rendered = TackSearchInventory.rendered(:qa)
-    hosts = [rendered.owner] + rendered.members.map { |member| rendered.member_host(member) }
-
-    hosts.each do |host|
-      expect(rendered.settings(host).keys).not_to include('YUGABYTE_PASSWORD', 'YUGABYTE_USER')
-      expect(rendered.file(host, 'env')).not_to include('render-only-vault_tack_qa_yugabyte_password')
-    end
-  end
-
-  it 'renders the production ops sidecar URL with tack_migrator', :aggregate_failures do
-    rendered = TackSearchInventory.rendered(:production)
-    url = rendered.settings(rendered.owner).fetch('TACK_OPS_DATABASE_URL')
-
-    expect(url).to include('user=tack_migrator', 'password=render-only-vault_tack_migrator_password')
-  end
-
-  it 'does not render superuser credentials for production', :aggregate_failures do
-    rendered = TackSearchInventory.rendered(:production)
-    hosts = [rendered.owner] + rendered.members.map { |member| rendered.member_host(member) }
-
-    hosts.each do |host|
-      expect(rendered.settings(host).keys).not_to include('YUGABYTE_PASSWORD', 'YUGABYTE_USER')
-      expect(rendered.file(host, 'env')).not_to include('render-only-vault_tack_yugabyte_password')
-    end
-  end
-
-  it 'renders the production ops sidecar URL with the superuser while tack_ops_migrator_login is false',
-     :aggregate_failures do
-    rendered = TackSearchInventory.rendered(:production, overrides: { 'tack_ops_migrator_login' => false })
-    settings = rendered.settings(rendered.owner)
-
-    expect(settings.fetch('TACK_OPS_DATABASE_URL'))
-      .to include('user=yugabyte', 'password=render-only-vault_tack_yugabyte_password')
-    expect(settings).to include('YUGABYTE_USER' => 'yugabyte',
-                                'YUGABYTE_PASSWORD' => 'render-only-vault_tack_yugabyte_password')
-  end
-
-  # The deploy-tack provision task reads TACK_OPS_DATABASE_URL from the rendered
-  # .env on a ledger bootstrap run before role seeding creates tack_migrator.
-  it 'renders the QA ops sidecar URL with the superuser on a ledger bootstrap run', :aggregate_failures do
+  it 'provides the superuser password file only for explicit bootstrap or superuser operation', :aggregate_failures do
     rendered = TackSearchInventory.rendered(:qa, overrides: { 'tack_ledger_bootstrap' => true })
-    url = rendered.settings(rendered.owner).fetch('TACK_OPS_DATABASE_URL')
-
-    expect(url).to include('user=yugabyte', 'password=render-only-vault_tack_qa_yugabyte_password')
+    expect(rendered.settings(rendered.owner).fetch('YUGABYTE_PASSWORD_FILE')).to eq('/run/secrets/YUGABYTE_PASSWORD')
+    ordinary = TackSearchInventory.rendered(:qa)
+    expect(ordinary.settings(ordinary.owner).keys).not_to include('YUGABYTE_PASSWORD_FILE')
   end
 end

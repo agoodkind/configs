@@ -145,15 +145,15 @@ RSpec.describe TackSearchNode do
     end
   end
 
-  it 'maps the application user to the tack_search role and no backend role' do
+  it 'assigns separate roles to the runtime, maintenance, and health identities' do
     rendered = TackSearchInventory.rendered(:production)
     host = rendered.member_host('tack_search1')
-    user = rendered.yaml(host, 'users').fetch('render-only-vault_tack_search_username')
+    user = rendered.yaml(host, 'users').fetch('tack_runtime')
 
-    expect(user).to include('hash' => 'render-only-vault_tack_search_password_hash')
+    expect(user).to include('hash' => 'render-only-runtime-hash')
     expect(user.keys).not_to include('backend_roles')
-    expect(rendered.yaml(host, 'roles_mapping').fetch('tack_search')).to include(
-      'users' => ['render-only-vault_tack_search_username']
+    expect(rendered.yaml(host, 'roles_mapping').fetch('tack_runtime')).to include(
+      'users' => %w[tack_runtime tack_maintenance render-only-vault_tack_search_username]
     )
   end
 

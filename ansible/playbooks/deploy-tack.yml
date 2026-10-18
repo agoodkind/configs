@@ -389,48 +389,24 @@
         - Restart the Tack app for a new search authority
         - Restart the OpenSearch member
 
-    # -------------------------------------------------------------------------
-    # Application database login (TACK-180). The app connects as tack_app, a
-    # non-superuser that holds the three auth tables and nothing on the
-    # ledger. Its password is generated once per host, like the signing key,
-    # and read back into the rendered env, where seed-roles sets it on the
-    # login and the app's DATABASE_URL carries it. Nothing in the vault and
-    # nothing shared between environments. Every host runs this, not only the
-    # owner: the env template renders on the data guests too, and the compose
-    # file they load requires the variable even though no app runs there.
-    # -------------------------------------------------------------------------
-    - name: Generate the application database password if not present
-      ansible.builtin.shell:
-        cmd: >
-          set -o pipefail &&
-          openssl rand -hex 32 > {{ tack_app_password_path }}
-        creates: "{{ tack_app_password_path }}"
-        executable: /bin/bash
-      when: not tack_app_guest | bool
+    - name: Provision isolated service credential files
+      ansible.builtin.include_tasks: tasks/tack-service-secrets.yml
 
-    - name: Ensure the application database password has restricted permissions
-      ansible.builtin.file:
-        path: "{{ tack_app_password_path }}"
-        owner: root
-        group: root
-        mode: "0600"
-      when: not tack_app_guest | bool
+    - name: Run the OpenSearch member
+      ansible.builtin.include_tasks: tasks/tack-search-node.yml
+      when: tack_cluster_role == 'search'
 
-    # An application-only guest logs in with the owner guest's password,
-    # because `ops audit seed-roles` on the owner sets that password on the
-    # tack_app login (TACK-544). The guest reads the owner's file and renders
-    # that value into its own .env. The deploy reads no password file on the
-    # application-only guest.
-    - name: Read the application database password
-      ansible.builtin.slurp:
-        src: "{{ tack_app_password_path }}"
-      delegate_to: "{{ tack_app_password_source if tack_app_guest | bool else inventory_hostname }}"
-      register: tack_app_password_file
-      no_log: true
-
-    - name: Set the application database password fact
-      ansible.builtin.set_fact:
-        tack_app_password: "{{ (tack_app_password_file.content | b64decode) | trim }}"
+    - name: Verify the new runtime identity before replacing client settings
+      ansible.builtin.uri:
+        url: "{{ tack_search_endpoint }}/_cluster/health"
+        url_username: "{{ tack_search_runtime_username }}"
+        url_password: "{{ (tack_service_credentials.results | selectattr('item', 'eq', 'OPENSEARCH_PASSWORD') | first).content | b64decode | trim }}"
+        force_basic_auth: true
+        ca_path: "{{ tack_search_ca_path }}"
+        status_code: 200
+      when:
+        - tack_cluster_role == 'app'
+        - tack_search_enabled | bool
       no_log: true
 
     # Ledger transport encryption (TACK-460). Issues this environment's
@@ -695,6 +671,11 @@
           no_log: true
           notify: Restart Tack
 
+        - name: Install the database secret readers on the owner guest
+          ansible.builtin.include_tasks: tasks/tack-database-secret-runtime.yml
+          vars:
+            tack_database_secret_restart_handler: Restart Tack
+
         - name: Deploy Tack environment file
           ansible.builtin.template:
             src: "{{ repo_root }}/tack/tack.env.j2"
@@ -877,6 +858,11 @@
             force: true
           no_log: true
           notify: Restart Tack ledger node
+
+        - name: Install the database secret readers on the ledger guest
+          ansible.builtin.include_tasks: tasks/tack-database-secret-runtime.yml
+          vars:
+            tack_database_secret_restart_handler: Restart Tack ledger node
 
         - name: Deploy Tack environment file (ledger node)
           ansible.builtin.template:
@@ -1339,10 +1325,6 @@
           changed_when: true
       when: tack_app_guest | bool
 
-    # The search guests run one OpenSearch member each (TACK-539).
-    - name: Run the OpenSearch member
-      ansible.builtin.include_tasks: tasks/tack-search-node.yml
-      when: tack_cluster_role == 'search'
 
   handlers:
     - name: Restrict audit signing key permissions

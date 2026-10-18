@@ -51,6 +51,7 @@
           - >-
             tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
             'audit signers', 'audit query',
+            'ops audit dlq inspect', 'ops audit dlq replay', 'ops audit consumer-offsets',
             'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
             'ops qa datagen search-load', 'ops qa datagen search-mixed',
             'ops backfill once-search-projections', 'ops backfill once-drop-killtest-schema',
@@ -149,8 +150,8 @@
       ansible.builtin.include_tasks: tasks/tack-search-metadata-name-index.yml
       when: *tack_ops_index_build
 
-    # The app service mounts /etc/tack read-only. ops backfill
-    # once-search-projections reads its reviewed manifest from
+    # The projection command override mounts the reviewed manifest for
+    # ops backfill once-search-projections at
     # /etc/tack/search-projections.json. Only production has a reviewed
     # manifest. The task also writes the file in check mode because the dry run
     # reads it.
@@ -166,12 +167,55 @@
         - tack_ops_command == 'ops backfill once-search-projections'
         - inventory_hostname in groups['tack_prod_all']
 
+    - name: Install the reviewed projection command mounts
+      ansible.builtin.get_url:
+        url: "https://api.github.com/repos/agoodkind/tack/contents/docker-compose.search-projections.yml?ref={{ tack_commit }}"
+        dest: "{{ tack_install_dir }}/docker-compose.search-projections.yml"
+        headers:
+          Authorization: "Bearer {{ tack_repo_read_token }}"
+          Accept: application/vnd.github.raw
+        owner: root
+        group: root
+        mode: "0644"
+      check_mode: false
+      when: tack_ops_command == 'ops backfill once-search-projections'
+      no_log: true
+
+    - name: Install the reviewed audit command mounts
+      ansible.builtin.get_url:
+        url: "https://api.github.com/repos/agoodkind/tack/contents/{{ item }}?ref={{ tack_commit }}"
+        dest: "{{ tack_install_dir }}/{{ item }}"
+        headers:
+          Authorization: "Bearer {{ tack_repo_read_token }}"
+          Accept: application/vnd.github.raw
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - docker-compose.audit-reader.yml
+        - docker-compose.audit-redactor.yml
+      check_mode: false
+      when: >-
+        tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
+                             'ops audit dlq replay', 'ops audit consumer-offsets']
+      no_log: true
+
     - name: Print the dry run of the Tack ops command
       ansible.builtin.command:
         cmd: >-
-          docker compose run --rm
-          {{ '-e DATABASE_URL' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
-          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
+          docker compose
+          {{ '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.search-projections.yml'
+             if tack_ops_command == 'ops backfill once-search-projections'
+             else '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml'
+             if tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
+                                     'ops audit dlq replay', 'ops audit consumer-offsets'] else '' }}
+          {{ '-f docker-compose.audit-redactor.yml'
+             if tack_ops_command == 'ops qa datagen seed'
+             and ('--redact-audit-pii' in tack_ops_args or '--redact-audit-pii=true' in tack_ops_args) else '' }}
+          run --rm
+          {{ '-e DATABASE_URL_FILE' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
+          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard', 'audit query',
+                                                'ops search provision', 'ops search reindex', 'ops search verify',
                                                 'ops backfill once-drop-killtest-schema'] else 'app' }}
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }}
@@ -181,7 +225,7 @@
       # ops backfill once-drop-killtest-schema (TACK-560;
       # command removal day 2026-12-06).
       environment: &tack_ops_superuser_environment >-
-        {{ {'DATABASE_URL': tack_ledger_superuser_database_url}
+        {{ {'DATABASE_URL_FILE': '/run/secrets/TACK_LEDGER_SUPERUSER_DATABASE_URL'}
            if tack_ops_command == 'ops backfill once-drop-killtest-schema' else {} }}
       register: tack_ops_dry_run
       changed_when: false
@@ -194,9 +238,19 @@
     - name: Run the Tack ops command with --execute
       ansible.builtin.command:
         cmd: >-
-          docker compose run --rm
-          {{ '-e DATABASE_URL' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
-          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard',
+          docker compose
+          {{ '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.search-projections.yml'
+             if tack_ops_command == 'ops backfill once-search-projections'
+             else '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml'
+             if tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
+                                     'ops audit dlq replay', 'ops audit consumer-offsets'] else '' }}
+          {{ '-f docker-compose.audit-redactor.yml'
+             if tack_ops_command == 'ops qa datagen seed'
+             and ('--redact-audit-pii' in tack_ops_args or '--redact-audit-pii=true' in tack_ops_args) else '' }}
+          run --rm
+          {{ '-e DATABASE_URL_FILE' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
+          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard', 'audit query',
+                                                'ops search provision', 'ops search reindex', 'ops search verify',
                                                 'ops backfill once-drop-killtest-schema'] else 'app' }}
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }} --execute

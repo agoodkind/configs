@@ -37,9 +37,11 @@ module TackSearchOutageDrill
   end
 
   def variables(directory, seconds)
+    File.write(File.join(directory, 'OPENSEARCH_HEALTH_PASSWORD'), "unused\n", perm: 0o600)
     { 'tack_search_outage_seconds' => seconds, 'tack_install_dir' => directory,
-      'tack_search_member_url' => 'https://localhost:9200', 'tack_search_username' => 'drill',
-      'tack_search_password' => 'unused', 'tack_search_ca_path' => File.join(directory, 'ca.pem') }
+      'tack_search_member_url' => 'https://localhost:9200', 'tack_search_health_username' => 'drill',
+      'tack_secrets_dir' => directory, 'tack_service_secret_source' => 'search-member',
+      'tack_search_ca_path' => File.join(directory, 'ca.pem') }
   end
 
   def run_drill(seconds:, member_groups:)

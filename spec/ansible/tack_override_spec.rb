@@ -1,82 +1,65 @@
 # frozen_string_literal: true
 
 require 'tmpdir'
-require 'yaml'
 require_relative '../support/ansible_render'
 
-# The app reaches the ledger over a multi-host connection string. Stopping one
-# data guest black-holes its socket rather than refusing it, so with no bound
-# on each name the driver waits out the kernel's TCP retry on the first name
-# and never reaches a surviving node. This check renders the real template
-# against the real group_vars and asserts the deploy writes that bound.
-module TackOverride
-  GROUP_VARS_FILE = File.join(AnsibleRender::REPOSITORY_ROOT, 'ansible', 'inventory', 'group_vars', 'tack_all.yml')
-  TEMPLATE_FILE = File.join(AnsibleRender::REPOSITORY_ROOT, 'tack', 'docker-compose.override.yml.j2')
-  CONNECT_TIMEOUT_KEY = 'tack_database_connect_timeout_seconds'
-  LEDGER_NAMES = 'yb1:5433,yb2:5433,yb3:5433'
-  # A repointed owner guest: the app dials the three data nodes.
-  OWNER_GUEST_VARS = {
-    'tack_cluster_role' => 'app',
-    'tack_provision_owner' => true,
-    'tack_ledger_consumers_repointed' => true,
-    'tack_ledger_legacy_node_present' => false,
-    'tack_ledger_node_name' => 'yugabyte',
-    'tack_ledger_join_target' => '',
-    'tack_store_host' => '3d06:bad:b01:10::20',
-    'tack_ledger_node_addresses' => {
-      'yb1' => '3d06:bad:b01:10::21',
-      'yb2' => '3d06:bad:b01:10::22',
-      'yb3' => '3d06:bad:b01:10::23'
-    }
-  }.freeze
+RSpec.describe 'Tack connection file rendering' do
+  repository = AnsibleRender::REPOSITORY_ROOT
+  addresses = { 'yb1' => '2001:db8::21', 'yb2' => '2001:db8::22', 'yb3' => '2001:db8::23' }.freeze
 
-  module_function
-
-  # Reads the bound from the group_vars file that owns it, so the assertion is
-  # tied to that one durable home.
-  def connect_timeout_seconds
-    group_vars = YAML.safe_load_file(GROUP_VARS_FILE, aliases: true)
-    seconds = group_vars[CONNECT_TIMEOUT_KEY]
-    raise "#{GROUP_VARS_FILE} does not set #{CONNECT_TIMEOUT_KEY}" if seconds.nil?
-    raise "#{CONNECT_TIMEOUT_KEY} = #{seconds.inspect}, want a whole number of seconds" unless seconds.is_a?(Integer)
-    raise "#{CONNECT_TIMEOUT_KEY} = #{seconds}, want a positive whole number of seconds" unless seconds.positive?
-
-    seconds
+  before(:context) do
+    result = CommandRunner.run({}, ['docker', 'build', '-t', 'configs-service-secret-tests', '-f',
+                                    'spec/fixtures/service_secrets/Dockerfile', '.'],
+                               chdir: repository, timeout_seconds: 180)
+    raise "Build the real credential provisioner image: #{result.output}" unless result.exit_status.success?
   end
 
-  # Renders the compose override for a repointed owner guest, the shape that
-  # carries the app's multi-host connection string.
-  def rendered_database_url
-    Dir.mktmpdir('tack-override') do |output_directory|
-      output_file = File.join(output_directory, 'docker-compose.override.yml')
+  def generate_credentials(repository, directory)
+    CommandRunner.run({}, ['docker', 'run', '--rm',
+                           '--mount', "type=bind,src=#{repository},dst=/repo,readonly",
+                           '--mount', "type=bind,src=#{directory},dst=/secrets",
+                           'configs-service-secret-tests', '/repo/tack/provision-secrets.sh',
+                           '/secrets', '/secrets/previous.env', '/secrets/app-db.password'],
+                      chdir: repository, timeout_seconds: 60)
+  end
+
+  def render_connections(repository, directory)
+    CommandRunner.run({}, ['docker', 'run', '--rm',
+                           '--mount', "type=bind,src=#{directory},dst=/secrets",
+                           'configs-service-secret-tests', '/secrets/render-connections.sh'],
+                      chdir: repository, timeout_seconds: 60)
+  end
+
+  it 'keeps credentials in files and retains database failover and connection bounds', :aggregate_failures do
+    Dir.mktmpdir('tack-connection-files') do |directory|
+      generation = generate_credentials(repository, directory)
+      expect(generation.exit_status.success?).to be(true), generation.output
+      File.write(File.join(directory, 'TACK_APP_PASSWORD'), File.read(File.join(directory, 'TACK_APP_PASSWORD')).strip)
       AnsibleRender.render(
-        inventory: 'localhost,',
-        playbook: 'render_tack_override.yml',
-        extra_vars: OWNER_GUEST_VARS.merge(
-          'group_vars_file' => GROUP_VARS_FILE,
-          'template_file' => TEMPLATE_FILE,
-          'output_file' => output_file
-        )
+        inventory: 'localhost,', playbook: 'render_tack_connections.yml',
+        extra_vars: {
+          'repository_root' => repository, 'output_directory' => directory,
+          'group_vars_file' => File.join(repository, 'ansible/inventory/group_vars/tack_all.yml'),
+          'tack_secrets_dir' => '/secrets', 'tack_store_host' => '2001:db8::20',
+          'tack_ledger_node_addresses' => addresses, 'tack_ledger_consumers_repointed' => true,
+          'tack_provision_owner' => true, 'tack_app_guest' => false, 'tack_ledger_bootstrap' => false,
+          'tack_ops_migrator_login' => true
+        }
       )
-      rendered = YAML.safe_load_file(output_file)
-      rendered.dig('services', 'app', 'environment', 'DATABASE_URL').to_s
-    end
-  end
-end
-
-RSpec.describe TackOverride do
-  it 'renders the ledger connect bound into the app database URL' do
-    connect_timeout_seconds = described_class.connect_timeout_seconds
-    database_url = described_class.rendered_database_url
-    want_bound = "connect_timeout=#{connect_timeout_seconds}"
-
-    expect(database_url).not_to be_empty, 'rendered override carries no app DATABASE_URL'
-    aggregate_failures do
-      expect(database_url).to include(TackOverride::LEDGER_NAMES),
-                              "app DATABASE_URL = #{database_url.inspect}, want the three ledger names"
-      expect(database_url).to include(want_bound),
-                              "app DATABASE_URL = #{database_url.inspect}, want the per-name connect bound " \
-                              "#{want_bound.inspect}; without it the driver waits out the kernel's TCP retry on a lost guest"
+      rendering = render_connections(repository, directory)
+      expect(rendering.exit_status.success?).to be(true), rendering.output
+      expect(rendering.output).to be_empty
+      app = File.read(File.join(directory, 'DATABASE_URL'))
+      operator = File.read(File.join(directory, 'TACK_OPS_DATABASE_URL'))
+      expect(app.include?('@yb1:5433,yb2:5433,yb3:5433/tack?')).to be(true)
+      expect(app.include?('connect_timeout=1')).to be(true)
+      expect(operator.include?('host=2001:db8::21,2001:db8::22,2001:db8::23')).to be(true)
+      expect(operator.include?('user=tack_migrator')).to be(true)
+      expect(operator.include?('connect_timeout=1')).to be(true)
+      clickhouse = File.read(File.join(directory, 'AUDIT_CONSUMER_CLICKHOUSE_DSN'))
+      expect(clickhouse.start_with?('clickhouse://tack_audit_consumer:')).to be(true)
+      expect(clickhouse.end_with?("@clickhouse:9000/audit\n")).to be(true)
+      expect(File.stat(File.join(directory, 'DATABASE_URL')).mode & 0o777).to eq(0o600)
     end
   end
 end

@@ -139,9 +139,9 @@ RSpec.describe TackQaSecondApp do
     expect(described_class.pairs(render, TackQaSecondApp::QA_APP_GUEST, 'flags')).to include(
       'tack_app_guest' => 'true', 'tack_provision_owner' => 'false'
     )
-    expect(override.fetch('services').keys).to eq(['app'])
+    expect(override.fetch('services').keys).to eq(%w[tack-ops app])
     expect(app.fetch('extra_hosts')).to eq(%w[yb1:3d06:bad:b01:210::220 yb2:3d06:bad:b01:210::221 yb3:3d06:bad:b01:210::222])
-    expect(app.dig('environment', 'DATABASE_URL')).to start_with('postgres://tack_app:${TACK_APP_PASSWORD:?}@yb1:5433,yb2:5433,yb3:5433/')
+    expect(app.dig('environment', 'DATABASE_URL_FILE')).to eq('/run/secrets/DATABASE_URL')
     expect(described_class.pairs(render, TackQaSecondApp::QA_APP_GUEST, 'env')).to include(
       'AUDIT_KAFKA_BROKERS' => "[#{TackQaSecondApp::QA_OWNER_ADDRESS}]:#{TackQaSecondApp::EXTERNAL_PORT}",
       'OPENSEARCH_PUBLIC_ENABLED' => 'true'

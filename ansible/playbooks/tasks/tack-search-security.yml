@@ -99,7 +99,7 @@
         # plugins.security.authcz.admin_dn omits.
         - name: Wait for the OpenSearch security API to answer the admin certificate
           ansible.builtin.uri:
-            url: "{{ tack_search_member_url }}/_plugins/_security/api/roles/tack_search"
+            url: "{{ tack_search_member_url }}/_plugins/_security/api/roles"
             method: GET
             ca_path: "{{ tack_search_admin_ca_file }}"
             client_cert: "{{ tack_search_admin_certificate_file }}"
@@ -164,6 +164,28 @@
           loop: >-
             {{ tack_search_users_read.content | b64decode | from_yaml | dict2items
                | rejectattr('key', 'equalto', '_meta') | list }}
+          no_log: true
+
+        - name: Remove the previous shared search identity after client migration
+          ansible.builtin.uri:
+            url: "{{ tack_search_member_url }}/_plugins/_security/api/internalusers/{{ tack_search_username | urlencode }}"
+            method: DELETE
+            ca_path: "{{ tack_search_admin_ca_file }}"
+            client_cert: "{{ tack_search_admin_certificate_file }}"
+            client_key: "{{ tack_search_admin_key_file }}"
+            status_code: [200, 404]
+          when: not tack_search_keep_legacy_user | bool
+          no_log: true
+
+        - name: Remove the previous shared role mapping after client migration
+          ansible.builtin.uri:
+            url: "{{ tack_search_member_url }}/_plugins/_security/api/rolesmapping/tack_search"
+            method: DELETE
+            ca_path: "{{ tack_search_admin_ca_file }}"
+            client_cert: "{{ tack_search_admin_certificate_file }}"
+            client_key: "{{ tack_search_admin_key_file }}"
+            status_code: [200, 404]
+          when: not tack_search_keep_legacy_user | bool
           no_log: true
       always:
         - name: Remove the admin credential directory from the deploy host

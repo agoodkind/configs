@@ -14,6 +14,21 @@
     group: root
     mode: "0700"
 
+- name: Provision the proxy readiness credential source
+  ansible.builtin.include_tasks: tack-service-secret-source.yml
+  vars:
+    tack_service_secret_source: "{{ tack_search_proxy_secret_source }}"
+    tack_secrets_dir: "{{ hostvars[tack_search_proxy_secret_source].tack_secrets_dir }}"
+    tack_install_dir: "{{ hostvars[tack_search_proxy_secret_source].tack_install_dir }}"
+    tack_app_password_path: "{{ hostvars[tack_search_proxy_secret_source].tack_app_password_path }}"
+
+- name: Read only the proxy readiness credential from the environment owner
+  ansible.builtin.slurp:
+    src: "{{ hostvars[tack_search_proxy_secret_source].tack_secrets_dir }}/OPENSEARCH_HEALTH_PASSWORD"
+  delegate_to: "{{ tack_search_proxy_secret_source }}"
+  register: tack_search_proxy_password_file
+  no_log: true
+
 - name: Create the Tack search proxy release directory
   ansible.builtin.file:
     path: "{{ tack_search_proxy_release_dir }}"

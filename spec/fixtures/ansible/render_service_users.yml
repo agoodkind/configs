@@ -1,0 +1,29 @@
+---
+- name: Render the production search identity configuration
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+  vars:
+    tack_search_runtime_username: tack_runtime
+    tack_search_maintenance_username: tack_maintenance
+    tack_search_health_username: tack_health
+    tack_search_keep_legacy_user: false
+    tack_search_runtime_password_hash: "{{ lookup('file', secret_directory ~ '/OPENSEARCH_PASSWORD.hash') | trim | split(':') | last }}"
+    tack_search_maintenance_password_hash: "{{ lookup('file', secret_directory ~ '/OPENSEARCH_MAINTENANCE_PASSWORD.hash') | trim | split(':') | last }}"
+    tack_search_health_password_hash: "{{ lookup('file', secret_directory ~ '/OPENSEARCH_HEALTH_PASSWORD.hash') | trim | split(':') | last }}"
+  tasks:
+    - name: Render the production user and role mapping templates
+      ansible.builtin.template:
+        src: "{{ repository_root }}/tack/{{ item.source }}"
+        dest: "{{ secret_directory }}/{{ item.destination }}"
+        mode: "0600"
+      loop:
+        - {source: opensearch-internal-users.yml.j2, destination: internal_users.yml}
+        - {source: opensearch-roles-mapping.yml.j2, destination: roles_mapping.yml}
+      no_log: true
+    - name: Copy the production role policy
+      ansible.builtin.copy:
+        src: "{{ repository_root }}/tack/opensearch-roles.yml"
+        dest: "{{ secret_directory }}/roles.yml"
+        mode: "0600"

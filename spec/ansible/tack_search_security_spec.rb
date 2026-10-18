@@ -129,7 +129,7 @@ RSpec.describe TackSearchSecurity do
   it 'writes each role from the installed role file and skips the file metadata' do
     roles = described_class.entries(TackSearchSecurity::ROLE_WRITE, 'tack_search_roles_read', File.read(TackSearchSecurity::ROLES_FILE))
 
-    expect(roles.map { |entry| entry.fetch('key') }).to eq(['tack_search'])
+    expect(roles.map { |entry| entry.fetch('key') }).to eq(%w[tack_runtime tack_maintenance tack_health])
     expect(roles.first.dig('value', 'reserved')).to be(true)
     expect(roles.first.dig('value', 'cluster_permissions')).to include(
       'cluster:monitor/state', 'cluster:admin/opensearch/ml/deploy_model_on_nodes', 'cluster:admin/opensearch/ml/stats/nodes'
@@ -142,14 +142,10 @@ RSpec.describe TackSearchSecurity do
 
     users = described_class.entries(TackSearchSecurity::USER_WRITE, 'tack_search_users_read', users_file)
 
-    expect(users).to eq(
-      [{
-        'key' => 'render-only-vault_tack_qa_search_username',
-        'value' => {
-          'hash' => 'render-only-vault_tack_qa_search_password_hash', 'reserved' => true,
-          'description' => 'The Tack application and the Tack operator commands use this user.'
-        }
-      }]
-    )
+    identities = users.to_h { |entry| [entry.fetch('key'), entry.fetch('value')] }
+    expect(identities.keys).to eq(%w[tack_runtime tack_maintenance tack_health render-only-vault_tack_qa_search_username])
+    expect(identities.fetch('tack_runtime')).to include('hash' => 'render-only-runtime-hash', 'reserved' => true)
+    expect(identities.fetch('tack_maintenance')).to include('hash' => 'render-only-maintenance-hash', 'reserved' => true)
+    expect(identities.fetch('tack_health')).to include('hash' => 'render-only-health-hash', 'reserved' => true)
   end
 end

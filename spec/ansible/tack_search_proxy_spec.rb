@@ -90,8 +90,7 @@ RSpec.describe TackSearchProxy do
 
       it 'checks readiness with an authenticated cluster-health request' do
         health_check = described_class.load_balancer(rendered).fetch('healthCheck')
-        prefix = expected.fetch(:prefix)
-        credentials = "render-only-#{prefix}_search_username:render-only-#{prefix}_search_password"
+        credentials = 'tack_health:render-only-health-password'
 
         expect(health_check.fetch('path')).to eq('/_cluster/health')
         expect(health_check.dig('headers', 'Authorization')).to eq("Basic #{[credentials].pack('m0')}")
