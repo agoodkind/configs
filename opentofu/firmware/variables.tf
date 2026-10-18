@@ -5,13 +5,14 @@ variable "poweredge_idrac_endpoint" {
 }
 
 variable "poweredge_idrac_user" {
-  description = "Existing iDRAC user that can configure the PowerEdge NIC."
+  description = "Ephemeral iDRAC user supplied by the configsctl credential adapter."
   type        = string
-  default     = "root"
+  sensitive   = true
+  ephemeral   = true
 }
 
-variable "vault_poweredge_idrac_password" {
-  description = "Existing iDRAC password supplied by configsctl or TF_VAR_vault_poweredge_idrac_password."
+variable "poweredge_idrac_password" {
+  description = "Ephemeral iDRAC password supplied by the configsctl credential adapter."
   type        = string
   sensitive   = true
   ephemeral   = true

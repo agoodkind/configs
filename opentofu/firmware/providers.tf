@@ -22,7 +22,7 @@ provider "restful" {
     http = {
       basic = {
         username = var.poweredge_idrac_user
-        password = var.vault_poweredge_idrac_password
+        password = "${var.poweredge_idrac_password}"
       }
     }
   }
@@ -33,7 +33,7 @@ provider "redfish" {
     poweredge = {
       endpoint     = var.poweredge_idrac_endpoint
       user         = var.poweredge_idrac_user
-      password     = var.vault_poweredge_idrac_password
+      password     = "${var.poweredge_idrac_password}"
       ssl_insecure = var.poweredge_idrac_insecure
     }
   }
