@@ -45,12 +45,14 @@ RSpec.describe 'Tack service credential provisioning' do
         expect(File.read(path).strip.match?(/\A[0-9a-f]{64}\z/)).to be(true), File.basename(path)
         expect(File.stat(path).mode & 0o777).to eq(0o600)
       end
-      before = passwords.to_h { |path| [path, fingerprint(path)] }
-      expect(before.values.uniq.length).to eq(password_names.length)
+      names = password_names + %w[OPENSEARCH_PASSWORD.hash OPENSEARCH_MAINTENANCE_PASSWORD.hash OPENSEARCH_HEALTH_PASSWORD.hash OPENSEARCH_CURSOR_KEY]
+      protected_files = names.map { |name| File.join(directory, name) }
+      before = protected_files.to_h { |path| [path, fingerprint(path)] }
+      expect(before.values.uniq.length).to eq(names.length)
       second = provision(repository, image, directory)
       expect(second.exit_status.success?).to be(true), second.output
       expect(second.output).to be_empty
-      expect(passwords.to_h { |path| [path, fingerprint(path)] }).to eq(before)
+      expect(protected_files.to_h { |path| [path, fingerprint(path)] }).to eq(before)
     end
   end
 

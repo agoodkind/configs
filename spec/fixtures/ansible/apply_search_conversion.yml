@@ -1,0 +1,38 @@
+---
+- ansible.builtin.import_playbook: render_service_users.yml
+
+- name: Apply the production security conversion tasks
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    engine: "{{ lookup('file', '/fixture/engine.json') | from_json }}"
+    tack_search_node_dir: /material/desired
+    tack_search_security_record_path: /material/security-applied
+    tack_search_member_url: "{{ engine.url }}"
+    tack_search_admin_dn: "{{ engine.admin_dn }}"
+    tack_search_ca: "{{ lookup('file', '/fixture/' ~ engine.ca_file) }}"
+    tack_search_admin_certificate: "{{ lookup('file', '/fixture/' ~ engine.admin_certificate_file) }}"
+    tack_search_admin_private_key: "{{ lookup('file', '/fixture/' ~ engine.admin_key_file) }}"
+    tack_search_security_ready_retries: 3
+    tack_search_security_ready_delay_seconds: 1
+  tasks:
+    - name: Read the installed user configuration checksum
+      ansible.builtin.stat:
+        path: /material/desired/internal_users.yml
+      register: tack_search_users_file
+    - name: Read the installed role configuration checksum
+      ansible.builtin.stat:
+        path: /material/desired/roles.yml
+      register: tack_search_roles_file
+    - name: Read the installed role mapping configuration checksum
+      ansible.builtin.stat:
+        path: /material/desired/roles_mapping.yml
+      register: tack_search_roles_mapping_file
+    - name: Record the production installed configuration checksums
+      ansible.builtin.set_fact:
+        tack_search_users_file: "{{ tack_search_users_file.stat }}"
+        tack_search_roles_file: "{{ tack_search_roles_file.stat }}"
+        tack_search_roles_mapping_file: "{{ tack_search_roles_mapping_file.stat }}"
+    - name: Run the production readiness and security update
+      ansible.builtin.include_tasks: /repo/ansible/playbooks/tasks/tack-search-security.yml
