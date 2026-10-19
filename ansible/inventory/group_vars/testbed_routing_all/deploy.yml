@@ -6,5 +6,9 @@ testbed_routing_home_route_tracker:
 
 testbed_routing_applied_record: /var/lib/routing-simulator/applied
 
+# The restarted gateway sends its End-of-RIB marker right after the router
+# marker. This bound equals mwan_bgp_session_graceful_restart_seconds.
+testbed_routing_graceful_restart_stalepath_seconds: 60
+
 testbed_routing_unreachable_metric: 65000
 testbed_routing_unreachable_rule_priority: 32800

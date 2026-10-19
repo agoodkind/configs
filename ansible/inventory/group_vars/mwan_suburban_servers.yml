@@ -160,6 +160,12 @@ mwan_routing_ipv6_routes: >-
   {{ testbed_routing_scenarios.values() | map(attribute='routes') | flatten
   | selectattr('node', 'equalto', 'mwan') | selectattr('family', 'equalto', 'ipv6') | list }}
 mwan_bgp_session_connect_retry_seconds: 5
+# RFC 4724 suggests a restart time at or below the 9-second hold time. The
+# restarted daemon connects only after the first IPv6 path verdict, and that
+# verdict waits for a probe cycle of check_interval 10 seconds. Sixty seconds
+# covers the daemon start and the first probe cycle with margin. A session
+# connects at the latest at the restart time minus the hold time.
+mwan_bgp_session_graceful_restart_seconds: 60
 
 # The daemon owns both links. The served configuration rejects a false IPv6
 # dhcp leaf on a daemon-owned link. Each IPv6 family omits that leaf.
@@ -697,11 +703,12 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.etheric_native_home.local.address }}"
         local_as: "{{ mwan_routing_sessions.etheric_native_home.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.etheric_native_home.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.etheric_native_home.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.etheric_native_home.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.etheric_native_home.hold_seconds }}"
         connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        graceful_restart: "{{ mwan_bgp_session_graceful_restart_seconds }}"
         route_metric: 8500
         import_prefixes: "{{ mwan_routing_sessions.etheric_native_home.policy.import_prefixes }}"
         export_prefixes: "{{ mwan_routing_sessions.etheric_native_home.policy.export_prefixes }}"
@@ -837,11 +844,12 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.tunnel_upstream_home.local.address }}"
         local_as: "{{ mwan_routing_sessions.tunnel_upstream_home.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.tunnel_upstream_home.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.tunnel_upstream_home.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.tunnel_upstream_home.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.tunnel_upstream_home.hold_seconds }}"
         connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        graceful_restart: "{{ mwan_bgp_session_graceful_restart_seconds }}"
         route_metric: 8600
         import_prefixes: "{{ mwan_routing_sessions.tunnel_upstream_home.policy.import_prefixes }}"
         export_prefixes: "{{ mwan_routing_sessions.tunnel_upstream_home.policy.export_prefixes }}"
@@ -893,11 +901,12 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.local.address }}"
         local_as: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.hold_seconds }}"
         connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        graceful_restart: "{{ mwan_bgp_session_graceful_restart_seconds }}"
         route_metric: 8700
         import_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.policy.import_prefixes }}"
         export_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.policy.export_prefixes }}"
@@ -949,11 +958,12 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.tunnel_vps_home_astound.local.address }}"
         local_as: "{{ mwan_routing_sessions.tunnel_vps_home_astound.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.tunnel_vps_home_astound.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.tunnel_vps_home_astound.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.tunnel_vps_home_astound.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.tunnel_vps_home_astound.hold_seconds }}"
         connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        graceful_restart: "{{ mwan_bgp_session_graceful_restart_seconds }}"
         route_metric: 8800
         import_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_astound.policy.import_prefixes }}"
         export_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_astound.policy.export_prefixes }}"
