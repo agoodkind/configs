@@ -93,7 +93,7 @@ variable "cloudflare_account_id" {
 variable "cloudflare_router_routes_enabled" {
   description = "Create the WireGuard client routes after the home-router connector reports healthy."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "cloudflare_owner_email" {
