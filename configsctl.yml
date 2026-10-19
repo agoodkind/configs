@@ -7,6 +7,26 @@ tofu:
   # `./configsctl tofu` exports a vault key <env_key_prefix><NAME> as the
   # environment variable <NAME>.
   env_key_prefix: vault_tofu_env_
+  credentials:
+    opentofu/firmware:
+      lock_host: poweredge
+      username_variable: poweredge_idrac_user
+      password_variable: poweredge_idrac_password
+      dell:
+        endpoint: https://[3d06:bad:b01:300::efb]
+        ca_file: opentofu/firmware/idrac-ca.pem
+        server_name: idrac-J9P5L44
+        rotator_user: tofu-rotator
+        rotator_password_key: vault_poweredge_idrac_rotator_password
+        account_id: "3"
+        username: tofu-firmware
+        read_paths:
+          - /redfish/v1/Systems/System.Embedded.1
+          - /redfish/v1/Chassis/System.Embedded.1/NetworkAdapters/NIC.Embedded.1
+          - /redfish/v1/Chassis/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.1-1-1/Oem/Dell/DellNetworkAttributes/NIC.Embedded.1-1-1
+          - /redfish/v1/Chassis/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.2-1-1/Oem/Dell/DellNetworkAttributes/NIC.Embedded.2-1-1
+          - /redfish/v1/Chassis/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.3-1-1/Oem/Dell/DellNetworkAttributes/NIC.Embedded.3-1-1
+          - /redfish/v1/Chassis/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.4-1-1/Oem/Dell/DellNetworkAttributes/NIC.Embedded.4-1-1
   # The deploy gate requires zero guest plan changes for hosts in `guest_hosts`.
   guest_module: module.base
   # Keys are workspace paths relative to the repository root.
@@ -17,6 +37,7 @@ tofu:
     opentofu:
       lock_free_types:
         - cloudflare_zero_trust_device_custom_profile
+        - cloudflare_zero_trust_tunnel_cloudflared
         - cloudflare_zero_trust_tunnel_cloudflared_route
       module_hosts:
         module.vault: vault
@@ -26,6 +47,9 @@ tofu:
           suburban: suburban
           poweredge: poweredge
           vault: vault
+    opentofu/firmware:
+      module_hosts:
+        module.poweredge: poweredge
     opentofu/guest:
       lock_free_types:
         - mwan_network_config
