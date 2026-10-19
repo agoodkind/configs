@@ -47,3 +47,14 @@ output "opnsense_suburban_vmid" {
   description = "VMID assigned to the suburban OPNsense VM"
   value       = module.suburban.opnsense_suburban_vmid
 }
+
+output "cloudflare_router_tunnel_id" {
+  description = "Cloudflare tunnel ID for the OPNsense connector."
+  value       = module.cloudflare.router_tunnel_id
+}
+
+output "cloudflare_router_tunnel_token" {
+  description = "Tunnel token for the OPNsense Cloudflared plugin."
+  value       = module.cloudflare.router_tunnel_token
+  sensitive   = true
+}

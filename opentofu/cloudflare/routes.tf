@@ -7,3 +7,36 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_route" "berylax_ipv4" {
   virtual_network_id = "8a034fb6-d06e-4c08-a567-7860e351635e"
   comment            = "Berylax LAN IPv4"
 }
+
+resource "cloudflare_zero_trust_tunnel_cloudflared" "router" {
+  account_id = var.account_id
+  name       = "home-router"
+  config_src = "cloudflare"
+}
+
+data "cloudflare_zero_trust_tunnel_cloudflared_token" "router" {
+  account_id = var.account_id
+  tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.router.id
+}
+
+resource "cloudflare_zero_trust_tunnel_cloudflared_route" "router_wireguard" {
+  provider = cloudflare.routes
+  for_each = var.router_routes_enabled ? {
+    "10.250.10.0/24"       = "Home WireGuard IPv4 clients"
+    "3d06:bad:b01:a::/64"  = "Home WireGuard IPv6 clients"
+    "3d06:bad:b01:10::/64" = "Home WireGuard legacy IPv6 clients"
+  } : {}
+
+  account_id         = var.account_id
+  network            = each.key
+  tunnel_id          = cloudflare_zero_trust_tunnel_cloudflared.router.id
+  virtual_network_id = "8a034fb6-d06e-4c08-a567-7860e351635e"
+  comment            = each.value
+
+  lifecycle {
+    precondition {
+      condition     = cloudflare_zero_trust_tunnel_cloudflared.router.status == "healthy"
+      error_message = "Start the home-router connector on OPNsense and confirm Cloudflare reports it healthy before enabling its routes."
+    }
+  }
+}

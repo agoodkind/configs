@@ -57,6 +57,8 @@ module "cloudflare" {
   account_id  = var.cloudflare_account_id
   owner_email = var.cloudflare_owner_email
 
+  router_routes_enabled = var.cloudflare_router_routes_enabled
+
   berylax_beacon_sockaddr = var.berylax_beacon_sockaddr
   berylax_beacon_sha256   = var.berylax_beacon_sha256
 
