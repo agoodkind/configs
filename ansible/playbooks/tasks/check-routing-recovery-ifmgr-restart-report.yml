@@ -1,13 +1,10 @@
 ---
-# A route source is missing from its first missing sample until its next
-# present sample. The gateway source is missing while it has fewer BGP default
-# routes than before the restart.
-- name: Measure the echo request gaps and the route absences
+- name: Measure the largest echo request gap in each direction
   ansible.builtin.set_fact:
-    routing_ifmgr_restart_report: "{{ routing_ifmgr_restart_measurement | from_json }}"
+    routing_ifmgr_restart_gaps: "{{ routing_ifmgr_restart_gap_measurement | from_json }}"
   vars:
-    routing_ifmgr_restart_measurement: >-
-      {%- set report = {'gaps': {}, 'absences': {}, 'gateway_baseline': 0} -%}
+    routing_ifmgr_restart_gap_measurement: >-
+      {%- set gaps = {} -%}
       {%- for capture in routing_ifmgr_restart_captures.results -%}
       {%- set gap = namespace(previous=0.0, largest=0.0) -%}
       {%- for line in capture.stdout.splitlines() if line.split(' ')[0] is match('^[0-9]+[.][0-9]+$') -%}
@@ -17,20 +14,41 @@
       {%- endif -%}
       {%- set gap.previous = at -%}
       {%- endfor -%}
-      {%- set _ = report.gaps.update({capture.item.item.direction: gap.largest | round(3)}) -%}
+      {%- set _ = gaps.update({capture.item.item.direction: gap.largest | round(3)}) -%}
       {%- endfor -%}
-      {%- set samples = routing_ifmgr_restart_samples.stdout.splitlines() | map('split', ' ') | list -%}
+      {{ gaps | to_json }}
+
+- name: Split the route samples into time, source, and value fields
+  ansible.builtin.set_fact:
+    routing_ifmgr_restart_sample_fields: "{{ routing_ifmgr_restart_samples.stdout.splitlines() | map('split', ' ') | list }}"
+
+- name: Count the gateway BGP default routes before the restart
+  ansible.builtin.set_fact:
+    routing_ifmgr_restart_gateway_baseline: "{{ routing_ifmgr_restart_baseline_measurement | from_json }}"
+  vars:
+    routing_ifmgr_restart_baseline_measurement: >-
       {%- set restart_at = routing_ifmgr_restart_before.stdout | float -%}
       {%- set baseline = namespace(count=0) -%}
-      {%- for sample in samples if sample[1] == 'gateway' and sample[0] | float < restart_at -%}
+      {%- for sample in routing_ifmgr_restart_sample_fields if sample[1] == 'gateway' and sample[0] | float < restart_at -%}
       {%- set baseline.count = [baseline.count, sample[2] | int] | max -%}
       {%- endfor -%}
-      {%- set _ = report.update({'gateway_baseline': baseline.count}) -%}
-      {%- for source in samples | map(attribute=1) | unique -%}
+      {{ baseline.count | to_json }}
+
+# A route source is missing from its first missing sample until its next
+# present sample. The gateway source is missing while it has fewer BGP default
+# routes than before the restart.
+- name: Measure the longest route absence for each source
+  ansible.builtin.set_fact:
+    routing_ifmgr_restart_absences: "{{ routing_ifmgr_restart_absence_measurement | from_json }}"
+  vars:
+    routing_ifmgr_restart_absence_measurement: >-
+      {%- set absences = {} -%}
+      {%- for source in routing_ifmgr_restart_sample_fields | map(attribute=1) | unique -%}
       {%- set absence = namespace(open=false, start=0.0, longest=0.0, missing=false) -%}
-      {%- for sample in samples if sample[1] == source -%}
+      {%- for sample in routing_ifmgr_restart_sample_fields if sample[1] == source -%}
       {%- set at = sample[0] | float -%}
-      {%- set missing = (sample[2] == 'absent') if source != 'gateway' else (sample[2] | int < baseline.count) -%}
+      {%- set missing = (sample[2] == 'absent') if source != 'gateway'
+        else (sample[2] | int < routing_ifmgr_restart_gateway_baseline) -%}
       {%- if missing and not absence.open -%}
       {%- set absence.open = true -%}
       {%- set absence.start = at -%}
@@ -43,9 +61,16 @@
       {%- set absence.open = false -%}
       {%- endif -%}
       {%- endfor -%}
-      {%- set _ = report.absences.update({source: {'missing': absence.missing, 'seconds': absence.longest | round(3)}}) -%}
+      {%- set _ = absences.update({source: {'missing': absence.missing, 'seconds': absence.longest | round(3)}}) -%}
       {%- endfor -%}
-      {{ report | to_json }}
+      {{ absences | to_json }}
+
+- name: Combine the gaps, gateway baseline, and absences into the restart report
+  ansible.builtin.set_fact:
+    routing_ifmgr_restart_report:
+      gaps: "{{ routing_ifmgr_restart_gaps }}"
+      absences: "{{ routing_ifmgr_restart_absences }}"
+      gateway_baseline: "{{ routing_ifmgr_restart_gateway_baseline }}"
 
 - name: Require the home prefix upstream and the gateway BGP default routes during the restart
   ansible.builtin.assert:
