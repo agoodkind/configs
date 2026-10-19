@@ -9,12 +9,16 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_route" "berylax_ipv4" {
 }
 
 resource "cloudflare_zero_trust_tunnel_cloudflared" "router" {
+  provider = cloudflare.tunnels
+
   account_id = var.account_id
   name       = "home-router"
   config_src = "cloudflare"
 }
 
 data "cloudflare_zero_trust_tunnel_cloudflared_token" "router" {
+  provider = cloudflare.tunnels
+
   account_id = var.account_id
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.router.id
 }

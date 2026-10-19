@@ -32,6 +32,11 @@ provider "cloudflare" {
 }
 
 provider "cloudflare" {
+  alias     = "tunnels"
+  api_token = var.vault_cloudflare_tunnel_api_token
+}
+
+provider "cloudflare" {
   alias     = "mwan_manage"
   api_token = sensitive(trimspace(file(pathexpand(var.cloudflare_mwan_manage_token_file))))
 }
