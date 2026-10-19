@@ -3,6 +3,12 @@ variable "account_id" {
   type        = string
 }
 
+variable "router_routes_enabled" {
+  description = "Create the WireGuard client routes after the home-router connector reports healthy."
+  type        = bool
+  default     = false
+}
+
 variable "owner_email" {
   description = "Identity the device profiles match on. Every profile applies only to this user."
   type        = string

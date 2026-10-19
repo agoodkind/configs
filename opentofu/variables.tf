@@ -84,6 +84,12 @@ variable "cloudflare_account_id" {
   default     = "ee7d7ca7d611ef8c2a07885e8362de0c"
 }
 
+variable "cloudflare_router_routes_enabled" {
+  description = "Create the WireGuard client routes after the home-router connector reports healthy."
+  type        = bool
+  default     = false
+}
+
 variable "cloudflare_owner_email" {
   description = "Identity the Cloudflare device profiles match on"
   type        = string
