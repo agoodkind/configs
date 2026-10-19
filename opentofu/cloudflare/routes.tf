@@ -19,13 +19,17 @@ data "cloudflare_zero_trust_tunnel_cloudflared_token" "router" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.router.id
 }
 
-resource "cloudflare_zero_trust_tunnel_cloudflared_route" "router_wireguard" {
-  provider = cloudflare.routes
-  for_each = var.router_routes_enabled ? {
+locals {
+  router_wireguard_routes = {
     "10.250.10.0/24"       = "Home WireGuard IPv4 clients"
     "3d06:bad:b01:a::/64"  = "Home WireGuard IPv6 clients"
     "3d06:bad:b01:10::/64" = "Home WireGuard legacy IPv6 clients"
-  } : {}
+  }
+}
+
+resource "cloudflare_zero_trust_tunnel_cloudflared_route" "router_wireguard" {
+  provider = cloudflare.routes
+  for_each = var.router_routes_enabled ? local.router_wireguard_routes : {}
 
   account_id         = var.account_id
   network            = each.key
@@ -33,10 +37,4 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_route" "router_wireguard" {
   virtual_network_id = "8a034fb6-d06e-4c08-a567-7860e351635e"
   comment            = each.value
 
-  lifecycle {
-    precondition {
-      condition     = cloudflare_zero_trust_tunnel_cloudflared.router.status == "healthy"
-      error_message = "Start the home-router connector on OPNsense and confirm Cloudflare reports it healthy before enabling its routes."
-    }
-  }
 }
