@@ -78,6 +78,12 @@ variable "vault_cloudflare_tunnel_routes_api_token" {
   sensitive   = true
 }
 
+variable "vault_cloudflare_tunnel_api_token" {
+  description = "Cloudflare API token that manages cloudflared tunnels in the homelab account."
+  type        = string
+  sensitive   = true
+}
+
 variable "cloudflare_account_id" {
   description = "Cloudflare account that owns the Zero Trust objects. Stable and not a secret."
   type        = string
