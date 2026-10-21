@@ -43,20 +43,7 @@ locals {
           "8021q",
         ]
       }
-      container_options = {
-        retained_roles = ["PVEAdmin"]
-        hostnic = {
-          vmids = [313, 314]
-          links = ["nic2", "nic1v0", "nic1v1"]
-        }
-        bpfdelegate = {
-          vmids   = [313]
-          cmds    = ["map_create", "prog_load", "btf_load"]
-          maps    = ["hash"]
-          progs   = ["socket_filter", "sched_cls"]
-          attachs = ["cgroup_inet_ingress", "tcx_ingress", "tcx_egress"]
-        }
-      }
+      container_options          = null
       grub_cmdline_linux_default = "systemd.show_status=1"
       network_interfaces_file    = "${path.module}/overlay/files/poweredge/interfaces"
     }
