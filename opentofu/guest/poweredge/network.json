@@ -166,7 +166,7 @@
       },
       "routes": {
         "internal-iface": "transit",
-        "internal-net-v4": "10.230.230.0/30"
+        "internal-net-v4": "10.230.230.0/23"
       },
       "firewall": {
         "pinned-set-v4-name": "etheric_pinned_v4",
