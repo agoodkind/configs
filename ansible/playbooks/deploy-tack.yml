@@ -22,6 +22,7 @@
 - name: Select the Tack deploy targets
   hosts: tack_all
   gather_facts: false
+  tags: [always]
   tasks:
     # A ledger bootstrap run skips node-prepare and node-wait on the data
     # guests, which removes the rolling wait that keeps quorum on a running
@@ -390,12 +391,17 @@
         - Restart the OpenSearch member
 
     - name: Provision isolated service credential files
-      ansible.builtin.include_tasks: tasks/tack-service-secrets.yml
+      ansible.builtin.include_tasks:
+        file: tasks/tack-service-secrets.yml
+        apply:
+          tags: [tack-credentials]
       when: tack_provision_owner | bool or tack_app_guest | bool or tack_cluster_role in ['data', 'search']
+      tags: [tack-credentials]
 
     - name: Run the OpenSearch member
       ansible.builtin.include_tasks: tasks/tack-search-node.yml
       when: tack_cluster_role == 'search'
+      tags: [tack-credentials]
 
     - name: Verify the new runtime identity before replacing client settings
       ansible.builtin.uri:
@@ -409,6 +415,7 @@
         - tack_provision_owner | bool or tack_app_guest | bool
         - tack_search_enabled | bool
       no_log: true
+      tags: [tack-credentials]
 
     # Ledger transport encryption (TACK-460). Issues this environment's
     # certificate authority and one certificate per ledger node, and places

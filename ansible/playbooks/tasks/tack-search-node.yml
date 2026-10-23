@@ -84,6 +84,7 @@
     mode: "0600"
   register: tack_search_users_file
   no_log: true
+  tags: [tack-credentials]
 
 - name: Install the OpenSearch role file
   ansible.builtin.copy:
@@ -93,6 +94,7 @@
     group: "{{ tack_search_container_uid }}"
     mode: "0600"
   register: tack_search_roles_file
+  tags: [tack-credentials]
 
 - name: Install the OpenSearch role mapping file
   ansible.builtin.template:
@@ -102,6 +104,7 @@
     group: "{{ tack_search_container_uid }}"
     mode: "0600"
   register: tack_search_roles_mapping_file
+  tags: [tack-credentials]
 
 - name: Create Tack install directory (search guest)
   ansible.builtin.file:
@@ -158,3 +161,4 @@
 
 - name: Apply the OpenSearch security files to the running member
   ansible.builtin.import_tasks: tack-search-security.yml
+  tags: [tack-credentials]
