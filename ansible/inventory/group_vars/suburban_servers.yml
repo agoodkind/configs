@@ -165,8 +165,9 @@ tack_search_proxy_members: "{{ tack_search_qa_members }}"
 tack_search_proxy_callers:
   - tack_qa_suburban
   - tack_app2_suburban
-tack_search_proxy_username: "{{ vault_tack_qa_search_username }}"
-tack_search_proxy_password: "{{ vault_tack_qa_search_password }}"
+tack_search_proxy_secret_source: "{{ service_mapping.tack_qa_suburban.hostname }}"
+tack_search_proxy_username: tack_health
+tack_search_proxy_password: "{{ tack_search_proxy_password_file.content | b64decode | trim }}"
 tack_search_proxy_ca: "{{ vault_tack_qa_search_ca }}"
 tack_search_proxy_certificate: "{{ vault_tack_qa_search_proxy_certificate }}"
 tack_search_proxy_private_key: "{{ vault_tack_qa_search_proxy_private_key }}"

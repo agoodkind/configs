@@ -37,6 +37,14 @@
     tack_search_outage_block_failed: false
     tack_search_outage_failed_task: ""
   tasks:
+    - name: Read the recovery health credential before stopping the member
+      ansible.builtin.slurp:
+        src: "{{ tack_secrets_dir }}/OPENSEARCH_HEALTH_PASSWORD"
+      delegate_to: "{{ tack_service_secret_source }}"
+      register: tack_search_outage_password
+      when: not ansible_check_mode
+      no_log: true
+
     - name: Run the OpenSearch outage
       block:
         - name: Stop the OpenSearch member
@@ -116,8 +124,8 @@
           ansible.builtin.uri:
             url: "{{ tack_search_member_url }}/_cluster/health"
             method: GET
-            url_username: "{{ tack_search_username }}"
-            url_password: "{{ tack_search_password }}"
+            url_username: "{{ tack_search_health_username }}"
+            url_password: "{{ tack_search_outage_password.content | b64decode | trim }}"
             force_basic_auth: true
             ca_path: "{{ tack_search_ca_path }}"
             timeout: "{{ tack_search_outage_health_request_timeout_seconds }}"
@@ -127,6 +135,7 @@
           retries: "{{ tack_search_outage_health_retries }}"
           delay: "{{ tack_search_outage_health_delay_seconds }}"
           no_log: true
+          when: not ansible_check_mode
       always:
         - name: Read the guest clock after the health check
           ansible.builtin.command:

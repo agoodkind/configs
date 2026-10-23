@@ -18,6 +18,76 @@ container_features: "nesting=1"
 
 tack_install_dir: /root/tack
 
+# The host stores secret sources outside shared container mounts.
+tack_secrets_dir: /var/lib/tack/secrets
+tack_service_secret_source: "{{ tack_ledger_ca_host }}"
+tack_search_runtime_username: tack_runtime
+tack_search_maintenance_username: tack_maintenance
+tack_search_health_username: tack_health
+# The old identity remains during the service transition.
+tack_search_keep_legacy_user: true
+tack_environment_credentials:
+  - {name: YUGABYTE_PASSWORD, adopt: true, encoding: hex}
+  - {name: AUDIT_WRITER_PASSWORD, adopt: true, encoding: hex}
+  - {name: AUDIT_READER_PASSWORD, adopt: true, encoding: hex}
+  - {name: AUDIT_REDACTOR_PASSWORD, adopt: true, encoding: hex}
+  - {name: AUDIT_OPERATOR_PASSWORD, adopt: true, encoding: hex}
+  - {name: TACK_APP_PASSWORD, adopt: true, encoding: hex}
+  - {name: TACK_MIGRATOR_PASSWORD, adopt: true, encoding: hex}
+  - {name: OPENSEARCH_PASSWORD, adopt: false, encoding: hex}
+  - {name: OPENSEARCH_MAINTENANCE_PASSWORD, adopt: false, encoding: hex}
+  - {name: OPENSEARCH_HEALTH_PASSWORD, adopt: false, encoding: hex}
+  - {name: CLICKHOUSE_PASSWORD, adopt: false, encoding: hex}
+  - {name: OPENSEARCH_CURSOR_KEY, adopt: true, encoding: base64}
+tack_search_password_names:
+  - OPENSEARCH_PASSWORD
+  - OPENSEARCH_MAINTENANCE_PASSWORD
+  - OPENSEARCH_HEALTH_PASSWORD
+tack_service_source_files:
+  - YUGABYTE_PASSWORD
+  - AUDIT_WRITER_PASSWORD
+  - AUDIT_READER_PASSWORD
+  - AUDIT_REDACTOR_PASSWORD
+  - AUDIT_OPERATOR_PASSWORD
+  - TACK_APP_PASSWORD
+  - TACK_MIGRATOR_PASSWORD
+  - OPENSEARCH_PASSWORD
+  - OPENSEARCH_MAINTENANCE_PASSWORD
+  - OPENSEARCH_HEALTH_PASSWORD
+  - OPENSEARCH_CURSOR_KEY
+  - CLICKHOUSE_PASSWORD
+  - OPENSEARCH_PASSWORD.hash
+  - OPENSEARCH_MAINTENANCE_PASSWORD.hash
+  - OPENSEARCH_HEALTH_PASSWORD.hash
+tack_service_app_files:
+  - TACK_APP_PASSWORD
+  - AUDIT_OPERATOR_PASSWORD
+  - OPENSEARCH_PASSWORD
+  - OPENSEARCH_CURSOR_KEY
+tack_service_data_files:
+  - YUGABYTE_PASSWORD
+  - TACK_MIGRATOR_PASSWORD
+  - AUDIT_OPERATOR_PASSWORD
+  - AUDIT_READER_PASSWORD
+tack_service_bootstrap_files:
+  - YUGABYTE_PASSWORD
+  - AUDIT_WRITER_PASSWORD
+  - AUDIT_READER_PASSWORD
+  - AUDIT_REDACTOR_PASSWORD
+  - AUDIT_OPERATOR_PASSWORD
+  - TACK_APP_PASSWORD
+  - TACK_MIGRATOR_PASSWORD
+tack_service_search_files:
+  - OPENSEARCH_PASSWORD.hash
+  - OPENSEARCH_MAINTENANCE_PASSWORD.hash
+  - OPENSEARCH_HEALTH_PASSWORD.hash
+tack_service_credential_files: >-
+  {{ tack_service_search_files if tack_cluster_role == 'search'
+     else tack_service_app_files if tack_app_guest | bool
+     else tack_service_source_files if tack_provision_owner | bool
+     else tack_service_bootstrap_files if tack_ledger_bootstrap | bool
+     else tack_service_data_files }}
+
 # deploy-tack passes these operator identity flags to every audited ops
 # command (TACK-328). The ops container has no git config. A human deploy
 # reads the control machine's git config; lookups run on the control machine,
@@ -141,18 +211,15 @@ tack_database_connect_timeout_seconds: 1
 # issued certificates for keeps connecting.
 tack_ledger_tls_enabled: false
 
-# Where the issued material lives on each guest. /etc/tack is already the
-# directory holding the audit signing key and the application login's
-# password, and the app and audit consumer already mount it read-only, so
-# the certificate authority reaches them at the same path it has on the
-# host. The engine reads its own node certificate from the same directory,
-# mounted into the ledger container.
+# Runtime services read the public authority certificate. Each ledger engine
+# also reads its own node certificate and key from this directory.
 tack_ledger_certs_dir: /etc/tack/ledger-certs
+tack_ledger_authority_dir: /var/lib/tack/ledger-authority
 tack_ledger_ca_cert_path: "{{ tack_ledger_certs_dir }}/ca.crt"
 
 # The deploy writes the OpenSearch certificate authority to this path on each
 # search guest, and on each application guest while search is on. The app
-# reads the file from its /etc/tack mount and verifies the search endpoint
+# reads the mounted certificate file and verifies the search endpoint
 # against it. A search node verifies its peers against the same file.
 tack_search_ca_path: /etc/tack/search-ca.crt
 
@@ -224,8 +291,8 @@ tack_ledger_superuser_database_url: >-
 
 tack_ledger_bootstrap_environment:
   YUGABYTE_USER: "{{ tack_yugabyte_user }}"
-  YUGABYTE_PASSWORD: "{{ tack_yugabyte_password }}"
-  TACK_OPS_DATABASE_URL: "{{ tack_ledger_superuser_database_url }}"
+  YUGABYTE_PASSWORD_FILE: /run/secrets/YUGABYTE_PASSWORD
+  TACK_OPS_DATABASE_URL_FILE: /run/secrets/TACK_OPS_DATABASE_URL
 
 tack_log_level: debug
 tack_log_max_backups: 0
