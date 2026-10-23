@@ -83,8 +83,9 @@ if [[ ! -e "${SECRET_DIR}/OPENSEARCH_CURSOR_KEY" ]]; then
 fi
 require_secret OPENSEARCH_CURSOR_KEY
 for name in "${SEARCH_NAMES[@]}"; do
-    if [[ ! -e "${SECRET_DIR}/${name}.hash" ]]; then
-        htpasswd -niBC 12 "$name" <"${SECRET_DIR}/${name}" >"${SECRET_DIR}/${name}.hash"
+    hash_file="${SECRET_DIR}/${name}.hash"
+    if [[ ! -e "$hash_file" ]] || ! htpasswd -vi "$hash_file" "$name" <"${SECRET_DIR}/${name}"; then
+        htpasswd -niBC 12 "$name" <"${SECRET_DIR}/${name}" >"$hash_file"
         CHANGED=true
     fi
     require_secret "${name}.hash"
