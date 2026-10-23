@@ -20,7 +20,6 @@ tack_install_dir: /root/tack
 
 # The host stores secret sources outside shared container mounts.
 tack_secrets_dir: /var/lib/tack/secrets
-tack_service_secret_source: "{{ tack_ledger_ca_host }}"
 tack_search_runtime_username: tack_runtime
 tack_search_maintenance_username: tack_maintenance
 tack_search_health_username: tack_health
