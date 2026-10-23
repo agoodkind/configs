@@ -751,6 +751,13 @@
         # that wait, and provision then failed with connection refused on a
         # recreated QA. fdb starts without a wait because a fresh fdb is not
         # healthy until provision configures it.
+        #
+        # The owner guest starts fdb only while it runs the legacy store node.
+        # Compose starts a service named on the command line even when the
+        # override parks it in the retired profile. On 2026-10-22 this task
+        # started fdb on the QA owner guest, and that process joined the QA
+        # cluster at a Docker bridge address that the application-only guest
+        # cannot dial (TACK-604).
         - name: Start fdb (first pass; tolerant of an unconfigured fdb on first boot)
           ansible.builtin.command:
             cmd: docker compose up -d fdb
@@ -758,6 +765,7 @@
           register: tack_compose_up_fdb
           changed_when: true
           failed_when: false
+          when: tack_store_legacy_node_present | bool
 
         - name: Start the other stores and wait until they are healthy
           ansible.builtin.command:
