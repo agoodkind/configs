@@ -206,6 +206,28 @@ services:
       - "{{ peer_name }}:{{ peer_address }}"
 {% endfor %}
 {% endif %}
+  # The audit queue commands read the ledger with the reader login, which
+  # dials the same node names as the audit consumer (TACK-610). The image and
+  # profile repeat the Tack base file. Compose rejects a service without an
+  # image, and a Tack ref older than the audit-ops service defines none.
+  audit-ops:
+    image: "ghcr.io/agoodkind/tack-server:${TACK_IMAGE_TAG:-latest}"
+    profiles: [ops]
+{% if tack_ledger_tls_enabled | bool %}
+    volumes:
+      - type: bind
+        source: {{ tack_ledger_ca_cert_path }}
+        target: /etc/tack/ledger-certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+{% endif %}
+{% if tack_ledger_consumers_repointed %}
+    extra_hosts:
+{% for peer_name, peer_address in tack_ledger_peers.items() %}
+      - "{{ peer_name }}:{{ peer_address }}"
+{% endfor %}
+{% endif %}
 {% endif %}
 {% if tack_provision_owner and tack_queue_external_listener_enabled | bool %}
   # The broker keeps its bridge listener for the services on this guest and
