@@ -53,6 +53,8 @@ lease_directory = "/var/lib/mwan"
 log_file = "/var/log/mwan-ifmgr.log"
 json_log_file = "/var/log/mwan-ifmgr.jsonl"
 
+[ifmgr.iface.transit]
+
 [ifmgr.modules.links]
 state_file = "/var/lib/mwan/owned-links.json"
 
