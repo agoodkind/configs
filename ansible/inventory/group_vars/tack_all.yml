@@ -462,6 +462,10 @@ tack_ledger_export_oncalendar: "*-*-* 03:17:00 UTC"
 tack_ledger_export_randomized_delay: 300
 tack_ledger_archive_interval: 15min
 
+tack_backup_retention_days: 14
+tack_backup_retention_oncalendar: "*-*-* 04:45:00 UTC"
+tack_backup_retention_randomized_delay: 300
+
 # Backup staleness alarm cadence (TACK-363). The check dates every backup
 # mechanism and exits nonzero once one is past its threshold. The acceptance
 # bound is that an alarm fires within its threshold plus 15 minutes, and the
