@@ -3,7 +3,7 @@ terraform {
     cloudflare = {
       source                = "cloudflare/cloudflare"
       version               = ">= 5.0.0"
-      configuration_aliases = [cloudflare.routes]
+      configuration_aliases = [cloudflare.routes, cloudflare.tunnels]
     }
   }
 }

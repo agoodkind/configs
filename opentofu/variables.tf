@@ -78,10 +78,22 @@ variable "vault_cloudflare_tunnel_routes_api_token" {
   sensitive   = true
 }
 
+variable "vault_cloudflare_tunnel_api_token" {
+  description = "Cloudflare API token that manages cloudflared tunnels in the homelab account."
+  type        = string
+  sensitive   = true
+}
+
 variable "cloudflare_account_id" {
   description = "Cloudflare account that owns the Zero Trust objects. Stable and not a secret."
   type        = string
   default     = "ee7d7ca7d611ef8c2a07885e8362de0c"
+}
+
+variable "cloudflare_router_routes_enabled" {
+  description = "Create the WireGuard client routes after the home-router connector reports healthy."
+  type        = bool
+  default     = true
 }
 
 variable "cloudflare_owner_email" {

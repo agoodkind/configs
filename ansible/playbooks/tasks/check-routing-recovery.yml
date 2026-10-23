@@ -50,6 +50,9 @@
       loop_control:
         loop_var: routing_restart
         label: "{{ routing_restart.node }}"
+
+    - name: Check the gateway daemon restart
+      ansible.builtin.import_tasks: check-routing-recovery-ifmgr-restart.yml
   always:
     - name: Remove the client stamp
       ansible.builtin.import_tasks: check-routing-client-unstamp.yml
@@ -72,7 +75,8 @@
       + (routing_recovery_tunnel_losses | map(attribute='tunnel') | map('regex_replace', '^', 'tunnel loss ') | list)
       + (routing_recovery_sibling_losses | map(attribute='failed_connection')
       | map('regex_replace', '^', 'sibling link loss ') | list)
-      + (routing_recovery_restarts | map(attribute='node') | map('regex_replace', '^', 'simulator restart ') | list) }}
+      + (routing_recovery_restarts | map(attribute='node') | map('regex_replace', '^', 'simulator restart ') | list)
+      + ((routing_recovery.gateway_sessions != []) | ternary(['gateway ifmgr restart'], [])) }}
 
 - name: Record the fault report
   ansible.builtin.set_fact:
