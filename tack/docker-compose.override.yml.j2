@@ -100,10 +100,12 @@ services:
 {% endif %}
 {% if tack_provision_owner and not tack_store_legacy_node_present %}
   # Retired on this guest: the store runs one process per data guest, and the
-  # inactive profile keeps every compose up from starting one here. The deploy
-  # removes the stopped containers. Retire only after `ops store exclude` has
-  # moved every copy of a key off this guest's process, which the migration
-  # plan does before this value flips. The stack file gives the backup agent
+  # inactive profile keeps every compose up that does not name the service
+  # from starting one here. The deploy names fdb only on a guest that runs a
+  # store node, and it removes the stopped containers here. Retire only after
+  # `ops store exclude` has moved every copy of a key off this guest's
+  # process, which the migration plan does before this value flips. The stack
+  # file gives the backup agent
   # the backup profile, which COMPOSE_PROFILES enables, and compose starts a
   # service when any one of its profiles is active. The override replaces the
   # list instead of adding to it.
