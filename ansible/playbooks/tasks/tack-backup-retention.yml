@@ -2,8 +2,9 @@
 - name: Validate the backup retention period
   ansible.builtin.assert:
     that:
-      - tack_backup_retention_days | int > 0
-    fail_msg: Backup retention requires a positive number of days.
+      - tack_backup_retention_days is integer
+      - tack_backup_retention_days > 0
+    fail_msg: Backup retention requires a positive whole number of days.
     quiet: true
 
 - name: Verify the backup retention command in the selected Tack image
