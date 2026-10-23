@@ -23,6 +23,10 @@ tack_secrets_dir: /var/lib/tack/secrets
 tack_search_runtime_username: tack_runtime
 tack_search_maintenance_username: tack_maintenance
 tack_search_health_username: tack_health
+# After a restart, the deploy checks OpenSearch with the runtime identity
+# up to 30 times, 10 seconds apart, until the endpoint returns HTTP 200.
+tack_search_runtime_identity_retries: 30
+tack_search_runtime_identity_delay_seconds: 10
 # The old identity remains during the service transition.
 tack_search_keep_legacy_user: true
 # A true value grants the tack_runtime OpenSearch role
