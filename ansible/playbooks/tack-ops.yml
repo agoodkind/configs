@@ -55,6 +55,7 @@
             'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
             'ops qa datagen search-load', 'ops qa datagen search-mixed',
             'ops backfill once-search-projections', 'ops backfill once-drop-killtest-schema',
+            'ops backfill once-fixed-definitions',
             'ops search provision', 'ops search reindex', 'ops search verify']
           - tack_ops_args is sequence and tack_ops_args is not string and tack_ops_args is not mapping
           - tack_ops_command != 'ops backfill once-drop-killtest-schema' or tack_ops_args == []
