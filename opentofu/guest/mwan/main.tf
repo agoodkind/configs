@@ -55,6 +55,12 @@ variable "excluded_units" {
   type = set(string)
 }
 
+variable "sysctl_values" {
+  description = "Guest sysctl values that systemd-sysctl applies after the configuration changes."
+  type        = map(string)
+  default     = {}
+}
+
 data "mwan_release" "this" {
   version = var.release_version
 }
@@ -526,6 +532,20 @@ resource "pveguest_file" "runtime_config" {
   group   = "root"
 }
 
+resource "pveguest_file" "sysctl" {
+  for_each = length(var.sysctl_values) > 0 ? toset(["gateway"]) : toset([])
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path = "/etc/sysctl.d/91-mwan.conf"
+  content = "${join("\n", [
+    for name in sort(keys(var.sysctl_values)) : "${name} = ${var.sysctl_values[name]}"
+  ])}\n"
+  mode = "0644"
+}
+
 resource "mwan_network_config" "gateway" {
   interfaces        = data.mwan_network.gateway.interfaces
   routes            = data.mwan_network.gateway.routes
@@ -568,6 +588,7 @@ resource "pveguest_systemd_unit" "role" {
     { for key, write_id in local.runtime_write_ids : key => write_id if local.owned_units[each.key] },
     contains(local.network_units, each.key) ? { network = pveguest_file.network.write_id } : {},
     contains(local.runtime_config_units, each.key) ? { runtime_config = pveguest_file.runtime_config.write_id } : {},
+    each.key == "systemd-sysctl.service" ? { for name, file in pveguest_file.sysctl : "sysctl-${name}" => file.write_id } : {},
   )
 
   depends_on = [

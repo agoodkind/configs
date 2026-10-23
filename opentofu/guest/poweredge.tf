@@ -193,6 +193,10 @@ module "poweredge_gateway_mwan" {
   release_version = local.poweredge_gateway_release_version
   excluded_units  = local.poweredge_gateway_excluded_units
 
+  sysctl_values = {
+    "net.ipv4.fwmark_reflect" = "1"
+  }
+
   network_json_path          = local.poweredge_gateway_network_json_path
   config_toml_path           = local.poweredge_gateway_config_toml_path
   container_options          = pveguest_container_options.poweredge_gateway.options
