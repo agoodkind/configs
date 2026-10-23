@@ -41,13 +41,14 @@ locals {
           "sch_ingress",
           "cls_bpf",
           "8021q",
+          "sit",
         ]
       }
       container_options = {
         retained_roles = ["PVEAdmin"]
         hostnic = {
           vmids = [313, 314]
-          links = ["nic2", "nic1v0", "nic1v1"]
+          links = ["nic0v1", "nic1v0", "nic1v1", "nic1v2", "nic2v0", "nic3v0"]
         }
         bpfdelegate = {
           vmids   = [313]

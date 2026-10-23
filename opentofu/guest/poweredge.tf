@@ -40,7 +40,7 @@ locals {
   poweredge_gateway_size = {
     cpu_cores    = 16
     memory_mb    = 2048
-    swap_mb      = 512
+    swap_mb      = 0
     disk_size_gb = 8
   }
 
