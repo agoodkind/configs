@@ -1,3 +1,6 @@
+{# The deploy renders this template into roles.yml on each search guest.
+   The YAML header comment below keeps its earlier wording because production
+   must render a byte-identical copy of its existing role file. #}
 ---
 # Ansible copies this file from tack/opensearch-roles.yml. A member reads it
 # into the security index on its first start. After the file changes, the
@@ -37,6 +40,11 @@ tack_runtime:
     # Under the least_load dispatch policy, a predict request reads ML node
     # statistics as the calling user to choose a node.
     - cluster:admin/opensearch/ml/stats/nodes
+{# The QA data generator command ops qa datagen search-mixed reads node
+   statistics with the runtime identity. Only QA enables this permission. #}
+{% if tack_search_runtime_node_stats_enabled | bool %}
+    - cluster:monitor/nodes/stats
+{% endif %}
   index_permissions:
     # node-pages is the public alias, and each physical index matches
     # node-pages-*.

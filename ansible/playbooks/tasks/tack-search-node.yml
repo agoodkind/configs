@@ -87,8 +87,8 @@
   tags: [tack-credentials]
 
 - name: Install the OpenSearch role file
-  ansible.builtin.copy:
-    src: "{{ repo_root }}/tack/opensearch-roles.yml"
+  ansible.builtin.template:
+    src: "{{ repo_root }}/tack/opensearch-roles.yml.j2"
     dest: "{{ tack_search_node_dir }}/roles.yml"
     owner: "{{ tack_search_container_uid }}"
     group: "{{ tack_search_container_uid }}"

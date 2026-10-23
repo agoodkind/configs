@@ -131,6 +131,9 @@ tack_search_routing_shards: 8
 tack_search_replicas: 0
 tack_search_public_enabled: true
 tack_search_model_repair_enabled: true
+# QA search capacity runs (TACK-574 and TACK-575) record OpenSearch node CPU,
+# memory, JVM heap, and disk values with the runtime identity.
+tack_search_runtime_node_stats_enabled: true
 
 # QA runs a second application process on tack_app2_suburban for the search
 # two-process continuation check (TACK-544). That app publishes audit events
