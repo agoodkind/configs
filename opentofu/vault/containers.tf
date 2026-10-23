@@ -236,7 +236,7 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
   # the slow 870 EVO directory storage rather than the P310 thin pool (TACK-495).
   disk {
     datastore_id = "storage"
-    size         = 100
+    size         = 200
   }
 
   memory {
