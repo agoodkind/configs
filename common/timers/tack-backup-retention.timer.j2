@@ -1,0 +1,10 @@
+[Unit]
+Description=Apply Tack backup retention daily
+
+[Timer]
+OnCalendar={{ tack_backup_retention_oncalendar }}
+RandomizedDelaySec={{ tack_backup_retention_randomized_delay }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
