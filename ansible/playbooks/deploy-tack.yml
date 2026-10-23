@@ -411,6 +411,10 @@
         force_basic_auth: true
         ca_path: "{{ tack_search_ca_path }}"
         status_code: 200
+      register: tack_search_runtime_identity
+      until: tack_search_runtime_identity.status == 200
+      retries: "{{ tack_search_runtime_identity_retries }}"
+      delay: "{{ tack_search_runtime_identity_delay_seconds }}"
       when:
         - tack_provision_owner | bool or tack_app_guest | bool
         - tack_search_enabled | bool
