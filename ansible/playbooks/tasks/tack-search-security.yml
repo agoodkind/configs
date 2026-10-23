@@ -187,6 +187,17 @@
             status_code: [200, 404]
           when: not tack_search_keep_legacy_user | bool
           no_log: true
+
+        - name: Remove the legacy tack_search role after client migration
+          ansible.builtin.uri:
+            url: "{{ tack_search_member_url }}/_plugins/_security/api/roles/tack_search"
+            method: DELETE
+            ca_path: "{{ tack_search_admin_ca_file }}"
+            client_cert: "{{ tack_search_admin_certificate_file }}"
+            client_key: "{{ tack_search_admin_key_file }}"
+            status_code: [200, 404]
+          when: not tack_search_keep_legacy_user | bool
+          no_log: true
       always:
         - name: Remove the admin credential directory from the deploy host
           ansible.builtin.file:
