@@ -100,7 +100,6 @@
             "protocol": "6in4",
             "underlay": "etheric",
             "remote-address": "72.52.104.74",
-            "local-address": "135.84.144.46",
             "ttl": 64
           }
         },
