@@ -23,6 +23,9 @@
           "goodkind-mwan-steering:route-metric": 10,
           "goodkind-mwan-steering:delegation": {
             "hint": "::/56",
+            "duid-type": "vendor",
+            "duid": "00:02:00:00:ab:11:25:f7:83:0c:f9:8f:ef:35",
+            "iaid": 1346249195,
             "without-ra": "solicit",
             "use-delegated-prefix": false
           },
