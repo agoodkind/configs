@@ -89,6 +89,9 @@ tack_ledger_node_addresses:
 # authority. The owner guest issues and holds that authority.
 tack_ledger_tls_enabled: true
 tack_ledger_ca_host: "{{ service_mapping.tack_qa_suburban.hostname }}"
+# ./configsctl deploy deploy-tack reads this value without Jinja templating
+# and locks this host. Use a literal inventory host name.
+tack_service_secret_source: tack-qa.suburban.goodkind.io
 
 # Phase 4 QA migration (TACK-408). A data guest with no cluster file receives a
 # copy of the live one during the deploy. The deploy reads that copy from the
