@@ -1,5 +1,19 @@
 # `./configsctl tofu` sets each variable named vault_* from the Ansible vault key
 # with the same name.
+variable "vault_cloudflare_api_token" {
+  description = "Cloudflare DNS API token supplied by the Ansible vault."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "vault_cloudflare_silver_flare_dns_api_token" {
+  description = "Cloudflare DNS API token for silver-flare.com supplied by the Ansible vault."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
 variable "vault_proxmox_token_secret" {
   description = "Secret of the Proxmox API token for the production vault host"
   type        = string
