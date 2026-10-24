@@ -24,21 +24,22 @@
 #     --extra-var tack_audit_consumer_digest=<CI index digest of tack-audit-consumer>
 #
 # ops backfill once-node-integrity requires --output=json and exactly one
-# --request=<path> or --manifest=<path> under /var/lib/tack/repair/. The file
-# name permits letters, digits, dots, underscores, and hyphens without a
-# leading dot. tack_node_integrity_input gives the operator machine input
-# path; tack_node_integrity_output gives the dry run output path on that
-# machine and must equal its resolved path. Before the dry run, the playbook
-# creates the guest directory as root:root 0700 and copies the input to the
-# argument path as root:root 0600. Both tasks run in check mode; the copy
-# hides arguments and diff. Both runs use LOG_DISABLE_STDOUT=true and no_log.
-# The playbook writes dry run stdout to the operator output path as 0600,
-# also in check mode, with hidden arguments and diff. It writes execute stdout
-# to that path plus .execute as 0600 before failing on a nonzero exit status.
-# The execute debug task skips this command. The playbook prints only each
-# file's byte count and SHA-256 digest. Failure reports the exit status and
-# file path. The app service mounts /var/lib/tack/repair only in a Tack
-# release that contains Tack PR 391.
+# --request=<path> or --manifest=<path> under /var/lib/tack/repair/. Filenames
+# allow letters, digits, dots, underscores, and hyphens and cannot start with
+# a dot. tack_node_integrity_input sets the operator machine input path.
+# tack_node_integrity_output sets its dry run output path and must equal its
+# resolved path. Before the dry run, the playbook creates the guest directory
+# as root:root 0700 and copies input to the argument path as root:root 0600.
+# Both tasks run in check mode; the copy hides arguments and diff. Both runs
+# use LOG_DISABLE_STDOUT=true and no_log. The playbook writes dry run stdout to
+# tack_node_integrity_output and execute stdout to that path plus .execute.
+# Both files use 0600 on the operator machine, even in check mode; writes hide
+# arguments and diff. Each run fails in its own task on nonzero status.
+# The block's always section writes execute stdout before failure ends the run.
+# no_log hides the failed result. The execute debug task skips this command.
+# Capture prints file paths, byte counts, SHA-256 digests, and run exit status.
+# The app service mounts /var/lib/tack/repair only in a release with Tack
+# PR 391.
 #
 # The playbook runs ops deploy verify before the requested command.
 # Verification rejects image digests that differ from the supplied values.
@@ -287,38 +288,45 @@
         tack_node_integrity_capture_path: "{{ tack_node_integrity_output }}"
       when: *tack_ops_node_integrity
 
-    - name: Run the Tack ops command with --execute
-      ansible.builtin.command:
-        cmd: >-
-          docker compose
-          {{ '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.search-projections.yml'
-             if tack_ops_command == 'ops backfill once-search-projections'
-             else '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml'
-             if tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
-                                     'ops audit dlq replay', 'ops audit consumer-offsets'] else '' }}
-          {{ '-f docker-compose.audit-redactor.yml'
-             if tack_ops_command == 'ops qa datagen seed'
-             and ('--redact-audit-pii' in tack_ops_args or '--redact-audit-pii=true' in tack_ops_args) else '' }}
-          run --rm
-          {{ '-e DATABASE_URL_FILE' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
-          {{ '-e LOG_DISABLE_STDOUT=true' if tack_ops_command == 'ops backfill once-node-integrity' else '' }}
-          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard', 'audit query',
-                                                'ops search provision', 'ops search reindex', 'ops search verify',
-                                                'ops backfill once-drop-killtest-schema'] else 'app' }}
-          {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
-          {{ tack_ops_identity_flags }} --execute
-        chdir: "{{ tack_install_dir }}"
-      environment: *tack_ops_superuser_environment
-      # For ops backfill once-node-integrity, no_log hides output and
-      # LOG_DISABLE_STDOUT=true keeps log lines out of captured stdout.
-      # The execute task does not fail on a nonzero exit status for this command.
-      # The capture file writes stdout before failing the run for that status.
-      no_log: "{{ tack_ops_command == 'ops backfill once-node-integrity' }}"
-      register: tack_ops_execute_run
-      changed_when: true
-      failed_when: >-
-        tack_ops_execute_run.rc != 0 and tack_ops_command != 'ops backfill once-node-integrity'
-      when: tack_ops_execute | bool
+    # The always section writes stdout from a failed node integrity execute run
+    # before the execute task's failure ends the run.
+    - name: Run the Tack ops command with --execute and capture node integrity output
+      block:
+        - name: Run the Tack ops command with --execute
+          ansible.builtin.command:
+            cmd: >-
+              docker compose
+              {{ '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.search-projections.yml'
+                 if tack_ops_command == 'ops backfill once-search-projections'
+                 else '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml'
+                 if tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
+                                         'ops audit dlq replay', 'ops audit consumer-offsets'] else '' }}
+              {{ '-f docker-compose.audit-redactor.yml'
+                 if tack_ops_command == 'ops qa datagen seed'
+                 and ('--redact-audit-pii' in tack_ops_args or '--redact-audit-pii=true' in tack_ops_args) else '' }}
+              run --rm
+              {{ '-e DATABASE_URL_FILE' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
+              {{ '-e LOG_DISABLE_STDOUT=true' if tack_ops_command == 'ops backfill once-node-integrity' else '' }}
+              {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard', 'audit query',
+                                                    'ops search provision', 'ops search reindex', 'ops search verify',
+                                                    'ops backfill once-drop-killtest-schema'] else 'app' }}
+              {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
+              {{ tack_ops_identity_flags }} --execute
+            chdir: "{{ tack_install_dir }}"
+          environment: *tack_ops_superuser_environment
+          no_log: "{{ tack_ops_command == 'ops backfill once-node-integrity' }}"
+          register: tack_ops_execute_run
+          changed_when: true
+          when: tack_ops_execute | bool
+      always:
+        - name: Capture the node integrity execute stdout on the operator machine
+          ansible.builtin.include_tasks: tasks/tack-ops-node-integrity-capture.yml
+          vars:
+            tack_node_integrity_capture_run: "{{ tack_ops_execute_run }}"
+            tack_node_integrity_capture_path: "{{ tack_node_integrity_output }}.execute"
+          when:
+            - tack_ops_execute_run is not skipped
+            - *tack_ops_node_integrity
 
     - name: Show the output of the --execute run
       ansible.builtin.debug:
@@ -326,12 +334,3 @@
       when:
         - tack_ops_execute_run is not skipped
         - tack_ops_command != 'ops backfill once-node-integrity'
-
-    - name: Capture the node integrity execute stdout on the operator machine
-      ansible.builtin.include_tasks: tasks/tack-ops-node-integrity-capture.yml
-      vars:
-        tack_node_integrity_capture_run: "{{ tack_ops_execute_run }}"
-        tack_node_integrity_capture_path: "{{ tack_node_integrity_output }}.execute"
-      when:
-        - tack_ops_execute | bool
-        - *tack_ops_node_integrity

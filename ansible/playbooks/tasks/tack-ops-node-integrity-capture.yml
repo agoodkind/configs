@@ -3,8 +3,8 @@
 # The including task passes the registered run result and destination path.
 # This file writes stdout as 0600 on the operator machine, even in check mode,
 # and hides arguments and diff. It reads and prints the file's byte count and
-# SHA-256 digest, then fails if the run exited nonzero. A dry run with a
-# nonzero exit status fails in its own task before this file runs.
+# SHA-256 digest with the run's exit status. Each run fails in its own task on
+# nonzero status; a failed dry run prevents this file from running.
 - name: Write the node integrity dry run or execute stdout to the operator output file
   ansible.builtin.copy:
     content: "{{ tack_node_integrity_capture_run.stdout }}"
@@ -30,12 +30,4 @@
       The output file {{ tack_node_integrity_capture_path }} contains
       {{ tack_node_integrity_capture.stat.size }} bytes with SHA-256
       {{ tack_node_integrity_capture.stat.checksum }}.
-
-- name: Check the node integrity run exit status after writing stdout
-  ansible.builtin.assert:
-    that:
-      - tack_node_integrity_capture_run.rc == 0
-    fail_msg: >-
-      The node integrity command exited with status {{ tack_node_integrity_capture_run.rc }}.
-      The file {{ tack_node_integrity_capture_path }} contains the stdout of the run.
-    quiet: true
+      The run exited with status {{ tack_node_integrity_capture_run.rc }}.
