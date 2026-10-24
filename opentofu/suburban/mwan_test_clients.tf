@@ -47,7 +47,7 @@ resource "proxmox_virtual_environment_container" "mwan_test_client_suburban" {
   }
 
   memory {
-    dedicated = 256
+    dedicated = 512
   }
 
   cpu {
