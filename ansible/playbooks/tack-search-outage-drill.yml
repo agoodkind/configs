@@ -30,8 +30,13 @@
     tack_search_outage_health_request_timeout_seconds: 5
     tack_search_outage_healthy_statuses: [green, yellow]
     tack_search_outage_container: tack-opensearch-1
-    tack_search_outage_exit_retries: 30
     tack_search_outage_exit_delay_seconds: 2
+    tack_search_outage_kill_exit_margin_seconds: 60
+    tack_search_outage_stop_timeout: >-
+      {{ (tack_search_outage_container_config.stdout | from_json)[0].Config.StopTimeout }}
+    tack_search_outage_exit_retries: >-
+      {{ ((tack_search_outage_stop_timeout | int + tack_search_outage_kill_exit_margin_seconds)
+          / tack_search_outage_exit_delay_seconds) | round(0, 'ceil') | int }}
     tack_search_outage_kill_exit_code: 137
     tack_search_outage_exit_code: "{{ (tack_search_outage_container_state.stdout | from_json)[0].State.ExitCode }}"
     tack_search_outage_block_failed: false
@@ -44,6 +49,32 @@
       register: tack_search_outage_password
       when: not ansible_check_mode
       no_log: true
+
+    # The exit wait below lasts the container stop timeout plus a margin because Docker can keep
+    # stopping the container after docker compose stop fails. Starting the member before the
+    # container exits leaves it stopped.
+    - name: Read the OpenSearch container stop timeout before stopping the member
+      ansible.builtin.command:
+        argv:
+          - docker
+          - container
+          - inspect
+          - "{{ tack_search_outage_container }}"
+      register: tack_search_outage_container_config
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Refuse an outage when the OpenSearch container has no stop timeout
+      ansible.builtin.assert:
+        that:
+          - tack_search_outage_stop_timeout | string is match('[0-9]+\Z')
+        fail_msg: >-
+          The playbook refuses the outage because container {{ tack_search_outage_container }}
+          on {{ inventory_hostname }} does not have a whole-number stop timeout in seconds.
+          It read Config.StopTimeout={{ tack_search_outage_stop_timeout }}.
+          The Tack opensearch service must set stop_grace_period.
+        quiet: true
+      when: not ansible_check_mode
 
     - name: Run the OpenSearch outage
       block:
