@@ -1,5 +1,4 @@
 ---
-# Both node integrity runs use LOG_DISABLE_STDOUT=true and no_log.
 # The including task passes the registered run result and destination path.
 # This file writes stdout as 0600 on the operator machine, even in check mode,
 # and hides arguments and diff. It reads and prints the file's byte count and
