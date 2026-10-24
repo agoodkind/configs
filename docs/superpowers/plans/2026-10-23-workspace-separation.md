@@ -75,6 +75,7 @@
 - [x] Write the complete set with native backend locks. Compare actual state after each write; retain the pause after failures or uncertain results.
 - [x] Resume or restore the complete set only after verifying expected migration-owned state. Do not overwrite unrelated writes or force unlock active owners.
 - [x] Interrupt real local transfers at write boundaries and prove recovery, identity preservation, and synthetic-secret exclusion.
+- [ ] Compare original and prepared native plans with the reviewed ownership mapping. Preserve identical pending actions and reject additional, missing, or changed actions before transfer and during recovery.
 - [ ] Run required gates, obtain independent review, and commit.
 
 ## Task 5: Declare the complete source split
@@ -86,7 +87,8 @@
 - [ ] Freeze the actual source baseline after the PowerEdge functional work completes. Inventory all states through supported tooling without displaying attributes.
 - [x] Assign every existing managed resource once under the approved application, host, and shared-service rules. Separate independently deployed simulator scenarios.
 - [x] Declare explicit nonsecret prerequisite inputs; application deployment must not read another root's full state or invoke its plan.
-- [ ] Validate backend-key uniqueness and field ownership. Compare prepared plans with the unchanged source snapshot.
+- [x] Validate backend-key uniqueness and field ownership.
+- [ ] Compare prepared plans with the unchanged source snapshot.
 - [ ] Review and commit the complete cutover source. Privately assemble the complete manifest against that immutable commit before transferring state. Merge the source cutover during the coordinated write pause; do not migrate a subset.
 
 ## Task 6: Execute one coordinated migration
