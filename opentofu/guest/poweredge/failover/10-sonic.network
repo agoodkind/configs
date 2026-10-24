@@ -2,7 +2,7 @@
 Name=eth0
 
 [Network]
-DHCP=ipv4
+DHCP=yes
 DHCPPrefixDelegation=yes
 IPv6AcceptRA=yes
 IPv4Forwarding=yes
