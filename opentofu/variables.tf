@@ -127,7 +127,7 @@ variable "poweredge_beacon" {
     sha256       = string
   })
   default = {
-    tls_sockaddr = "10.230.255.254:443"
-    sha256       = "9663ea8d899c2b5e46cba1f46b0f6cb6f97b056ba627123f78140c0794803ba2"
+    tls_sockaddr = "10.230.255.253:443"
+    sha256       = "24d5ca5094d5fb28ae2b340d107e3c2f26f12631c81d30b5f6e81976292ad70d"
   }
 }
