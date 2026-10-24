@@ -22,18 +22,13 @@ debug = false
 enabled = true
 use_wanconfig = true
 asn = 4200000001
-router_id = "10.230.230.2"
-next_hop_v6 = "3d06:bad:b01:3f0::2"
+router_id = "10.230.230.1"
+next_hop_v6 = "fd06:fab::1"
 keepalive_seconds = 10
 hold_seconds = 30
 listen_port = 179
-learned_route_iface = "mwanbr"
-
-[[bgp.neighbors]]
-address = "10.230.230.1"
-
-[[bgp.neighbors_v6]]
-address = "3d06:bad:b01:3f0::1"
+learned_route_iface = "transit"
+dynamic_neighbors = ["10.230.230.0/29", "fd06:fab::/64"]
 
 [bgp.announce]
 ipv4 = ["0.0.0.0/0"]
@@ -58,12 +53,7 @@ lease_directory = "/var/lib/mwan"
 log_file = "/var/log/mwan-ifmgr.log"
 json_log_file = "/var/log/mwan-ifmgr.jsonl"
 
-[ifmgr.iface.wan]
-name = "wan"
-dhcp_v4 = false
-ra_solicit = false
-dhcp_initial_backoff = "5s"
-dhcp_max_backoff = "5m"
+[ifmgr.iface.transit]
 
 [ifmgr.modules.links]
 state_file = "/var/lib/mwan/owned-links.json"

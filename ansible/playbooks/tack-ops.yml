@@ -4,7 +4,7 @@
 # On a QA guest, the playbook accepts every reviewed command. On production,
 # the playbook accepts only the owner guest, the one member of the inventory
 # group tack_servers. On that guest, the playbook accepts only ops deploy
-# verify, ops backfill once-search-projections, ops backfill
+# verify, audit query, ops backfill once-search-projections, ops backfill
 # once-fixed-definitions, ops backfill once-node-integrity, ops search
 # provision, ops search reindex, and ops search verify. The QA reset runs its
 # hand-run ops commands only through this playbook. Each row that those
@@ -96,7 +96,7 @@
           - >-
             ansible_play_hosts_all | intersect(groups['tack_prod_all']) | list == []
             or (ansible_play_hosts_all | difference(groups['tack_servers']) | list == []
-                and tack_ops_command in ['ops deploy verify',
+                and tack_ops_command in ['ops deploy verify', 'audit query',
                                          'ops backfill once-search-projections',
                                          'ops backfill once-fixed-definitions',
                                          'ops backfill once-node-integrity',
@@ -107,7 +107,7 @@
           tack-ops runs one reviewed Tack ops command on exactly one guest. On
           a QA guest, the command is any reviewed command. On production, the
           guest is the owner guest in the inventory group tack_servers, and the
-          command is ops deploy verify, ops backfill once-search-projections,
+          command is ops deploy verify, audit query, ops backfill once-search-projections,
           ops backfill once-fixed-definitions, ops backfill once-node-integrity,
           ops search provision, ops search reindex, or ops search verify.
           ops qa datagen repair runs only on QA guests. One run never includes
@@ -240,56 +240,61 @@
       ansible.builtin.include_tasks: tasks/tack-ops-node-integrity-stage.yml
       when: *tack_ops_node_integrity
 
-    - name: Print the dry run of the Tack ops command
-      ansible.builtin.command:
-        cmd: >-
-          docker compose
-          {{ '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.search-projections.yml'
-             if tack_ops_command == 'ops backfill once-search-projections'
-             else '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml'
-             if tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
-                                     'ops audit dlq replay', 'ops audit consumer-offsets'] else '' }}
-          {{ '-f docker-compose.audit-redactor.yml'
-             if tack_ops_command == 'ops qa datagen seed'
-             and ('--redact-audit-pii' in tack_ops_args or '--redact-audit-pii=true' in tack_ops_args) else '' }}
-          run --rm
-          {{ '-e DATABASE_URL_FILE' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
-          {{ '-e LOG_DISABLE_STDOUT=true' if tack_ops_command == 'ops backfill once-node-integrity' else '' }}
-          {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard', 'audit query',
-                                                'ops search provision', 'ops search reindex', 'ops search verify',
-                                                'ops backfill once-drop-killtest-schema'] else 'app' }}
-          {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
-          {{ tack_ops_identity_flags }}
-        chdir: "{{ tack_install_dir }}"
-        # This option keeps the trailing newline in node integrity stdout.
-        # The execute task sets the same option.
-        strip_empty_ends: "{{ tack_ops_command != 'ops backfill once-node-integrity' }}"
-      # The node integrity dry run prints complete stored records. This task hides
-      # that command's output. LOG_DISABLE_STDOUT=true keeps log lines out of the
-      # captured output.
-      no_log: "{{ tack_ops_command == 'ops backfill once-node-integrity' }}"
-      # The command needs the engine superuser login to drop killtest.
-      # Remove this entry and the spec constants and examples when removing
-      # ops backfill once-drop-killtest-schema (TACK-560;
-      # command removal day 2026-12-06).
-      environment: &tack_ops_superuser_environment >-
-        {{ {'DATABASE_URL_FILE': '/run/secrets/TACK_LEDGER_SUPERUSER_DATABASE_URL'}
-           if tack_ops_command == 'ops backfill once-drop-killtest-schema' else {} }}
-      register: tack_ops_dry_run
-      changed_when: false
-      check_mode: false
+    # The block runs the Tack ops dry run. Its always section writes node
+    # integrity stdout and stderr to the operator output files before a failed
+    # dry run ends the play.
+    - name: Run the dry run of the Tack ops command and capture node integrity output
+      block:
+        - name: Print the dry run of the Tack ops command
+          ansible.builtin.command:
+            cmd: >-
+              docker compose
+              {{ '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.search-projections.yml'
+                 if tack_ops_command == 'ops backfill once-search-projections'
+                 else '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml'
+                 if tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
+                                         'ops audit dlq replay', 'ops audit consumer-offsets'] else '' }}
+              {{ '-f docker-compose.audit-redactor.yml'
+                 if tack_ops_command == 'ops qa datagen seed'
+                 and ('--redact-audit-pii' in tack_ops_args or '--redact-audit-pii=true' in tack_ops_args) else '' }}
+              run --rm
+              {{ '-e DATABASE_URL_FILE' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
+              {{ '-e LOG_DISABLE_STDOUT=true' if tack_ops_command == 'ops backfill once-node-integrity' else '' }}
+              {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard', 'audit query',
+                                                    'ops search provision', 'ops search reindex', 'ops search verify',
+                                                    'ops backfill once-drop-killtest-schema'] else 'app' }}
+              {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
+              {{ tack_ops_identity_flags }}
+            chdir: "{{ tack_install_dir }}"
+            # This option keeps the trailing newline in node integrity stdout.
+            # The execute task sets the same option.
+            strip_empty_ends: "{{ tack_ops_command != 'ops backfill once-node-integrity' }}"
+          # The node integrity dry run prints complete stored records. This task hides
+          # that command's output. LOG_DISABLE_STDOUT=true keeps log lines out of the
+          # captured output.
+          no_log: "{{ tack_ops_command == 'ops backfill once-node-integrity' }}"
+          # The command needs the engine superuser login to drop killtest.
+          # Remove this entry and the spec constants and examples when removing
+          # ops backfill once-drop-killtest-schema (TACK-560;
+          # command removal day 2026-12-06).
+          environment: &tack_ops_superuser_environment >-
+            {{ {'DATABASE_URL_FILE': '/run/secrets/TACK_LEDGER_SUPERUSER_DATABASE_URL'}
+               if tack_ops_command == 'ops backfill once-drop-killtest-schema' else {} }}
+          register: tack_ops_dry_run
+          changed_when: false
+          check_mode: false
+      always:
+        - name: Capture the node integrity dry run output on the operator machine
+          ansible.builtin.include_tasks: tasks/tack-ops-node-integrity-capture.yml
+          vars:
+            tack_node_integrity_capture_run: "{{ tack_ops_dry_run }}"
+            tack_node_integrity_capture_path: "{{ tack_node_integrity_output }}"
+          when: *tack_ops_node_integrity
 
     - name: Show the output of the dry run
       ansible.builtin.debug:
         msg: "{{ tack_ops_dry_run.stdout_lines }}"
       when: tack_ops_command != 'ops backfill once-node-integrity'
-
-    - name: Capture the node integrity dry run output on the operator machine
-      ansible.builtin.include_tasks: tasks/tack-ops-node-integrity-capture.yml
-      vars:
-        tack_node_integrity_capture_run: "{{ tack_ops_dry_run }}"
-        tack_node_integrity_capture_path: "{{ tack_node_integrity_output }}"
-      when: *tack_ops_node_integrity
 
     # The always section writes stdout from a failed node integrity execute run
     # before the execute task's failure ends the run.

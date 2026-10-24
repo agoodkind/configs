@@ -24,15 +24,19 @@ locals {
   }
 }
 
-# Applies while the device sits on the Berylax LAN. It omits that LAN's prefix,
-# so the router answers over the local link rather than through the tunnel.
+# Both LAN beacons select this profile, which omits their shared LAN prefix.
 # Precedence 499 puts it ahead of the away profile.
 resource "cloudflare_zero_trust_device_custom_profile" "berylax_lan" {
   account_id  = var.account_id
   name        = "tun-only on Berylax LAN"
   description = "Use direct LAN routing for 3d06:bad:b01:300::/64"
-  match       = format("identity.email == %q and network == %q", var.owner_email, cloudflare_zero_trust_device_managed_networks.berylax_lan.name)
-  precedence  = 499
+  match = format(
+    "identity.email == %q and (network == %q or network == %q)",
+    var.owner_email,
+    cloudflare_zero_trust_device_managed_networks.berylax_lan.name,
+    cloudflare_zero_trust_device_managed_networks.poweredge_lan.name,
+  )
+  precedence = 499
 
   enabled                        = local.profile_defaults.enabled
   allow_mode_switch              = local.profile_defaults.allow_mode_switch

@@ -11,28 +11,56 @@ iface ens1f0 inet static
 
 iface ens1f1 inet manual
 
+auto nic0
 iface nic0 inet manual
+	post-up if [ "$(cat /sys/class/net/nic0/device/sriov_numvfs)" -eq 0 ]; then echo 2 > /sys/class/net/nic0/device/sriov_numvfs; else test "$(cat /sys/class/net/nic0/device/sriov_numvfs)" -eq 2; fi
+	post-up ip link set nic0 vf 0 mac 02:57:50:04:00:03
+	post-up ip link set nic0 vf 1 mac 02:57:50:04:00:00
+	post-up if [ -e /sys/class/net/nic0/device/virtfn0/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic0/device/virtfn0)" > /sys/class/net/nic0/device/virtfn0/driver/unbind; basename "$(readlink /sys/class/net/nic0/device/virtfn0)" > /sys/bus/pci/drivers_probe; fi
+	post-up if [ -e /sys/class/net/nic0/device/virtfn1/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic0/device/virtfn1)" > /sys/class/net/nic0/device/virtfn1/driver/unbind; basename "$(readlink /sys/class/net/nic0/device/virtfn1)" > /sys/bus/pci/drivers_probe; fi
+	post-up udevadm settle
+	post-up if [ -e /sys/class/net/nic0/device/virtfn0/net/*/ifindex ] && [ ! -e /sys/class/net/nic0v0 ]; then ip link set "$(basename /sys/class/net/nic0/device/virtfn0/net/*)" down; ip link set "$(basename /sys/class/net/nic0/device/virtfn0/net/*)" name nic0v0; fi
+	post-up if [ -e /sys/class/net/nic0/device/virtfn1/net/*/ifindex ] && [ ! -e /sys/class/net/nic0v1 ]; then ip link set "$(basename /sys/class/net/nic0/device/virtfn1/net/*)" down; ip link set "$(basename /sys/class/net/nic0/device/virtfn1/net/*)" name nic0v1; fi
 
-# bnxt_en rejects a write to sriov_numvfs while nic1 is down. The post-up
-# commands run after ifupdown2 sets nic1 up. `state enable` gives each
-# virtual function a link while nic1 has no cable.
+# Preserve active VFs during reloads and reject a conflicting VF count.
+# The driver reads each permanent MAC when it binds in the host namespace.
 auto nic1
 iface nic1 inet manual
-	post-up echo 2 > /sys/class/net/nic1/device/sriov_numvfs
-	post-up ip link set nic1 vf 0 mac 02:57:50:04:01:00
-	post-up ip link set nic1 vf 1 mac 02:57:50:04:01:01
-	# The driver reads the administrative address when it binds.
-	# mwan matches links only by permanent hardware address.
-	post-up basename "$(readlink /sys/class/net/nic1/device/virtfn0)" > /sys/class/net/nic1/device/virtfn0/driver/unbind
-	post-up basename "$(readlink /sys/class/net/nic1/device/virtfn0)" > /sys/bus/pci/drivers_probe
-	post-up basename "$(readlink /sys/class/net/nic1/device/virtfn1)" > /sys/class/net/nic1/device/virtfn1/driver/unbind
-	post-up basename "$(readlink /sys/class/net/nic1/device/virtfn1)" > /sys/bus/pci/drivers_probe
-	post-up ip link set nic1 vf 0 state enable
+	post-up if [ "$(cat /sys/class/net/nic1/device/sriov_numvfs)" -eq 0 ]; then echo 5 > /sys/class/net/nic1/device/sriov_numvfs; else test "$(cat /sys/class/net/nic1/device/sriov_numvfs)" -eq 5; fi
+	post-up ip link set nic1 vf 0 mac 02:57:50:04:01:00 spoofchk off trust on
+	post-up ip link set nic1 vf 1 mac 02:57:50:04:01:01 spoofchk off trust on
+	post-up ip link set nic1 vf 2 mac 02:57:50:04:01:02 spoofchk off trust on
+	post-up ip link set nic1 vf 3 mac 02:57:50:04:01:03 spoofchk off trust on
+	post-up ip link set nic1 vf 4 mac 02:57:50:04:01:04 spoofchk off trust on
+	post-up if [ -e /sys/class/net/nic1/device/virtfn0/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic1/device/virtfn0)" > /sys/class/net/nic1/device/virtfn0/driver/unbind; basename "$(readlink /sys/class/net/nic1/device/virtfn0)" > /sys/bus/pci/drivers_probe; fi
+	post-up if [ -e /sys/class/net/nic1/device/virtfn1/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic1/device/virtfn1)" > /sys/class/net/nic1/device/virtfn1/driver/unbind; basename "$(readlink /sys/class/net/nic1/device/virtfn1)" > /sys/bus/pci/drivers_probe; fi
+	post-up if [ -e /sys/class/net/nic1/device/virtfn2/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic1/device/virtfn2)" > /sys/class/net/nic1/device/virtfn2/driver/unbind; basename "$(readlink /sys/class/net/nic1/device/virtfn2)" > /sys/bus/pci/drivers_probe; fi
+	post-up if [ -e /sys/class/net/nic1/device/virtfn3/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic1/device/virtfn3)" > /sys/class/net/nic1/device/virtfn3/driver/unbind; basename "$(readlink /sys/class/net/nic1/device/virtfn3)" > /sys/bus/pci/drivers_probe; fi
+	post-up if [ -e /sys/class/net/nic1/device/virtfn4/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic1/device/virtfn4)" > /sys/class/net/nic1/device/virtfn4/driver/unbind; basename "$(readlink /sys/class/net/nic1/device/virtfn4)" > /sys/bus/pci/drivers_probe; fi
+	post-up udevadm settle
+	post-up if [ -e /sys/class/net/nic1/device/virtfn0/net/*/ifindex ] && [ ! -e /sys/class/net/nic1v0 ]; then ip link set "$(basename /sys/class/net/nic1/device/virtfn0/net/*)" down; ip link set "$(basename /sys/class/net/nic1/device/virtfn0/net/*)" name nic1v0; fi
+	post-up if [ -e /sys/class/net/nic1/device/virtfn1/net/*/ifindex ] && [ ! -e /sys/class/net/nic1v1 ]; then ip link set "$(basename /sys/class/net/nic1/device/virtfn1/net/*)" down; ip link set "$(basename /sys/class/net/nic1/device/virtfn1/net/*)" name nic1v1; fi
+	post-up if [ -e /sys/class/net/nic1/device/virtfn2/net/*/ifindex ] && [ ! -e /sys/class/net/nic1v2 ]; then ip link set "$(basename /sys/class/net/nic1/device/virtfn2/net/*)" down; ip link set "$(basename /sys/class/net/nic1/device/virtfn2/net/*)" name nic1v2; fi
+	post-up if [ -e /sys/class/net/nic1/device/virtfn3/net/*/ifindex ] && [ ! -e /sys/class/net/nic1v3 ]; then ip link set "$(basename /sys/class/net/nic1/device/virtfn3/net/*)" down; ip link set "$(basename /sys/class/net/nic1/device/virtfn3/net/*)" name nic1v3; fi
+	post-up if [ -e /sys/class/net/nic1/device/virtfn4/net/*/ifindex ] && [ ! -e /sys/class/net/nic1v4 ]; then ip link set "$(basename /sys/class/net/nic1/device/virtfn4/net/*)" down; ip link set "$(basename /sys/class/net/nic1/device/virtfn4/net/*)" name nic1v4; fi
 	post-up ip link set nic1 vf 1 state enable
-	pre-down echo 0 > /sys/class/net/nic1/device/sriov_numvfs
+	post-up ip link set nic1 vf 2 state enable
+	post-up ip link set nic1 vf 4 state enable
 
+auto nic2
 iface nic2 inet manual
+	post-up if [ "$(cat /sys/class/net/nic2/device/sriov_numvfs)" -eq 0 ]; then echo 1 > /sys/class/net/nic2/device/sriov_numvfs; else test "$(cat /sys/class/net/nic2/device/sriov_numvfs)" -eq 1; fi
+	post-up ip link set nic2 vf 0 mac 02:57:50:04:02:00
+	post-up if [ -e /sys/class/net/nic2/device/virtfn0/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic2/device/virtfn0)" > /sys/class/net/nic2/device/virtfn0/driver/unbind; basename "$(readlink /sys/class/net/nic2/device/virtfn0)" > /sys/bus/pci/drivers_probe; fi
+	post-up udevadm settle
+	post-up if [ -e /sys/class/net/nic2/device/virtfn0/net/*/ifindex ] && [ ! -e /sys/class/net/nic2v0 ]; then ip link set "$(basename /sys/class/net/nic2/device/virtfn0/net/*)" down; ip link set "$(basename /sys/class/net/nic2/device/virtfn0/net/*)" name nic2v0; fi
 
+auto nic3
 iface nic3 inet manual
+	post-up if [ "$(cat /sys/class/net/nic3/device/sriov_numvfs)" -eq 0 ]; then echo 1 > /sys/class/net/nic3/device/sriov_numvfs; else test "$(cat /sys/class/net/nic3/device/sriov_numvfs)" -eq 1; fi
+	post-up ip link set nic3 vf 0 mac 02:57:50:04:03:00
+	post-up if [ -e /sys/class/net/nic3/device/virtfn0/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic3/device/virtfn0)" > /sys/class/net/nic3/device/virtfn0/driver/unbind; basename "$(readlink /sys/class/net/nic3/device/virtfn0)" > /sys/bus/pci/drivers_probe; fi
+	post-up udevadm settle
+	post-up if [ -e /sys/class/net/nic3/device/virtfn0/net/*/ifindex ] && [ ! -e /sys/class/net/nic3v0 ]; then ip link set "$(basename /sys/class/net/nic3/device/virtfn0/net/*)" down; ip link set "$(basename /sys/class/net/nic3/device/virtfn0/net/*)" name nic3v0; fi
 
 source /etc/network/interfaces.d/*
