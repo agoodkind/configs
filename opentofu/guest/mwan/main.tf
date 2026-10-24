@@ -12,8 +12,9 @@ terraform {
 }
 
 variable "network_json_path" {
-  description = "The value is the path to the gateway network.json the module validates and writes to /etc/mwan/network.json."
+  description = "The wan role requires this path to network.json, and other roles may omit it to skip WANCONFIG deployment."
   type        = string
+  default     = null
 }
 
 variable "config_toml_path" {
@@ -67,12 +68,13 @@ data "mwan_release" "this" {
 
 data "mwan_role" "this" {
   role       = var.role
-  guest_type = data.mwan_network.gateway.guest_type
+  guest_type = local.kind
 }
 
 locals {
-  kind      = "lxc"
-  stack_dir = "/var/cache/mwan/stack"
+  kind        = "lxc"
+  stack_dir   = "/var/cache/mwan/stack"
+  has_network = var.network_json_path != null
 
   architecture = data.mwan_release.this.architectures[var.architecture]
 
@@ -144,8 +146,8 @@ locals {
   runtime_config_units    = toset(["mwan-ifmgr@wan.service", "mwan-ifmgr.service", "mwan-agent.service"])
   allowed_interface_roles = toset(["provider", "parent", "internal", "management"])
 
-  network_interfaces = data.mwan_network.gateway.interfaces
-  network_routes     = data.mwan_network.gateway.routes
+  network_interfaces = local.has_network ? data.mwan_network.gateway[0].interfaces : {}
+  network_routes     = local.has_network ? data.mwan_network.gateway[0].routes : {}
 
   interfaces_without_allowed_role = toset([
     for name, interface in local.network_interfaces : name
@@ -169,6 +171,8 @@ locals {
 }
 
 data "mwan_network" "gateway" {
+  count = local.has_network ? 1 : 0
+
   content = file(var.network_json_path)
 }
 
@@ -476,21 +480,18 @@ resource "pveguest_sysrepo_data" "role" {
 }
 
 resource "pveguest_file" "network" {
+  count = local.has_network ? 1 : 0
+
   node = var.node
   vmid = var.vmid
   kind = local.kind
 
   path    = "/etc/mwan/network.json"
-  content = data.mwan_network.gateway.canonical_content
+  content = data.mwan_network.gateway[0].canonical_content
 
   validate = "/usr/local/bin/mwan deploy-gate check-network %s /usr/local/share/wanconfig/yang && /usr/local/bin/mwan deploy-gate check-firewall %s /usr/local/share/wanconfig/yang"
 
   lifecycle {
-    precondition {
-      condition     = length(local.unknown_excluded_units) == 0
-      error_message = "The role's unit list does not include these names from excluded_units: ${join(", ", sort(tolist(local.unknown_excluded_units)))}"
-    }
-
     precondition {
       condition     = length(local.disallowed_interfaces) == 0
       error_message = "The following network.json interfaces use roles other than provider, parent, internal, or management: ${join(", ", sort(tolist(local.disallowed_interfaces)))}"
@@ -530,6 +531,18 @@ resource "pveguest_file" "runtime_config" {
   mode    = "0600"
   owner   = "root"
   group   = "root"
+
+  lifecycle {
+    precondition {
+      condition     = var.role != "wan" || local.has_network
+      error_message = "The wan role requires network_json_path."
+    }
+
+    precondition {
+      condition     = length(local.unknown_excluded_units) == 0
+      error_message = "The role's unit list does not include these names from excluded_units: ${join(", ", sort(tolist(local.unknown_excluded_units)))}"
+    }
+  }
 }
 
 resource "pveguest_file" "sysctl" {
@@ -547,13 +560,15 @@ resource "pveguest_file" "sysctl" {
 }
 
 resource "mwan_network_config" "gateway" {
-  interfaces        = data.mwan_network.gateway.interfaces
-  routes            = data.mwan_network.gateway.routes
-  provider_defaults = data.mwan_network.gateway.provider_defaults
-  policy_rules      = data.mwan_network.gateway.policy_rules
-  firewall_chains   = data.mwan_network.gateway.firewall_chains
-  firewall_rules    = data.mwan_network.gateway.firewall_rules
-  firewall_sets     = data.mwan_network.gateway.firewall_sets
+  count = local.has_network ? 1 : 0
+
+  interfaces        = data.mwan_network.gateway[0].interfaces
+  routes            = data.mwan_network.gateway[0].routes
+  provider_defaults = data.mwan_network.gateway[0].provider_defaults
+  policy_rules      = data.mwan_network.gateway[0].policy_rules
+  firewall_chains   = data.mwan_network.gateway[0].firewall_chains
+  firewall_rules    = data.mwan_network.gateway[0].firewall_rules
+  firewall_sets     = data.mwan_network.gateway[0].firewall_sets
 
   depends_on = [pveguest_file.network]
 }
@@ -586,7 +601,7 @@ resource "pveguest_systemd_unit" "role" {
   restart_on = merge(
     { for path in each.value.files : path => pveguest_file.role[path].write_id },
     { for key, write_id in local.runtime_write_ids : key => write_id if local.owned_units[each.key] },
-    contains(local.network_units, each.key) ? { network = pveguest_file.network.write_id } : {},
+    local.has_network && contains(local.network_units, each.key) ? { network = pveguest_file.network[0].write_id } : {},
     contains(local.runtime_config_units, each.key) ? { runtime_config = pveguest_file.runtime_config.write_id } : {},
     each.key == "systemd-sysctl.service" ? { for name, file in pveguest_file.sysctl : "sysctl-${name}" => file.write_id } : {},
   )
@@ -599,4 +614,14 @@ resource "pveguest_systemd_unit" "role" {
     pveguest_download.mwan,
     pveguest_deb_packages.stack,
   ]
+}
+
+moved {
+  from = pveguest_file.network
+  to   = pveguest_file.network[0]
+}
+
+moved {
+  from = mwan_network_config.gateway
+  to   = mwan_network_config.gateway[0]
 }
