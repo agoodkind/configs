@@ -159,11 +159,6 @@ locals {
     }
   }
 
-  github_keys = [
-    for line in split("\n", replace(data.http.github_ssh_keys.response_body, "\r", "")) :
-    trimspace(line)
-    if trimspace(line) != ""
-  ]
 
   # sshd accepts the sshpiper upstream key only from the address of the proxy
   # guest.
@@ -171,44 +166,4 @@ locals {
     "# Managed by Ansible - Restricted by SSHPiper",
     "from=\"${local.service_mapping.proxy.ipv6}/128\" ${trimspace(local.proxy_vars.sshpiper_upstream_pubkey)}",
   ]
-}
-
-data "http" "github_ssh_keys" {
-  url = "https://github.com/${local.shared_vars.github_ssh_keys_user}.keys"
-
-  lifecycle {
-    precondition {
-      condition = alltrue([
-        for kind in values(local.guest_kinds) : contains(local.guest_kind_values, kind)
-      ])
-      error_message = "Enrolled guest kinds must be lxc or qemu."
-    }
-
-    postcondition {
-      condition     = self.status_code == 200
-      error_message = "GitHub returned ${self.status_code} for the SSH keys of ${local.shared_vars.github_ssh_keys_user}."
-    }
-  }
-}
-
-module "base" {
-  source   = "./base"
-  for_each = local.guests
-
-  node = each.value.node
-  vmid = each.value.vmid
-  kind = each.value.kind
-  name = each.key
-
-  authorized_key_lines        = each.value.authorized_key_lines
-  extra_authorized_keys_files = each.value.extra_authorized_keys_files
-  public_keys                 = each.value.authorized_key_lines == null ? local.github_keys : []
-  restricted_key_lines        = each.value.authorized_key_lines == null ? local.sshpiper_lines : []
-  mail_relay                  = try(local.mail_relays[each.key], null)
-  login_dir                   = local.shared_vars.login_dir
-  revision                    = local.shared_vars.guest_prep_revision
-  revision_file               = local.shared_vars.guest_prep_revision_file
-
-  scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
-  scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
 }

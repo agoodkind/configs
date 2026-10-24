@@ -1,6 +1,6 @@
 terraform {
   required_providers {
-    # OpenTofu installs pveguest from this workspace's terraform.d/plugins.
+    # configsctl selects the shared provider mirror.
     pveguest = {
       source  = "tofu.home.arpa/agoodkind/pveguest"
       version = "0.1.0"
