@@ -33,11 +33,11 @@
 
 **Interfaces:** Preserve `selectTofuWorkspace(workspacesDir string, args []string) (string, []string, error)` and `tofuChildWorkspaces(workspacesDir string) ([]string, error)`. Direct selection checks only its requested root. Existing immediate-child selectors and root-command behavior remain available.
 
-- [ ] Extract settings and selection from the oversized mixed file.
-- [ ] Recursively discover backend roots; skip hidden paths, generated provider directories, `modules`, and directory symlinks. Return sorted relative selectors.
-- [ ] Reject absolute, nonclean, traversal, and symlink selectors before invocation. A missing nested root must fail directly.
-- [ ] Add CLI tests with real local backends for nested roots, repeated leaf names, an unrelated invalid root, traversal, and backendless modules. Inspect real state and output.
-- [ ] Run the focused tests and required gates, then commit.
+- [x] Extract settings and selection from the oversized mixed file.
+- [x] Recursively discover backend roots; skip hidden paths, generated provider directories, `modules`, and directory symlinks. Return sorted relative selectors.
+- [x] Reject absolute, nonclean, traversal, and symlink selectors before invocation. A missing nested root must fail directly.
+- [x] Add CLI tests with real local backends for nested roots, repeated leaf names, an unrelated invalid root, traversal, and backendless modules. Inspect real state and output.
+- [x] Run the focused tests and required gates, then commit.
 
 ## Task 2: Check guests in their owning workspace
 
@@ -45,12 +45,12 @@
 
 **Interfaces:** Add `GuestModules map[string]string`, YAML key `tofu.guest_modules`, to `tofuSettings`. Keys are workspace selectors and values are module addresses indexed by inventory `service_name`. Reuse workspace-keyed `LockTargets.GuestHosts`. Keep explicit legacy `GuestModule` during rollout and reject simultaneous use. Add workspace and module identity to `gatedGuest`.
 
-- [ ] Validate selector syntax, module values, required host maps, and unique inventory-host ownership.
-- [ ] Prepare each selected guest request from its root and declared variables. Check only its backend. Refuse a missing required workspace mapping.
-- [ ] Aggregate enrolled hosts for absent-guest validation. Preserve legacy behavior only under its explicit legacy field.
-- [ ] Add a real CLI regression with independent Tack and MWAN roots. Leave MWAN in an unapplied address-move state; require a successful Tack play and unchanged MWAN state. A changed Tack declaration must still refuse deployment.
-- [ ] Cover multiple selected roots, duplicate and missing mappings, synthetic variable isolation, and stopped enrolled guests.
-- [ ] Run focused tests and required gates, update the command reference, and commit.
+- [x] Validate selector syntax, module values, required host maps, and unique inventory-host ownership.
+- [x] Prepare each selected guest request from its root and declared variables. Check only its backend. Refuse a missing required workspace mapping.
+- [x] Aggregate enrolled hosts for absent-guest validation. Preserve legacy behavior only under its explicit legacy field.
+- [x] Add a real CLI regression with independent Tack and MWAN roots. Leave MWAN in an unapplied address-move state; require a successful Tack play and unchanged MWAN state. A changed Tack declaration must still refuse deployment.
+- [x] Cover multiple selected roots, duplicate and missing mappings, synthetic variable isolation, and stopped enrolled guests.
+- [x] Run focused tests and required gates, update the command reference, and commit.
 
 ## Task 3: Scope locks to actual effects
 
@@ -58,10 +58,10 @@
 
 **Interfaces:** Preserve existing backend and guest lock interfaces. Exact guest-local changes require that guest's lock; shared host and firmware changes require host locks. Unknown ownership refuses mutation in independent-workspace mode.
 
-- [ ] Compare current decisions with the new ownership map before changing them.
-- [ ] Prove guest-local operations do not lock unrelated applications or every hypervisor.
-- [ ] Prove conflicting guest operations serialize and real host changes still obtain host locks.
-- [ ] Run the relevant gates and commit.
+- [x] Compare current decisions with the new ownership map before changing them.
+- [x] Prove guest-local operations do not lock unrelated applications or every hypervisor.
+- [x] Prove conflicting guest operations serialize and real host changes still obtain host locks.
+- [x] Run the relevant gates and commit.
 
 ## Task 4: Implement native state transfer and recovery
 
@@ -69,12 +69,12 @@
 
 **Interfaces:** A version-1 manifest records the reviewed configuration commit, selectors, backend identities, expected source lineage/serial, and old-to-new addresses without attributes. CLI actions prepare, verify, execute, resume, and restore consume that manifest and a private working directory. Durable checkpoints contain identities, counts, and digests only.
 
-- [ ] Prove native encrypted local state transfer and restoration with real OpenTofu before remote mutation. Preserve provider-private fields and use native encryption.
-- [ ] Implement complete mapping checks, snapshots, serial checks, one-executor ownership, and the durable deployment pause.
-- [ ] Prepare every destination before remote writes. Reject duplicate keys, absent source records, stale commits, and unexpected destination state.
-- [ ] Write the complete set with native backend locks. Compare actual state after each write; retain the pause after failures or uncertain results.
-- [ ] Resume or restore the complete set only after verifying expected migration-owned state. Do not overwrite unrelated writes or force unlock active owners.
-- [ ] Interrupt real local transfers at write boundaries and prove recovery, identity preservation, and synthetic-secret exclusion.
+- [x] Prove native encrypted local state transfer and restoration with real OpenTofu before remote mutation. Preserve provider-private fields and use native encryption.
+- [x] Implement complete mapping checks, snapshots, serial checks, one-executor ownership, and the durable deployment pause.
+- [x] Prepare every destination before remote writes. Reject duplicate keys, absent source records, stale commits, and unexpected destination state.
+- [x] Write the complete set with native backend locks. Compare actual state after each write; retain the pause after failures or uncertain results.
+- [x] Resume or restore the complete set only after verifying expected migration-owned state. Do not overwrite unrelated writes or force unlock active owners.
+- [x] Interrupt real local transfers at write boundaries and prove recovery, identity preservation, and synthetic-secret exclusion.
 - [ ] Run required gates, obtain independent review, and commit.
 
 ## Task 5: Declare the complete source split
@@ -84,10 +84,10 @@
 **Interfaces:** Consume the tested configsctl release. Produce the complete root/backend map and reviewed resource migration manifest. Preserve approved routing groups and firmware ownership.
 
 - [ ] Freeze the actual source baseline after the PowerEdge functional work completes. Inventory all states through supported tooling without displaying attributes.
-- [ ] Assign every existing managed resource once under the approved application, host, and shared-service rules. Separate independently deployed simulator scenarios.
-- [ ] Declare explicit nonsecret prerequisite inputs; application deployment must not read another root's full state or invoke its plan.
+- [x] Assign every existing managed resource once under the approved application, host, and shared-service rules. Separate independently deployed simulator scenarios.
+- [x] Declare explicit nonsecret prerequisite inputs; application deployment must not read another root's full state or invoke its plan.
 - [ ] Validate backend-key uniqueness and field ownership. Compare prepared plans with the unchanged source snapshot.
-- [ ] Review and commit the complete cutover source and manifest together; do not migrate a subset.
+- [ ] Review and commit the complete cutover source. Privately assemble the complete manifest against that immutable commit before transferring state. Merge the source cutover during the coordinated write pause; do not migrate a subset.
 
 ## Task 6: Execute one coordinated migration
 

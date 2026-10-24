@@ -20,6 +20,16 @@ Each root declares its own backend key under the existing bucket. Keys use the r
 
 Existing backend encryption remains enforced. The migration reuses existing protected credential delivery and does not print state values, credential values, or decrypted snapshots. The release must reject duplicate backend keys before state writes.
 
+The source split declares 39 destination roots. The three existing backend roots remain available until the executor empties their states. Their cutover configuration does not declare managed resources or application modules. The private migration manifest accounts for existing data-source caches, including caches for declarations that the current source has already removed. The cutover does not restore those declarations.
+
+## Guest preparation and host prerequisites
+
+An application root uses the shared base module only for its existing enrolled guests. Guest creation retains its existing initialization settings and lifecycle exclusions. The base module owns the enrolled guest's authorized-key file, guest files, packages, units, and existing mail relay. A host root owns its permission roles, container access policies, kernel-module allowlist, and persistent host module configuration.
+
+The PowerEdge routing root uses the read-only `pveguest_host_kernel_modules` data source. Its `node` input selects the host, and its computed `modules` and `loaded` values report the configured module list and actual loaded state. A postcondition rejects missing or unloaded required modules before guest operations. The cutover must install the reviewed provider release that supports this read interface before planning PowerEdge routing.
+
+Application modules receive explicit nonsecret bridge, interface, datastore, and service identifiers from backendless configuration. The existing creation APIs validate guest attachments. These identifiers do not establish an additional live readiness check. Application roots do not read another root's state, and they do not apply host resources to satisfy a prerequisite.
+
 ## configsctl discovery and deployment checks
 
 Recursive discovery identifies directories containing backend blocks. A workspace selector is its clean slash-separated path relative to `tofu.workspaces_dir`. Existing immediate-child selectors and the root workspace keep their current meaning. Discovery skips generated directories, hidden directories, and reusable `modules` directories. It does not follow directory symlinks. Invalid workspace HCL and unreadable discovered paths fail with their exact path.
@@ -42,7 +52,7 @@ The migration uses one executor. Infrastructure writers pause for the coordinate
 
 The versioned manifest records source and destination workspace selectors, backend identities, the reviewed source commit, and a complete mapping of old address to new address. It records provider source and version expectations and the count and digest of each resource identity set. It contains no state attributes or secret values. Every destination root must validate before execution.
 
-Preparation captures encrypted snapshots of all source states and checks their lineage and serial. Native OpenTofu state operations prepare each destination from private local copies. The implementation must preserve resource IDs, instances, provider-private fields, dependencies, and encryption. It must not reconstruct a state record from a resource name or use destroy/import as an ownership transfer.
+Preparation captures encrypted snapshots of all source states and checks their lineage and serial. Native OpenTofu state operations prepare each destination from private local copies. The implementation must preserve resource IDs, instances, attributes, provider-private fields, and encryption. Native address moves can clear cached dependency lists. The executor accepts unchanged or cleared lists and requires native plans against the destination configuration to reject infrastructure changes. It must not reconstruct a state record from a resource name or use destroy/import as an ownership transfer.
 
 The implementation first proves native encrypted state transfer and restoration using real temporary local backends. It uses a Go command in configsctl for the reviewed transfer, protected files, journal, checkpoints, and resume behavior. It adds no migration shell scripts and does not implement replacement encryption.
 
