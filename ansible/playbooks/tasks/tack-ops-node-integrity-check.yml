@@ -1,16 +1,20 @@
 ---
 # The controller requires --output=json and exactly one --request=<path> or
-# --manifest=<path> under /var/lib/tack/repair/. The file name permits
-# letters, digits, dots, underscores, and hyphens and must not start with a
-# dot. The check substitutes "repair file" and compares the sorted list with
+# --manifest=<path> under /var/lib/tack/repair/. The file name permits letters,
+# digits, dots, underscores, and hyphens and must not start with a dot.
+# The check substitutes "repair file" and compares the sorted list with
 # ['--output=json', 'repair file']; the earlier space check prevents an
 # operator argument from matching that text.
 # The check refuses --request with tack_ops_execute=true; --manifest execution
 # uses the existing tack_ops_execute gate on QA and the production owner guest.
-# The paths must be absolute strings with an existing regular input file, an
-# output that is not a directory, and an existing output parent directory.
-# The paths must resolve to different files, and every directory above either
-# resolved path through / must not contain a .git entry.
+# The paths must be absolute strings with an existing regular input file and
+# an existing output parent directory. The output and its .execute path must
+# not be directories. tack_node_integrity_output must equal its resolved path
+# without symbolic links or repeated or trailing slashes. The resolved input
+# must differ from both output paths. The copy module replaces destination
+# symbolic links. Both writes use the directory that the .git check inspected.
+# Every directory above either resolved path through / must not contain a .git
+# entry.
 - name: Validate node integrity arguments and absolute paths and reject request execution
   ansible.builtin.assert:
     that:
@@ -35,7 +39,7 @@
     quiet: true
   any_errors_fatal: true
 
-- name: Inspect the node integrity input, output, and output parent directory on the controller
+- name: Inspect the node integrity input, output, .execute path, and output parent directory on the controller
   ansible.builtin.stat:
     path: "{{ item }}"
     follow: true
@@ -44,6 +48,7 @@
     - "{{ tack_node_integrity_input }}"
     - "{{ tack_node_integrity_output }}"
     - "{{ tack_node_integrity_output | dirname }}"
+    - "{{ tack_node_integrity_output }}.execute"
   register: tack_node_integrity_paths
   delegate_to: localhost
 
@@ -79,13 +84,17 @@
       - tack_node_integrity_paths.results[2].stat.exists and tack_node_integrity_paths.results[2].stat.isdir
       - tack_node_integrity_input_markers.results | selectattr('stat.exists') | list == []
       - tack_node_integrity_output_markers.results | selectattr('stat.exists') | list == []
-      - (tack_node_integrity_input | realpath) != (tack_node_integrity_output | realpath)
+      - not (tack_node_integrity_paths.results[3].stat.exists and tack_node_integrity_paths.results[3].stat.isdir)
+      - (tack_node_integrity_output | realpath) == tack_node_integrity_output
+      - (tack_node_integrity_input | realpath) != tack_node_integrity_output
+      - (tack_node_integrity_input | realpath) != tack_node_integrity_output ~ '.execute'
     fail_msg: >-
-      The controller requires an existing regular input file. The output
-      must not be a directory, and its parent directory must exist.
-      The input and output must resolve to different files. Every directory
-      above either resolved path through / must not contain a .git entry,
-      which marks a Git checkout or worktree.
+      The controller requires an existing regular input file. The output path
+      must equal its resolved path without symbolic links or repeated or trailing
+      slashes. The output and its .execute path must not be directories, and the
+      output's parent directory must exist. The resolved input must differ from
+      both output paths. Every directory above either resolved path through /
+      must not contain a .git entry, which marks a Git checkout or worktree.
       Input "{{ tack_node_integrity_input }}", output "{{ tack_node_integrity_output }}".
     quiet: true
   any_errors_fatal: true

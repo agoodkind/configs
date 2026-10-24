@@ -1,12 +1,14 @@
 ---
-# The node integrity dry run uses LOG_DISABLE_STDOUT=true and no_log.
-# The playbook writes stdout to tack_node_integrity_output on the operator
-# machine as 0600, including in check mode, and hides arguments and diff.
-# The playbook prints only the written file's byte count and SHA-256 digest.
-- name: Write the node integrity dry run stdout to the operator output file
+# Both node integrity runs use LOG_DISABLE_STDOUT=true and no_log.
+# The including task passes the registered run result and destination path.
+# This file writes stdout as 0600 on the operator machine, even in check mode,
+# and hides arguments and diff. It reads and prints the file's byte count and
+# SHA-256 digest, then fails if the run exited nonzero. A dry run with a
+# nonzero exit status fails in its own task before this file runs.
+- name: Write the node integrity dry run or execute stdout to the operator output file
   ansible.builtin.copy:
-    content: "{{ tack_ops_dry_run.stdout }}"
-    dest: "{{ tack_node_integrity_output }}"
+    content: "{{ tack_node_integrity_capture_run.stdout }}"
+    dest: "{{ tack_node_integrity_capture_path }}"
     mode: "0600"
   delegate_to: localhost
   become: false
@@ -16,7 +18,7 @@
 
 - name: Read the output file size and SHA-256 digest
   ansible.builtin.stat:
-    path: "{{ tack_node_integrity_output }}"
+    path: "{{ tack_node_integrity_capture_path }}"
     checksum_algorithm: sha256
   delegate_to: localhost
   become: false
@@ -25,6 +27,15 @@
 - name: Show the output file size and SHA-256 digest
   ansible.builtin.debug:
     msg: >-
-      The output file {{ tack_node_integrity_output }} contains
+      The output file {{ tack_node_integrity_capture_path }} contains
       {{ tack_node_integrity_capture.stat.size }} bytes with SHA-256
       {{ tack_node_integrity_capture.stat.checksum }}.
+
+- name: Check the node integrity run exit status after writing stdout
+  ansible.builtin.assert:
+    that:
+      - tack_node_integrity_capture_run.rc == 0
+    fail_msg: >-
+      The node integrity command exited with status {{ tack_node_integrity_capture_run.rc }}.
+      The file {{ tack_node_integrity_capture_path }} contains the stdout of the run.
+    quiet: true
