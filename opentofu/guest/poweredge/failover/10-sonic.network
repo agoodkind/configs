@@ -3,6 +3,7 @@ Name=eth0
 
 [Network]
 DHCP=ipv4
+DHCPPrefixDelegation=yes
 IPv6AcceptRA=yes
 IPv4Forwarding=yes
 IPv6Forwarding=yes
@@ -13,3 +14,9 @@ RouteMetric=50
 
 [IPv6AcceptRA]
 RouteMetric=50
+
+[DHCPPrefixDelegation]
+UplinkInterface=:self
+SubnetId=0
+Announce=no
+Assign=yes
