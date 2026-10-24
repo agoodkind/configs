@@ -35,6 +35,33 @@ release in
 Use `--limit` on production so one command does not touch both hypervisors.
 Dry-run with `--check --diff` before a mutating run.
 
+## Manage Cloudflare tunnel DNS
+
+Use account credentials in the Mac and Vault `cloudflared` management
+certificates for tunnel management and private IP routes. The
+`cloudflared tunnel route dns` command calls a legacy endpoint that does not
+accept these credentials. Use
+the standard DNS record API for manual DNS changes.
+
+Manage permanent tunnel CNAMEs through `cloudflare_dns_record.static` in the
+[DNS declarations](../../opentofu/cloudflare_dns_records.tf). Review and apply
+those changes through `./configsctl tofu`.
+
+For a manual change outside those declarations, use an account token with
+`DNS Write` permission restricted to the required zone. Keep its value in a
+protected file rather than command arguments.
+
+1. [List DNS records](https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/list/)
+   for the exact hostname in that zone.
+2. If the hostname does not have a record,
+   [create a DNS record](https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/create/)
+   with `type: CNAME`, `content: <tunnel UUID>.cfargotunnel.com`, `proxied: true`,
+   and `ttl: 1`.
+3. If an existing record needs an explicit overwrite,
+   [update that DNS record](https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/edit/).
+   Preserve its unrelated fields.
+4. Read the record again to confirm its target and proxy setting.
+
 ## Run logs
 
 Both commands write their output to a file in the host temp directory, under a
