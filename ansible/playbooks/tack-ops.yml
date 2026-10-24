@@ -261,6 +261,9 @@
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }}
         chdir: "{{ tack_install_dir }}"
+        # This option keeps the trailing newline in node integrity stdout.
+        # The execute task sets the same option.
+        strip_empty_ends: "{{ tack_ops_command != 'ops backfill once-node-integrity' }}"
       # The node integrity dry run prints complete stored records. This task hides
       # that command's output. LOG_DISABLE_STDOUT=true keeps log lines out of the
       # captured output.
@@ -313,6 +316,7 @@
               {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
               {{ tack_ops_identity_flags }} --execute
             chdir: "{{ tack_install_dir }}"
+            strip_empty_ends: "{{ tack_ops_command != 'ops backfill once-node-integrity' }}"
           environment: *tack_ops_superuser_environment
           no_log: "{{ tack_ops_command == 'ops backfill once-node-integrity' }}"
           register: tack_ops_execute_run
