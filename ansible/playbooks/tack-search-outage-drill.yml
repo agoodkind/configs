@@ -33,7 +33,7 @@
     tack_search_outage_exit_delay_seconds: 2
     tack_search_outage_kill_exit_margin_seconds: 60
     tack_search_outage_stop_timeout: >-
-      {{ (tack_search_outage_container_config.stdout | from_json)[0].Config.StopTimeout }}
+      {{ (tack_search_outage_container_config.stdout | from_json)[0].Config.get('StopTimeout') }}
     tack_search_outage_exit_retries: >-
       {{ ((tack_search_outage_stop_timeout | int + tack_search_outage_kill_exit_margin_seconds)
           / tack_search_outage_exit_delay_seconds) | round(0, 'ceil') | int }}
