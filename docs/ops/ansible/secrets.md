@@ -40,8 +40,10 @@ and the file with mode `600`. Keep its token ID, permissions and expiration
 in private metadata beside the token. Set `TF_VAR_cloudflare_mwan_manage_token_file`
 to another protected file when required. Grant account-scoped monitor and pool
 read/write permissions and zone-scoped load balancer read/write permissions.
-The default Cloudflare provider
-continues to use `CLOUDFLARE_API_TOKEN` for DNS and other resources.
+The default Cloudflare provider and the `goodkind.io` DNS provider use
+`vault_cloudflare_api_token` from the Ansible vault. The `silver-flare.com` DNS
+provider uses `vault_cloudflare_silver_flare_dns_api_token`. Both variables are
+sensitive and ephemeral.
 
 Run OpenTofu through `./configsctl tofu`. The wrapper inherits the file path
 override. Rotate the persistent token before its recorded expiration and verify
