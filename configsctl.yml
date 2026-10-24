@@ -4,17 +4,19 @@ tofu:
   # key as TF_VAR_<key> when a file in that workspace declares a variable with
   # the key name.
   workspaces_dir: opentofu
+  # Path relative to this settings file. Every workspace uses this mirror.
+  provider_mirror: opentofu/terraform.d/plugins
   # `./configsctl tofu` exports a vault key <env_key_prefix><NAME> as the
   # environment variable <NAME>.
   env_key_prefix: vault_tofu_env_
   credentials:
-    opentofu/firmware:
+    opentofu/poweredge/firmware:
       lock_host: poweredge
       username_variable: poweredge_idrac_user
       password_variable: poweredge_idrac_password
       dell:
         endpoint: https://[3d06:bad:b01:300::efb]
-        ca_file: opentofu/firmware/idrac-ca.pem
+        ca_file: opentofu/poweredge/firmware/idrac-ca.pem
         server_name: idrac-J9P5L44
         rotator_user: tofu-rotator
         rotator_password_key: vault_poweredge_idrac_rotator_password
@@ -27,67 +29,211 @@ tofu:
           - /redfish/v1/Chassis/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.2-1-1/Oem/Dell/DellNetworkAttributes/NIC.Embedded.2-1-1
           - /redfish/v1/Chassis/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.3-1-1/Oem/Dell/DellNetworkAttributes/NIC.Embedded.3-1-1
           - /redfish/v1/Chassis/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.4-1-1/Oem/Dell/DellNetworkAttributes/NIC.Embedded.4-1-1
-  # The deploy gate requires zero guest plan changes for hosts in `guest_hosts`.
-  guest_module: module.base
   # Keys are workspace paths relative to the repository root.
-  # An apply of a saved plan locks the hosts declared for its changes.
-  # A change with no declaration locks every host in proxmox_servers and
-  # tofu_lock_hosts.
+  # Independent workspaces refuse changes without a declared owner.
   lock_targets:
-    opentofu:
+    opentofu/poweredge/firmware:
+      module_hosts:
+        module.poweredge: poweredge
+    opentofu/poweredge/host:
+      module_hosts:
+        module.overlay["poweredge"]: poweredge
+        proxmox_acme_account.poweredge: poweredge
+        proxmox_acme_certificate.poweredge: poweredge
+        proxmox_acme_dns_plugin.poweredge: poweredge
+        pveguest_host_kernel_modules.poweredge: poweredge
+      node_hosts:
+        poweredge: poweredge
+    opentofu/poweredge/routing:
+      module_hosts:
+        module.poweredge_failover_services: poweredge
+        module.poweredge_lan_services: poweredge
+        module.poweredge_lxc["failover"]: poweredge
+        module.poweredge_lxc["gateway"]: poweredge
+        module.poweredge_lxc["lan"]: poweredge
+        module.poweredge_mwan["failover"]: poweredge
+        module.poweredge_mwan["gateway"]: poweredge
+      node_hosts:
+        poweredge: poweredge
+      lock_free_types:
+        - mwan_network_config
+        - terraform_data
+    opentofu/shared/cloudflare-dns:
+      lock_free_types:
+        - cloudflare_dns_record
+    opentofu/shared/cloudflare-load-balancing:
+      lock_free_types:
+        - cloudflare_load_balancer
+        - cloudflare_load_balancer_monitor
+        - cloudflare_load_balancer_pool
+    opentofu/shared/cloudflare-zero-trust:
       lock_free_types:
         - cloudflare_zero_trust_device_custom_profile
         - cloudflare_zero_trust_device_managed_networks
         - cloudflare_zero_trust_tunnel_cloudflared
         - cloudflare_zero_trust_tunnel_cloudflared_route
+    opentofu/suburban/clyde:
+      guest_hosts:
+        suburban/224: clyde.suburban.goodkind.io
       module_hosts:
-        module.vault: vault
         module.suburban: suburban
-      module_key_hosts:
-        module.overlay:
-          suburban: suburban
-          poweredge: poweredge
-          vault: vault
-    opentofu/firmware:
-      module_hosts:
-        module.poweredge: poweredge
-    opentofu/guest:
-      lock_free_types:
-        - mwan_network_config
-      module_hosts:
-        proxmox_virtual_environment_container.poweredge_gateway: poweredge
-        proxmox_virtual_environment_container.poweredge_failover: poweredge
-        module.poweredge_gateway_mwan: poweredge
-        module.poweredge_failover_mwan: poweredge
-        module.poweredge_failover_services: poweredge
-        module.poweredge_lan_services: poweredge
-      module_key_hosts:
-        module.poweredge_lxc:
-          gateway: poweredge
-          lan: poweredge
-          failover: poweredge
-        module.poweredge_mwan:
-          gateway: poweredge
-          failover: poweredge
-      # Keys are pveguest_* resource node values. The node is the second label
-      # of the guest hostname, not a Proxmox node name.
       node_hosts:
         suburban: suburban
-        poweredge: poweredge
-      # Keys use "<node>/<vmid>". Each value is the guest's inventory host
-      # from the service_mapping inventory.
+    opentofu/suburban/dns64:
       guest_hosts:
         suburban/203: dns64.suburban.goodkind.io
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/host:
+      module_hosts:
+        module.overlay["suburban"]: suburban
+        module.suburban: suburban
+        proxmox_acme_account.suburban: suburban
+        proxmox_acme_certificate.suburban: suburban
+        proxmox_acme_dns_plugin.suburban: suburban
+    opentofu/suburban/mwan:
+      guest_hosts:
         suburban/213: mwan.suburban.goodkind.io
         suburban/216: mwan-failover.suburban.goodkind.io
-        suburban/217: tack-qa.suburban.goodkind.io
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/opnsense:
+      module_hosts:
+        module.suburban: suburban
+    opentofu/suburban/seaweedfs:
+      guest_hosts:
         suburban/218: seaweedfs.suburban.goodkind.io
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/astound:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/astound-static:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/att:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/etheric-native:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/lan-clients:
+      module_hosts:
+        module.suburban: suburban
+    opentofu/suburban/simulators/mbrains:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/routed:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/router2:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/sonic:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/tunnel-static:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/tunnel-upstream:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/tunnel-vps:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/simulators/webpass:
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/suburban/tack-qa:
+      guest_hosts:
+        suburban/217: tack-qa.suburban.goodkind.io
         suburban/220: tack-data1.suburban.goodkind.io
         suburban/221: tack-data2.suburban.goodkind.io
         suburban/222: tack-data3.suburban.goodkind.io
         suburban/223: tack-app2.suburban.goodkind.io
-        suburban/224: clyde.suburban.goodkind.io
         suburban/227: tack-search1.suburban.goodkind.io
+      module_hosts:
+        module.suburban: suburban
+      node_hosts:
+        suburban: suburban
+    opentofu/vault/adguard:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/debianct:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/dns64:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/freebsd-dev:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/host:
+      module_hosts:
+        module.overlay["vault"]: vault
+        proxmox_acme_account.vault: vault
+        proxmox_acme_certificate.vault: vault
+        proxmox_acme_dns_plugin.vault: vault
+    opentofu/vault/mc:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/mwan:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/opnsense:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/proxy:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/seaweedfs:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/sit6:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/tack-prod:
+      module_hosts:
+        module.vault: vault
+    opentofu/vault/unifi:
+      module_hosts:
+        module.vault: vault
+  guest_modules:
+    suburban/clyde: module.base
+    suburban/dns64: module.base
+    suburban/mwan: module.base
+    suburban/seaweedfs: module.base
+    suburban/tack-qa: module.base
 deploy:
   # For non-check deploys, `./configsctl deploy` reads each declared variable
   # on each play host and locks the named inventory host with the play hosts.

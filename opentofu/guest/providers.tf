@@ -1,6 +1,6 @@
 terraform {
   required_providers {
-    # OpenTofu installs pveguest from this workspace's terraform.d/plugins.
+    # configsctl selects the shared provider mirror.
     pveguest = {
       source  = "tofu.home.arpa/agoodkind/pveguest"
       version = "0.1.0"
@@ -15,16 +15,4 @@ terraform {
     }
   }
   required_version = ">= 1.11"
-}
-
-provider "pveguest" {
-  nodes = local.nodes
-
-  smtp2go_api_key = local.smtp2go_access
-}
-
-provider "proxmox" {
-  endpoint  = local.nodes["poweredge"].endpoint
-  api_token = local.nodes["poweredge"].api_token
-  insecure  = local.nodes["poweredge"].insecure
 }

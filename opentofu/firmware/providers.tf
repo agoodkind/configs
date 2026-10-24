@@ -12,29 +12,3 @@ terraform {
     }
   }
 }
-
-provider "restful" {
-  base_url = var.poweredge_idrac_endpoint
-  client = {
-    tls_insecure_skip_verify = var.poweredge_idrac_insecure
-  }
-  security = {
-    http = {
-      basic = {
-        username = var.poweredge_idrac_user
-        password = "${var.poweredge_idrac_password}"
-      }
-    }
-  }
-}
-
-provider "redfish" {
-  redfish_servers = {
-    poweredge = {
-      endpoint     = var.poweredge_idrac_endpoint
-      user         = var.poweredge_idrac_user
-      password     = "${var.poweredge_idrac_password}"
-      ssl_insecure = var.poweredge_idrac_insecure
-    }
-  }
-}
