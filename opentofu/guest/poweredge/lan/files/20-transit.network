@@ -1,0 +1,8 @@
+[Match]
+Name=transit
+
+[Network]
+Address=10.230.230.2/29
+Address=fd06:fab::2/64
+IPv6AcceptRA=no
+LinkLocalAddressing=ipv6

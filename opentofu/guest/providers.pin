@@ -1,8 +1,8 @@
 # Each row pins one provider archive from a GitHub release. install-providers.sh reads this file.
 # source_address repository tag version platform sha256
-tofu.home.arpa/agoodkind/mwan agoodkind/mwan 202610101541-d2-4aa6e92 0.1.0 darwin_arm64 b3bcb0ff4dbcbf534b273e530b908317b610f090f10dc6c625b2178974059d67
-tofu.home.arpa/agoodkind/mwan agoodkind/mwan 202610101541-d2-4aa6e92 0.1.0 linux_amd64 728547d0ed0a74da928f9b6d0afe9afe8e80341189574733956f48feea3398ee
-tofu.home.arpa/agoodkind/mwan agoodkind/mwan 202610101541-d2-4aa6e92 0.1.0 linux_arm64 0bf4989afd128e72dc849068da4cadfff0ed427d423538e66ee84ded3c2db5a4
+tofu.home.arpa/agoodkind/mwan agoodkind/mwan 202610192152-ef-9bc78a1 0.1.0 darwin_arm64 6ea96451df5207fe4ea6039d5487b5bdff4c2534673ab5400731ee197f03dade
+tofu.home.arpa/agoodkind/mwan agoodkind/mwan 202610192152-ef-9bc78a1 0.1.0 linux_amd64 aeabbf307bf2d28942ff1d21f8231a3fe60b0371d7f6b307b8b4075de4448fde
+tofu.home.arpa/agoodkind/mwan agoodkind/mwan 202610192152-ef-9bc78a1 0.1.0 linux_arm64 3f77880c8ca79b179d2e4248924bd07af93565c86a620f9601462f109602c31f
 tofu.home.arpa/agoodkind/pveguest agoodkind/terraform-provider-pveguest 202610171749-11-a28dff4 0.1.0 darwin_arm64 cc50befa75f3fd9fe4c84fa22eb3cada22b3bdd45529769b753d167ac7981fcd
 tofu.home.arpa/agoodkind/pveguest agoodkind/terraform-provider-pveguest 202610171749-11-a28dff4 0.1.0 linux_amd64 ea2a86b9d185b1158fde7a169a75425a762ed1c81d978f3f8d4f5d8f71ac1bb4
 tofu.home.arpa/agoodkind/pveguest agoodkind/terraform-provider-pveguest 202610171749-11-a28dff4 0.1.0 linux_arm64 b3c0a0deebbf4577dae2bc7b0c66c28d28f198b7e8dd8264e14ede7d3afc6cb4

@@ -22,3 +22,14 @@ resource "cloudflare_zero_trust_device_managed_networks" "berylax_lan" {
     prevent_destroy = true
   }
 }
+
+resource "cloudflare_zero_trust_device_managed_networks" "poweredge_lan" {
+  account_id = var.account_id
+  name       = "PowerEdge LAN"
+  type       = "tls"
+  config     = var.poweredge_beacon
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
