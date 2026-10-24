@@ -16,15 +16,3 @@ terraform {
   }
   required_version = ">= 1.11"
 }
-
-provider "pveguest" {
-  nodes = local.nodes
-
-  smtp2go_api_key = local.smtp2go_access
-}
-
-provider "proxmox" {
-  endpoint  = local.nodes["poweredge"].endpoint
-  api_token = local.nodes["poweredge"].api_token
-  insecure  = local.nodes["poweredge"].insecure
-}
