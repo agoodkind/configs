@@ -5,10 +5,11 @@
 # the playbook accepts only the owner guest, the one member of the inventory
 # group tack_servers. On that guest, the playbook accepts only ops deploy
 # verify, ops backfill once-search-projections, ops backfill
-# once-fixed-definitions, ops search provision, ops search reindex, and ops
-# search verify. The QA reset runs its hand-run ops commands only through this
-# playbook. Each row that those commands record includes the agent service,
-# session, accountable operator, and deploy commit.
+# once-fixed-definitions, ops backfill once-node-integrity, ops search
+# provision, ops search reindex, and ops search verify. The QA reset runs its
+# hand-run ops commands only through this playbook. Each row that those
+# commands record includes the agent service, session, accountable operator,
+# and deploy commit.
 #
 # Usage, with every value explicit:
 #   ./configsctl deploy tack-ops --limit <one allowed Tack guest> \
@@ -22,6 +23,20 @@
 #     --extra-var tack_server_digest=<CI index digest of tack-server> \
 #     --extra-var tack_audit_consumer_digest=<CI index digest of tack-audit-consumer>
 #
+# ops backfill once-node-integrity requires --output=json and exactly one
+# --request=<path> or --manifest=<path>. The path is /var/lib/tack/repair/
+# plus one file name of letters, digits, dots, underscores, or hyphens without
+# a leading dot. tack_node_integrity_input gives the operator machine input
+# path; tack_node_integrity_output gives the operator machine dry run output
+# path. Before the dry run, the playbook creates the guest directory as
+# root:root 0700 and copies the input to the argument path as root:root 0600.
+# Both tasks run in check mode; the copy hides arguments and diff. The dry run
+# uses LOG_DISABLE_STDOUT=true and no_log. The playbook writes stdout to the
+# operator output path as 0600, also in check mode, with hidden arguments and
+# diff. The playbook prints only the written file's byte count and SHA-256
+# digest. The app service mounts /var/lib/tack/repair only in a Tack release
+# that contains Tack PR 391.
+#
 # The playbook runs ops deploy verify before the requested command.
 # Verification rejects image digests that differ from the supplied values.
 # In check mode, the playbook runs verification and the command dry run.
@@ -33,6 +48,12 @@
 - name: Check the Tack ops request
   hosts: tack_all
   gather_facts: false
+  # Empty tack_node_integrity_input and tack_node_integrity_output values make
+  # the node integrity check reject runs that omit either path. Extra vars
+  # replace these values, which both plays share through the YAML anchor.
+  vars: &tack_node_integrity_paths
+    tack_node_integrity_input: ""
+    tack_node_integrity_output: ""
   tasks:
     - name: Check the operator identity
       ansible.builtin.import_tasks: tasks/tack-ops-identity-guard.yml
@@ -55,7 +76,8 @@
             'ops qa datagen seed', 'ops qa datagen search', 'ops qa datagen soak',
             'ops qa datagen search-load', 'ops qa datagen search-mixed',
             'ops backfill once-search-projections', 'ops backfill once-drop-killtest-schema',
-            'ops backfill once-fixed-definitions',
+            'ops backfill once-fixed-definitions', 'ops backfill once-node-integrity',
+            'ops qa datagen repair',
             'ops search provision', 'ops search reindex', 'ops search verify']
           - tack_ops_args is sequence and tack_ops_args is not string and tack_ops_args is not mapping
           - tack_ops_command != 'ops backfill once-drop-killtest-schema' or tack_ops_args == []
@@ -73,6 +95,7 @@
                 and tack_ops_command in ['ops deploy verify',
                                          'ops backfill once-search-projections',
                                          'ops backfill once-fixed-definitions',
+                                         'ops backfill once-node-integrity',
                                          'ops search provision', 'ops search reindex',
                                          'ops search verify'])
           - ansible_play_hosts_all | unique | list | count == 1
@@ -81,9 +104,10 @@
           a QA guest, the command is any reviewed command. On production, the
           guest is the owner guest in the inventory group tack_servers, and the
           command is ops deploy verify, ops backfill once-search-projections,
-          ops backfill once-fixed-definitions, ops search provision, ops search
-          reindex, or ops search verify. One run never includes both a QA guest
-          and a production guest.
+          ops backfill once-fixed-definitions, ops backfill once-node-integrity,
+          ops search provision, ops search reindex, or ops search verify.
+          ops qa datagen repair runs only on QA guests. One run never includes
+          both a QA guest and a production guest.
           tack_commit is the 40-character Tack commit the guest runs.
           tack_server_digest and tack_audit_consumer_digest are the CI index
           digests of the reviewed build; each is sha256: followed by 64
@@ -99,12 +123,17 @@
         quiet: true
       any_errors_fatal: true
 
+    - name: Validate the node integrity arguments and operator file paths
+      ansible.builtin.include_tasks: tasks/tack-ops-node-integrity-check.yml
+      when: &tack_ops_node_integrity tack_ops_command == 'ops backfill once-node-integrity'
+
 - name: Run the Tack ops command
   hosts: tack_all
   gather_facts: false
   become: true
   environment:
     TACK_IMAGE_TAG: "{{ tack_commit }}"
+  vars: *tack_node_integrity_paths
   tasks:
     - name: Verify that the guest runs the Tack images for tack_commit
       ansible.builtin.command:
@@ -203,6 +232,10 @@
                              'ops audit dlq replay', 'ops audit consumer-offsets']
       no_log: true
 
+    - name: Stage the node integrity input on the Tack guest
+      ansible.builtin.include_tasks: tasks/tack-ops-node-integrity-stage.yml
+      when: *tack_ops_node_integrity
+
     - name: Print the dry run of the Tack ops command
       ansible.builtin.command:
         cmd: >-
@@ -217,12 +250,17 @@
              and ('--redact-audit-pii' in tack_ops_args or '--redact-audit-pii=true' in tack_ops_args) else '' }}
           run --rm
           {{ '-e DATABASE_URL_FILE' if tack_ops_command == 'ops backfill once-drop-killtest-schema' else '' }}
+          {{ '-e LOG_DISABLE_STDOUT=true' if tack_ops_command == 'ops backfill once-node-integrity' else '' }}
           {{ 'tack-ops' if tack_ops_command in ['ops deploy verify', 'ops audit prove-schema-guard', 'audit query',
                                                 'ops search provision', 'ops search reindex', 'ops search verify',
                                                 'ops backfill once-drop-killtest-schema'] else 'app' }}
           {{ tack_ops_command }} {{ tack_ops_args | join(' ') }}
           {{ tack_ops_identity_flags }}
         chdir: "{{ tack_install_dir }}"
+      # The node integrity dry run prints complete stored records. This task hides
+      # that command's output. LOG_DISABLE_STDOUT=true keeps log lines out of the
+      # captured output.
+      no_log: "{{ tack_ops_command == 'ops backfill once-node-integrity' }}"
       # The command needs the engine superuser login to drop killtest.
       # Remove this entry and the spec constants and examples when removing
       # ops backfill once-drop-killtest-schema (TACK-560;
@@ -237,6 +275,11 @@
     - name: Show the output of the dry run
       ansible.builtin.debug:
         msg: "{{ tack_ops_dry_run.stdout_lines }}"
+      when: tack_ops_command != 'ops backfill once-node-integrity'
+
+    - name: Capture the node integrity dry run output on the operator machine
+      ansible.builtin.include_tasks: tasks/tack-ops-node-integrity-capture.yml
+      when: *tack_ops_node_integrity
 
     - name: Run the Tack ops command with --execute
       ansible.builtin.command:
