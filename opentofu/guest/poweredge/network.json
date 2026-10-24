@@ -92,6 +92,7 @@
       {
         "name": "henet",
         "type": "iana-if-type:tunnel",
+        "enabled": false,
         "goodkind-mwan-steering:connection-id": "etheric-v6",
         "goodkind-mwan-steering:owner": "mwan",
         "goodkind-mwan-steering:link": {
@@ -134,7 +135,7 @@
             "targets-v6": ["2606:4700:4700::1111", "2001:4860:4860::8888"]
           }
         },
-        "goodkind-mwan-steering:steering": { "tier": 0, "weight": 1 }
+        "goodkind-mwan-steering:steering": { "enabled": false, "tier": 0, "weight": 1 }
       },
       {
         "name": "transit",
