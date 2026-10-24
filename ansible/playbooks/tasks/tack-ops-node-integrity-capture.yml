@@ -1,13 +1,25 @@
 ---
 # The including task passes the registered run result and destination path.
-# This file writes stdout as 0600 on the operator machine, even in check mode,
-# and hides arguments and diff. It reads and prints the file's byte count and
-# SHA-256 digest with the run's exit status. Each run fails in its own task on
-# nonzero status; a failed dry run prevents this file from running.
+# Dry run and execute always sections include this file even after failure.
+# Capture tasks write stdout to that path and stderr to that path plus .stderr.
+# The tasks set both files to 0600 on the operator machine, even in check mode.
+# Capture tasks hide arguments and diff, then read and print the stdout file's
+# byte count and SHA-256 digest with the run exit status.
 - name: Write the node integrity dry run or execute stdout to the operator output file
   ansible.builtin.copy:
     content: "{{ tack_node_integrity_capture_run.stdout }}"
     dest: "{{ tack_node_integrity_capture_path }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  diff: false
+  no_log: true
+
+- name: Write the node integrity dry run or execute stderr to the operator stderr file
+  ansible.builtin.copy:
+    content: "{{ tack_node_integrity_capture_run.stderr }}"
+    dest: "{{ tack_node_integrity_capture_path }}.stderr"
     mode: "0600"
   delegate_to: localhost
   become: false
