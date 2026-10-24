@@ -31,6 +31,14 @@ variable "berylax_beacon_sha256" {
   type        = string
 }
 
+variable "poweredge_beacon" {
+  description = "TLS endpoint and public certificate fingerprint for the PowerEdge LAN beacon."
+  type = object({
+    tls_sockaddr = string
+    sha256       = string
+  })
+}
+
 variable "dns_search_suffix" {
   description = "DNS search suffix pushed to devices by every profile."
   type        = string

@@ -1,0 +1,10 @@
+[Match]
+Name=nat64-out
+
+[Network]
+KeepConfiguration=yes
+IPv6AcceptRA=no
+
+[Route]
+Destination=10.230.231.254/32
+Gateway=10.230.230.5

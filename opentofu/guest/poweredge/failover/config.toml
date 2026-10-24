@@ -1,0 +1,65 @@
+hostname = "mwan-failover-poweredge"
+mwan_vmid = "316"
+guest_type = "lxc"
+
+[agent]
+vsock_port = 0
+tcp_addr = "[::1]:50052"
+deploy_file = "/var/lib/mwan/last-deploy"
+deploy_expected = false
+log_file = "/var/log/mwan-agent.log"
+debug = false
+
+[bgp]
+enabled = true
+use_wanconfig = false
+asn = 4200000001
+router_id = "10.230.230.3"
+next_hop_v6 = "fd06:fab::3"
+keepalive_seconds = 10
+hold_seconds = 30
+listen_port = 179
+learned_route_iface = "eth1"
+dynamic_neighbors = ["10.230.230.0/29", "fd06:fab::/64"]
+
+[bgp.announce]
+ipv4 = ["0.0.0.0/0"]
+ipv6 = ["::/0"]
+
+[bgp.graceful_restart]
+enabled = false
+restart_time = 30
+notification_enabled = true
+
+[ifmgr]
+role = "failover"
+reconcile_interval = "60s"
+log_file = "/var/log/mwan-ifmgr.log"
+json_log_file = "/var/log/mwan-ifmgr.jsonl"
+
+[ifmgr.iface.eth0]
+name = "eth0"
+dhcp_v4 = false
+ra_solicit = true
+
+[ifmgr.modules.slaac_health]
+iface = "eth0"
+degraded_after = "30s"
+escalate_after = "90s"
+alert_after = "300s"
+max_toggles_per_hour = 4
+probe_targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+
+[ifmgr.modules.bridge_probe]
+iface = "eth0"
+no_signal_alert_after = "120s"
+
+[ifmgr.modules.connectivity_probe]
+iface = "eth0"
+targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+timeout = "2s"
+unhealthy_after = "10s"
+
+[ifmgr.modules.ra_lost]
+iface = "eth0"
+ra_lost_alert_after = "5m"

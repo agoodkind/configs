@@ -1,0 +1,12 @@
+[Match]
+Name=lan-out
+
+[Link]
+ActivationPolicy=always-down
+RequiredForOnline=no
+
+[Network]
+DHCP=no
+IPv6AcceptRA=no
+LinkLocalAddressing=no
+IPv6SendRA=no
