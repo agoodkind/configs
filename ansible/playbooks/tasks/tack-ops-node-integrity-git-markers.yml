@@ -1,0 +1,26 @@
+---
+# The controller rejects tack_node_integrity_marker_path when any directory
+# above its resolved path through / contains a .git entry.
+- name: Inspect the .git entry in every directory above the resolved path
+  ansible.builtin.stat:
+    path: "{{ (['/'] + directories[:depth] + ['.git']) | path_join }}"
+    get_checksum: false
+  vars:
+    directories: "{{ (tack_node_integrity_marker_path | realpath | dirname).split('/') | select | list }}"
+  loop: "{{ [''] + directories }}"
+  loop_control:
+    index_var: depth
+  register: tack_node_integrity_markers
+  delegate_to: localhost
+
+- name: Reject node integrity paths inside Git checkouts and worktrees
+  ansible.builtin.assert:
+    that:
+      - tack_node_integrity_markers.results | selectattr('stat.exists') | list == []
+    fail_msg: >-
+      A directory above the resolved path contains a .git entry, which marks a
+      Git checkout or worktree. The node integrity input and output must be
+      outside every checkout.
+      Path "{{ tack_node_integrity_marker_path }}".
+    quiet: true
+  any_errors_fatal: true

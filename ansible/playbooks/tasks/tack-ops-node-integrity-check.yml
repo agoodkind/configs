@@ -52,38 +52,12 @@
   register: tack_node_integrity_paths
   delegate_to: localhost
 
-- name: Inspect .git entries in every directory above the resolved input path through / on the controller
-  ansible.builtin.stat:
-    path: "{{ (['/'] + directories[:depth] + ['.git']) | path_join }}"
-    get_checksum: false
-  vars:
-    directories: "{{ (tack_node_integrity_input | realpath | dirname).split('/') | select | list }}"
-  loop: "{{ [''] + directories }}"
-  loop_control:
-    index_var: depth
-  register: tack_node_integrity_input_markers
-  delegate_to: localhost
-
-- name: Inspect .git entries in every directory above the resolved output path through / on the controller
-  ansible.builtin.stat:
-    path: "{{ (['/'] + directories[:depth] + ['.git']) | path_join }}"
-    get_checksum: false
-  vars:
-    directories: "{{ (tack_node_integrity_output | realpath | dirname).split('/') | select | list }}"
-  loop: "{{ [''] + directories }}"
-  loop_control:
-    index_var: depth
-  register: tack_node_integrity_output_markers
-  delegate_to: localhost
-
-- name: Validate the node integrity file paths and reject Git checkouts and worktrees
+- name: Validate the node integrity file paths
   ansible.builtin.assert:
     that:
       - tack_node_integrity_paths.results[0].stat.exists and tack_node_integrity_paths.results[0].stat.isreg
       - not (tack_node_integrity_paths.results[1].stat.exists and tack_node_integrity_paths.results[1].stat.isdir)
       - tack_node_integrity_paths.results[2].stat.exists and tack_node_integrity_paths.results[2].stat.isdir
-      - tack_node_integrity_input_markers.results | selectattr('stat.exists') | list == []
-      - tack_node_integrity_output_markers.results | selectattr('stat.exists') | list == []
       - not (tack_node_integrity_paths.results[3].stat.exists and tack_node_integrity_paths.results[3].stat.isdir)
       - (tack_node_integrity_output | realpath) == tack_node_integrity_output
       - (tack_node_integrity_input | realpath) != tack_node_integrity_output
@@ -93,8 +67,15 @@
       must equal its resolved path without symbolic links or repeated or trailing
       slashes. The output and its .execute path must not be directories, and the
       output's parent directory must exist. The resolved input must differ from
-      both output paths. Every directory above either resolved path through /
-      must not contain a .git entry, which marks a Git checkout or worktree.
+      both output paths.
       Input "{{ tack_node_integrity_input }}", output "{{ tack_node_integrity_output }}".
     quiet: true
   any_errors_fatal: true
+
+- name: Check both node integrity paths for Git checkouts and worktrees
+  ansible.builtin.include_tasks: tack-ops-node-integrity-git-markers.yml
+  loop:
+    - "{{ tack_node_integrity_input }}"
+    - "{{ tack_node_integrity_output }}"
+  loop_control:
+    loop_var: tack_node_integrity_marker_path
