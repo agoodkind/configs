@@ -12,6 +12,7 @@ locals {
 }
 
 resource "cloudflare_dns_record" "static" {
+  provider = cloudflare.dns[each.value.zone]
   for_each = local.cloudflare_static_dns_records
 
   zone_id  = local.cloudflare_zone_ids[each.value.zone]
@@ -838,6 +839,7 @@ locals {
 }
 
 resource "cloudflare_dns_record" "dynamic" {
+  provider = cloudflare.dns[each.value.zone]
   for_each = local.cloudflare_dynamic_dns_records
 
   zone_id = local.cloudflare_zone_ids[each.value.zone]
