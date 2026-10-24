@@ -47,8 +47,8 @@ locals {
       container_options = {
         retained_roles = ["PVEAdmin"]
         hostnic = {
-          vmids = [313, 314]
-          links = ["nic0v1", "nic1v0", "nic1v1", "nic1v2", "nic2v0", "nic3v0"]
+          vmids = [313, 314, 316]
+          links = ["nic0v1", "nic1v0", "nic1v1", "nic1v2", "nic1v3", "nic1v4", "nic2v0", "nic3v0"]
         }
         bpfdelegate = {
           vmids   = [313]

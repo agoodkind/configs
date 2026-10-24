@@ -28,7 +28,7 @@ keepalive_seconds = 10
 hold_seconds = 30
 listen_port = 179
 learned_route_iface = "transit"
-dynamic_neighbors = ["10.230.230.0/30", "fd06:fab::/64"]
+dynamic_neighbors = ["10.230.230.0/29", "fd06:fab::/64"]
 
 [bgp.announce]
 ipv4 = ["0.0.0.0/0"]

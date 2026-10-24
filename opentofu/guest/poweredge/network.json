@@ -146,7 +146,7 @@
         },
         "ietf-ip:ipv4": {
           "forwarding": true,
-          "address": [{ "ip": "10.230.230.1", "prefix-length": 30 }]
+          "address": [{ "ip": "10.230.230.1", "prefix-length": 29 }]
         },
         "ietf-ip:ipv6": {
           "forwarding": true,
