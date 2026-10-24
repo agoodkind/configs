@@ -1,0 +1,27 @@
+[Unit]
+Description=Configure kernel routes for ISP prefixes with the MWAN VM as next hop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+%{~ if ipv6_enabled }
+ExecStart=/sbin/ip -6 route replace ${pd_prefix} via ${mwan_vm_ll} dev eth0
+%{~ endif }
+%{~ if routed_ipv6_enabled }
+ExecStart=/sbin/ip -6 route replace ${routed_ipv6_prefix} via ${mwan_vm_ll} dev eth0
+%{~ endif }
+%{~ if routed_ipv4_prefix != "" }
+ExecStart=/sbin/ip -4 route replace ${routed_ipv4_prefix} via ${routed_ipv4_route_to} dev eth0
+%{~ endif }
+%{~ if static_v4_block != "" }
+# Routed static /29: deliver the block to the WAN VM's stable link address so
+# inbound 1:1-NAT'd traffic arrives there (models AT&T routing a static block).
+ExecStart=/sbin/ip route replace ${static_v4_block} via ${static_v4_route_to} dev eth0
+%{~ endif }
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

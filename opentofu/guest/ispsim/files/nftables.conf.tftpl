@@ -7,40 +7,40 @@ flush ruleset
 table ip nat {
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
-        oifname "eth1" ip saddr {{ isp.v4_subnet }} masquerade
-{% if isp.static_v4_block %}
+        oifname "eth1" ip saddr ${v4_subnet} masquerade
+%{~ if static_v4_block != "" }
         # Masquerade the routed static /29 toward the uplink. The WAN VM
         # 1:1-SNATs the internal /29 into this block (mirroring prod, where the
         # ISP routes a real public /29); the sim ISP must carry it onward or
         # that traffic egresses with a private source and is dropped.
-        oifname "eth1" ip saddr {{ isp.static_v4_block }} masquerade
-{% endif %}
-{% if isp.routed_ipv4_prefix %}
-        oifname "eth1" ip saddr {{ isp.routed_ipv4_prefix }} masquerade
-{% endif %}
+        oifname "eth1" ip saddr ${static_v4_block} masquerade
+%{~ endif }
+%{~ if routed_ipv4_prefix != "" }
+        oifname "eth1" ip saddr ${routed_ipv4_prefix} masquerade
+%{~ endif }
     }
 }
+%{~ if ipv6_enabled || routed_ipv6_enabled }
 
-{% if isp.ipv6_enabled | bool or isp.routed_ipv6_enabled | bool %}
 # Both families masquerade only the sim's own downstream sources. Return
 # traffic the sim forwards toward suburban (tunnel and testbed destinations)
-# keeps its original source, so the far end's TCP sees the address it dialed.
+# keeps its original source. The far end's TCP sees the address it dialed.
 table ip6 nat {
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
-{% if isp.ipv6_enabled | bool %}
-        oifname "eth1" ip6 saddr {{ isp.pd_prefix }} masquerade
-{% if isp.slaac_prefix %}
-        oifname "eth1" ip6 saddr {{ isp.slaac_prefix }} masquerade
-{% endif %}
-{% endif %}
-{% if isp.routed_ipv6_enabled | bool %}
-        oifname "eth1" ip6 saddr {{ isp.routed_ipv6_prefix }} masquerade
-{% endif %}
+%{~ if ipv6_enabled }
+        oifname "eth1" ip6 saddr ${pd_prefix} masquerade
+%{~ if slaac_prefix != "" }
+        oifname "eth1" ip6 saddr ${slaac_prefix} masquerade
+%{~ endif }
+%{~ endif }
+%{~ if routed_ipv6_enabled }
+        oifname "eth1" ip6 saddr ${routed_ipv6_prefix} masquerade
+%{~ endif }
     }
 }
+%{~ endif }
 
-{% endif %}
 table inet filter {
     chain forward {
         type filter hook forward priority filter; policy accept;
