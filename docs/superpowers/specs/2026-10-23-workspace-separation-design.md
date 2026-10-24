@@ -46,11 +46,13 @@ Preparation captures encrypted snapshots of all source states and checks their l
 
 The implementation first proves native encrypted state transfer and restoration using real temporary local backends. It uses a Go command in configsctl for the reviewed transfer, protected files, journal, checkpoints, and resume behavior. It adds no migration shell scripts and does not implement replacement encryption.
 
+Native `state pull` and legacy local `state mv` write decrypted state. The executor captures those transient bytes only in a private working directory with mode 0700 and files with mode 0600. Native `state push` to an encryption-enforced local backend creates the retained encrypted snapshots. No decrypted state appears in command output, logs, or journal records. The temporary plaintext files have explicit cleanup after their encrypted replacement verifies. Real synthetic-state verification preserved the resource ID and produced a zero-change destination plan.
+
 Before remote writes, the executor rechecks source revision, state serials, active apply owners, manifest digest, and the write pause. It refuses any mismatch. Each state write uses normal backend locking and lineage/serial protection. The ordinary path never uses force push or force unlock.
 
 Remote backends do not provide one transaction across all states. The executor therefore keeps the pause active while it writes the whole reviewed set and verifies it. The journal records each confirmed write and its digest. Recovery compares actual backend state with the recorded expected states before continuing. A failure retains the pause and all encrypted backups. Recovery never repeats an uncertain write without checking the backend first.
 
-Rollback restores the entire affected state set from the verified pre-migration snapshots under the same pause and executor. Recovery must account for the serial changes made by this migration without permitting an unrelated writer's state to be overwritten. Restoration follows the same reviewed manifest and refuses unexpected identities or serials.
+Rollback restores the entire affected ownership set under the same pause and executor. It reads the verified current states, reverses the reviewed native address transfers, and pushes the resulting states with their advanced serials. It compares recovered resource identities and provider state with the encrypted pre-migration snapshots. It does not push an older snapshot over a newer backend serial. Restoration refuses unexpected identities or serials and never requires a force push.
 
 The source and destination configuration cutover uses the reviewed release together with the state transfer. The executor retains the old configuration and snapshots for recovery. No ordinary apply runs during transfer. The write pause ends only after every root passes ownership, identity, and planning verification.
 
