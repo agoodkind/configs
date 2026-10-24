@@ -59,6 +59,16 @@ tofu:
         proxmox_virtual_environment_container.poweredge_failover: poweredge
         module.poweredge_gateway_mwan: poweredge
         module.poweredge_failover_mwan: poweredge
+        module.poweredge_failover_services: poweredge
+        module.poweredge_lan_services: poweredge
+      module_key_hosts:
+        module.poweredge_lxc:
+          gateway: poweredge
+          lan: poweredge
+          failover: poweredge
+        module.poweredge_mwan:
+          gateway: poweredge
+          failover: poweredge
       # Keys are pveguest_* resource node values. The node is the second label
       # of the guest hostname, not a Proxmox node name.
       node_hosts:
