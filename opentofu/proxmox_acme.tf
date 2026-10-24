@@ -12,7 +12,7 @@ locals {
 
   # OpenTofu sends data_wo to Proxmox again only when this number increases.
   # Increase it after a change of a Cloudflare DNS token.
-  acme_plugin_data_version = 1
+  acme_plugin_data_version = 2
 }
 
 resource "proxmox_acme_account" "vault" {
