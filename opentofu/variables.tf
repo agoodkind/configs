@@ -119,3 +119,15 @@ variable "berylax_beacon_sha256" {
   type        = string
   default     = "23a17d915ce0e1fa3eb5b1271c136c2bd3e00bd5d4d9cf079b60a99a956024fc"
 }
+
+variable "poweredge_beacon" {
+  description = "TLS endpoint and public certificate fingerprint for the PowerEdge LAN beacon."
+  type = object({
+    tls_sockaddr = string
+    sha256       = string
+  })
+  default = {
+    tls_sockaddr = "10.230.255.254:443"
+    sha256       = "9663ea8d899c2b5e46cba1f46b0f6cb6f97b056ba627123f78140c0794803ba2"
+  }
+}

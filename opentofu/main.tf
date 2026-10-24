@@ -62,6 +62,7 @@ module "cloudflare" {
 
   berylax_beacon_sockaddr = var.berylax_beacon_sockaddr
   berylax_beacon_sha256   = var.berylax_beacon_sha256
+  poweredge_beacon        = var.poweredge_beacon
 
   dns_search_suffix = "home.goodkind.io"
 
