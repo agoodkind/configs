@@ -10,7 +10,7 @@ A physical host workspace owns shared host networking, bridges, storage pools, o
 
 A shared service owns resources used by several applications. Shared Cloudflare profiles and their registrations have one shared owner; a router workspace owns its local beacon service. Workspaces pass explicit nonsecret identifiers and capability requirements. An application may read its actual host prerequisites, but it never plans or applies another workspace to perform its deployment.
 
-All currently managed resources participate in one coordinated migration. Existing unmanaged resources and unapplied feature additions do not become managed as a side effect. The migration changes ownership records, not running services or configuration. It must not recreate guests, restart services, rotate credentials, or apply unrelated changes.
+All currently managed resources participate in one coordinated migration. Existing unmanaged resources and unapplied feature additions do not become managed as a side effect. The migration changes ownership records without changing guest configuration or running services. It must not recreate guests, restart services, or apply unrelated changes. Provider checks may activate a generated deployment login through an existing configured credential adapter. The executor must acquire the exclusive writer lease and the declared host lock before activation and keep the generated password only in memory.
 
 ## Workspace layout
 
