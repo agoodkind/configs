@@ -27,11 +27,11 @@ iface nic0 inet manual
 auto nic1
 iface nic1 inet manual
 	post-up if [ "$(cat /sys/class/net/nic1/device/sriov_numvfs)" -eq 0 ]; then echo 5 > /sys/class/net/nic1/device/sriov_numvfs; else test "$(cat /sys/class/net/nic1/device/sriov_numvfs)" -eq 5; fi
-	post-up ip link set nic1 vf 0 mac 02:57:50:04:01:00
-	post-up ip link set nic1 vf 1 mac 02:57:50:04:01:01
-	post-up ip link set nic1 vf 2 mac 02:57:50:04:01:02
-	post-up ip link set nic1 vf 3 mac 02:57:50:04:01:03
-	post-up ip link set nic1 vf 4 mac 02:57:50:04:01:04
+	post-up ip link set nic1 vf 0 mac 02:57:50:04:01:00 spoofchk off trust on
+	post-up ip link set nic1 vf 1 mac 02:57:50:04:01:01 spoofchk off trust on
+	post-up ip link set nic1 vf 2 mac 02:57:50:04:01:02 spoofchk off trust on
+	post-up ip link set nic1 vf 3 mac 02:57:50:04:01:03 spoofchk off trust on
+	post-up ip link set nic1 vf 4 mac 02:57:50:04:01:04 spoofchk off trust on
 	post-up if [ -e /sys/class/net/nic1/device/virtfn0/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic1/device/virtfn0)" > /sys/class/net/nic1/device/virtfn0/driver/unbind; basename "$(readlink /sys/class/net/nic1/device/virtfn0)" > /sys/bus/pci/drivers_probe; fi
 	post-up if [ -e /sys/class/net/nic1/device/virtfn1/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic1/device/virtfn1)" > /sys/class/net/nic1/device/virtfn1/driver/unbind; basename "$(readlink /sys/class/net/nic1/device/virtfn1)" > /sys/bus/pci/drivers_probe; fi
 	post-up if [ -e /sys/class/net/nic1/device/virtfn2/net/*/ifindex ]; then basename "$(readlink /sys/class/net/nic1/device/virtfn2)" > /sys/class/net/nic1/device/virtfn2/driver/unbind; basename "$(readlink /sys/class/net/nic1/device/virtfn2)" > /sys/bus/pci/drivers_probe; fi
