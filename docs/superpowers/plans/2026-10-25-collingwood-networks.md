@@ -14,20 +14,22 @@
 
 Each IPv4 subnet uses `/24`, and each IPv6 prefix uses `/64`. Every new household gateway uses `.1` and `::1`. DNS suffixes end in `collingwood.goodkind.io`.
 
-| Network | Connection | IPv4 | IPv6 | DNS suffix |
+| Network | Connection | IPv4 | IPv6 | Target DNS suffix |
 |---|---|---|---|---|
-| Management | Existing untagged LAN | 10.230.0.0 | 3d06:bad:b01:300:: | mgmt |
-| Privileged | VLAN 100 | 10.230.1.0 | 3d06:bad:b01:301:: | privileged |
-| General | VLAN 200 | 10.230.2.0 | 3d06:bad:b01:302:: | general |
-| Guest | VLAN 300 | 10.230.3.0 | 3d06:bad:b01:303:: | guest |
+| Personal management | Existing untagged LAN; reserve VLAN 1001 for a later cutover | 10.230.0.0 | 3d06:bad:b01:300:: | management |
+| Privileged | VLAN 101 | 10.230.1.0 | 3d06:bad:b01:301:: | privileged |
+| General | VLAN 102 | 10.230.2.0 | 3d06:bad:b01:302:: | general |
+| Guest | VLAN 103 | 10.230.3.0 | 3d06:bad:b01:303:: | guest |
 | VMnet | Dedicated internal VF interfaces | 10.230.4.0 | 3d06:bad:b01:304:: | vmnet |
-| Temporary DAC | Dedicated nic3 VF | 10.230.5.0 | 3d06:bad:b01:305:: | Preserve current naming initially |
+| Temporary DAC | Dedicated nic3 VF | 10.230.5.0 | 3d06:bad:b01:305:: | dac |
 
 ## Global constraints
 
 - Preserve management and DAC addresses, the router's link-local identity, WAN selection, and MWAN transit.
 - Preserve directly assigned VFs and use proven NIC hardware switching and supported offloads. Do not introduce Linux bridges in forwarding.
-- Grant broad access to every device on VLAN 100. Select VLAN membership individually.
+- Grant broad access to every device on VLAN 101. Select VLAN membership individually.
+- Assign ordinary client access ports to General VLAN 102 after controlled tests. Keep management equipment and the PowerEdge uplink on their reviewed native network.
+- Keep the current management network untagged until a separate reviewed cutover. Preserve PowerEdge's management VF and avoid duplicate management subnets on isolated interfaces.
 - Permit General and Guest Internet access and required router services. Block their new connections to other local networks unless an explicit rule permits them.
 - Keep BIND local and Cloudflare responsible for selected public services. Preserve Kea leases, dynamic records, and old names during migration.
 - Keep the existing LAN's DHCP, DNS, and advertisements operational until its household clients migrate. Management retains its IPv6 prefix.
@@ -56,18 +58,35 @@ Each IPv4 subnet uses `/24`, and each IPv6 prefix uses `/64`. Every new househol
 
 ## Task 2: Prepare and deploy through the released backend
 
-- [ ] Obtain the state-migration completion notice and verify the supported workspace selector.
-- [ ] Verify independent DAC administration and preserve protected backups of live network configuration, leases, DNS data, and UniFi profiles.
-- [ ] Review a fresh canonical plan. Reject incidental VF resets, container replacement, management address changes, WAN changes, and service changes outside the migration.
-- [ ] Verify that replacing the old firewall tracking resource does not stop the active service. The pinned provider's delete operation forgets state, and the new declaration adopts the active service without restart triggers. Keep rule updates atomic through the activation unit.
-- [ ] Apply only the reviewed configuration. Confirm the existing administration session, an independent session, DHCP, DNS, Internet access, BGP, and Cloudflare health.
-- [ ] Record the applied revision and current verification. Keep LAB-144 In Progress until deployment and remote access checks pass.
+- [x] Obtain the state-migration completion notice and verify the supported workspace selector.
+- [x] Verify independent DAC administration and preserve protected backups of live network configuration, leases, DNS data, and UniFi profiles.
+- [x] Review a fresh canonical plan. Reject incidental VF resets, container replacement, management address changes, WAN changes, and service changes outside the migration.
+- [x] Verify that replacing the old firewall tracking resource does not stop the active service. The pinned provider's delete operation forgets state, and the new declaration adopts the active service without restart triggers. Keep rule updates atomic through the activation unit.
+- [x] Apply only the reviewed configuration. Confirm the existing administration session, an independent session, DHCP, DNS, Internet access, BGP, and Cloudflare health.
+- [x] Record the applied revision and current verification. Complete LAB-144 after deployment and remote access checks pass.
 
 ## Task 3: Configure UniFi, LAB-146
 
-- [ ] Inspect actual port and Wi-Fi assignments before changing them.
-- [ ] Configure third-party-gateway networks 100, 200, and 300. Preserve native management on the PowerEdge and AP uplinks while permitting the new VLAN tags.
-- [ ] Assign only a test port and temporary Wi-Fi network initially. Verify router services and remote controller access before migrating household assignments.
+- [x] Inspect actual port and Wi-Fi assignments before changing them.
+- [x] Configure third-party-gateway networks 101, 102, 103, and 1001. Preserve the current untagged network until the reviewed management cutover while permitting the new VLAN tags.
+- [x] Test the three household VLAN tags through temporary VLAN interfaces on a wired client while preserving its untagged connection. Remove those temporary configurations after verification.
+- [ ] Migrate selected client ports or Wi-Fi networks only after their controlled tests pass. Keep current management untagged.
+
+## Renumber the prepared household VLANs
+
+Linux cannot change an existing VLAN interface's ID. A successful network reload does not prove the requested IDs took effect. The [networkctl reference](https://www.freedesktop.org/software/systemd/man/257/networkctl.html) requires deleting the old interface before reloading its changed definition.
+
+- [x] Verify the dedicated DAC control connection and save the current router and UniFi configuration in protected backups.
+- [x] Inspect active leases and switch assignments before replacing the household VLAN interfaces. Preserve the existing untagged management network and DAC connection.
+- [x] Review a canonical `poweredge/routing` plan containing only the three `.netdev` changes and their network activation trigger. Exclude the unrelated MWAN agent restart.
+- [x] Stage all three `.netdev` files through the canonical provider before activation. Keep the saved-plan source unchanged during each apply.
+- [x] Verify that `privileged`, `general`, and `guest` are VLAN children of `lan-out`. Delete only those three interfaces, then activate the reviewed network unit. Preserve the parent VF, management addresses, and DAC VF.
+- [x] Reopen Kea's DHCPv4 and DHCPv6 sockets after the interfaces restart. Check actual DNS responses before restarting BIND for stale interface bindings.
+- [x] Verify runtime VLAN IDs 101, 102, and 103, unique connected subnets, BGP return routes, both Internet families, local DNS, and both Cloudflare connectors.
+- [x] Record the activation trigger through the canonical provider and require a clean router-module plan.
+- [ ] Test native VLAN 1001 and the tagged networks on a controlled port before changing existing native port assignments. Router and switch updates do not share an atomic transaction.
+
+If verification fails, restore the saved `.netdev` files, replace only the three household VLAN interfaces, activate the network unit, and reopen the DHCP sockets. Restore the reviewed UniFi profiles if the switch phase changed them. Test the DAC connection and original management service before resuming.
 
 ## Task 4: Verify hardware and isolation, LAB-147
 
@@ -77,6 +96,7 @@ Each IPv4 subnet uses `/24`, and each IPv6 prefix uses `/64`. Every new househol
 
 ## Task 5: Migrate clients, LXCs, and DNS
 
+- [ ] Activate the management and DAC DNS suffixes only after testing client-supplied fully qualified names and preserving existing dynamic records. The target suffixes in the layout do not establish live DHCP advertisement.
 - [ ] Complete LAB-145 with tested old-name compatibility before changing existing client names. Include clients that submit full old names during DHCP renewal.
 - [ ] Complete LAB-148 one port or Wi-Fi group at a time. Confirm new addresses and active routes before migrating another group.
 - [ ] Complete LAB-149 one LXC at a time after verifying a separate internal VF network and its isolation. Do not assume that adding an interface isolates it.

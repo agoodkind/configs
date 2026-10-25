@@ -1,7 +1,7 @@
 locals {
   collingwood_networks = {
     for index, name in ["privileged", "general", "guest"] : name => {
-      vlan_id       = (index + 1) * 100
+      vlan_id       = 101 + index
       broad_access  = index == 0
       subnet_id     = 101 + index
       subnet4       = "10.230.${index + 1}.0/24"
