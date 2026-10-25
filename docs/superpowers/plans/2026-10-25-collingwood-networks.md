@@ -1,0 +1,86 @@
+# Collingwood network migration implementation plan
+
+> Use `executing-plans` to implement each task and track its steps with checkboxes.
+
+**Goal:** Separate household networks while preserving remote administration and existing DNS names.
+
+**Architecture:** PowerEdge provides routing, Kea DHCP, BIND DNS, and IPv6 advertisements. UniFi switches tagged household networks, and dedicated VF interfaces provide VMnet and temporary DAC connections.
+
+**Tech Stack:** OpenTofu, pveguest, systemd-networkd, FRR, Kea, BIND, nftables, and UniFi Network.
+
+**Spec:** [Approved network layout](#approved-network-layout).
+
+## Approved network layout
+
+Each IPv4 subnet uses `/24`, and each IPv6 prefix uses `/64`. Every new household gateway uses `.1` and `::1`. DNS suffixes end in `collingwood.goodkind.io`.
+
+| Network | Connection | IPv4 | IPv6 | DNS suffix |
+|---|---|---|---|---|
+| Management | Existing untagged LAN | 10.230.0.0 | 3d06:bad:b01:300:: | mgmt |
+| Privileged | VLAN 100 | 10.230.1.0 | 3d06:bad:b01:301:: | privileged |
+| General | VLAN 200 | 10.230.2.0 | 3d06:bad:b01:302:: | general |
+| Guest | VLAN 300 | 10.230.3.0 | 3d06:bad:b01:303:: | guest |
+| VMnet | Dedicated internal VF interfaces | 10.230.4.0 | 3d06:bad:b01:304:: | vmnet |
+| Temporary DAC | Dedicated nic3 VF | 10.230.5.0 | 3d06:bad:b01:305:: | Preserve current naming initially |
+
+## Global constraints
+
+- Preserve management and DAC addresses, the router's link-local identity, WAN selection, and MWAN transit.
+- Preserve directly assigned VFs and use proven NIC hardware switching and supported offloads. Do not introduce Linux bridges in forwarding.
+- Grant broad access to every device on VLAN 100. Select VLAN membership individually.
+- Permit General and Guest Internet access and required router services. Block their new connections to other local networks unless an explicit rule permits them.
+- Keep BIND local and Cloudflare responsible for selected public services. Preserve Kea leases, dynamic records, and old names during migration.
+- Keep the existing LAN's DHCP, DNS, and advertisements operational until its household clients migrate. Management retains its IPv6 prefix.
+- Coordinate live changes with the state-migration task and use the authoritative backend it verifies. Do not apply while its deployment hold remains active.
+- Keep secret values out of source, plans, logs, and chat. Provider development remains separate in LAB-142.
+
+## Review focus
+
+- A network reload must preserve existing management and DAC addresses and the router's IPv6 link-local identity.
+- New VLAN links must not accept clients before the new firewall rules apply.
+- Kea must retain the existing subnet identifiers, lease timings, and names for current clients.
+- BIND must load fresh zone files before accepting new DHCP updates and must preserve its existing dynamic journals.
+- Reverting a client assignment must restore the original address configuration and access without requiring physical assistance.
+
+## Task 1: Prepare additive router configuration, LAB-144
+
+- [x] Define the three household VLANs in [collingwood.tf](../../../opentofu/modules/poweredge/lan/collingwood.tf). Derive network files, DHCP scopes, DNS zones, and route advertisements from that definition.
+- [x] Add systemd-networkd VLAN devices and a drop-in for the existing LAN VF. Prepare native reload and reconfigure commands without resetting VFs or restarting the network daemon.
+- [x] Preserve existing DHCP configuration and append new subnet identifiers 101, 102, and 103. Use the existing lifetime settings for both address families.
+- [x] Add the new BIND listeners, forward and reverse zones, Kea update domains, and FRR advertisements. Seed new dynamic zone files once and preserve subsequent Kea updates.
+- [x] Add interface rules for Privileged, General, and Guest while preserving the existing LAN and DAC rules during migration. Apply the validated firewall before activating new VLAN links.
+- [x] Run the native Kea, BIND, FRR, nftables, and systemd validators against rendered files. Verify authenticated DNS updates and allowed and denied packets in isolated Linux namespaces.
+- [x] Run `./configsctl lint` and canonical OpenTofu format and validation checks.
+- [x] Commit the coherent source change.
+
+## Task 2: Prepare and deploy through the released backend
+
+- [ ] Obtain the state-migration completion notice and verify the supported workspace selector.
+- [ ] Verify independent DAC administration and preserve protected backups of live network configuration, leases, DNS data, and UniFi profiles.
+- [ ] Review a fresh canonical plan. Reject incidental VF resets, container replacement, management address changes, WAN changes, and service changes outside the migration.
+- [ ] Verify that replacing the old firewall tracking resource does not stop the active service. The pinned provider's delete operation forgets state, and the new declaration adopts the active service without restart triggers. Keep rule updates atomic through the activation unit.
+- [ ] Apply only the reviewed configuration. Confirm the existing administration session, an independent session, DHCP, DNS, Internet access, BGP, and Cloudflare health.
+- [ ] Record the applied revision and current verification. Keep LAB-144 In Progress until deployment and remote access checks pass.
+
+## Task 3: Configure UniFi, LAB-146
+
+- [ ] Inspect actual port and Wi-Fi assignments before changing them.
+- [ ] Configure third-party-gateway networks 100, 200, and 300. Preserve native management on the PowerEdge and AP uplinks while permitting the new VLAN tags.
+- [ ] Assign only a test port and temporary Wi-Fi network initially. Verify router services and remote controller access before migrating household assignments.
+
+## Task 4: Verify hardware and isolation, LAB-147
+
+- [ ] Test both address families, router advertisements, DHCP renewal, local DNS, Internet access, and return routes from controlled clients.
+- [ ] Exercise permitted connections, prohibited connections, and replies after hardware rules exist. Verify that the NIC cannot bypass the router's access rules.
+- [ ] Compare throughput, device counters, and CPU usage against the current path. Report 100% CPU as one core and distinguish hardware switching from software routing.
+
+## Task 5: Migrate clients, LXCs, and DNS
+
+- [ ] Complete LAB-145 with tested old-name compatibility before changing existing client names. Include clients that submit full old names during DHCP renewal.
+- [ ] Complete LAB-148 one port or Wi-Fi group at a time. Confirm new addresses and active routes before migrating another group.
+- [ ] Complete LAB-149 one LXC at a time after verifying a separate internal VF network and its isolation. Do not assume that adding an interface isolates it.
+- [ ] Complete LAB-150 after checking lease expiration, static addresses, and observed dependencies. Retain management addresses and the `:300` prefix.
+
+## Recover a failed migration group
+
+Restore the group's previous UniFi assignment and renew its network settings. Preserve the old router and DNS configuration during the transition. Use the independent DAC connection to restore the validated configuration if router activation fails. Verify both address families and management before resuming migration.

@@ -1,0 +1,14 @@
+[Match]
+Name=${name}
+
+[Link]
+ActivationPolicy=manual
+RequiredForOnline=no
+
+[Network]
+Address=${network.gateway4}/24
+Address=${network.gateway6}/64
+DHCP=no
+IPv6AcceptRA=no
+IPv6SendRA=no
+LinkLocalAddressing=ipv6

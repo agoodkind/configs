@@ -8,11 +8,15 @@ acl lan_clients {
     10.230.5.0/24;
     3d06:bad:b01:300::/64;
     3d06:bad:b01:305::/64;
+%{ for name, network in collingwood_networks ~}
+    ${network.subnet4};
+    ${network.subnet6};
+%{ endfor ~}
 };
 options {
     directory "/var/cache/bind";
-    listen-on { 127.0.0.1; 10.230.0.1; 10.230.5.1; };
-    listen-on-v6 { ::1; 3d06:bad:b01:300::1; 3d06:bad:b01:305::1; };
+    listen-on { 127.0.0.1; 10.230.0.1; 10.230.5.1; %{ for name, network in collingwood_networks }${network.gateway4}; %{ endfor }};
+    listen-on-v6 { ::1; 3d06:bad:b01:300::1; 3d06:bad:b01:305::1; %{ for name, network in collingwood_networks }${network.gateway6}; %{ endfor }};
     recursion yes;
     allow-query { lan_clients; };
     allow-recursion { lan_clients; };

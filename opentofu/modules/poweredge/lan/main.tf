@@ -88,7 +88,7 @@ resource "pveguest_file" "frr" {
   vmid     = var.vmid
   kind     = "lxc"
   path     = local.service_files.frr.path
-  content  = file("${path.module}/files/${local.service_files.frr.source}")
+  content  = local.service_content.frr
   owner    = local.service_files.frr.owner
   group    = local.service_files.frr.group
   mode     = local.service_files.frr.mode
@@ -127,19 +127,56 @@ resource "pveguest_apt_packages" "lan" {
 }
 
 resource "pveguest_file" "service" {
-  for_each = { for name, config in local.service_files : name => config if name != "frr" }
+  for_each = {
+    for name, config in local.service_files : name => config
+    if name != "frr" && !contains(["dhcp4", "dhcp6", "ddns"], name)
+  }
 
   node     = var.node
   vmid     = var.vmid
   kind     = "lxc"
   path     = each.value.path
-  content  = templatefile("${path.module}/files/${each.value.source}", local.template_vars)
+  content  = local.service_content[each.key]
   owner    = each.value.owner
   group    = each.value.group
   mode     = each.value.mode
   validate = each.value.validate
 
   depends_on = [pveguest_apt_packages.lan]
+}
+
+resource "pveguest_file" "kea_config" {
+  for_each = {
+    for name, config in local.service_files : name => config
+    if contains(["dhcp4", "dhcp6", "ddns"], name)
+  }
+
+  node     = var.node
+  vmid     = var.vmid
+  kind     = "lxc"
+  path     = each.value.path
+  content  = local.service_content[each.key]
+  owner    = each.value.owner
+  group    = each.value.group
+  mode     = each.value.mode
+  validate = each.value.validate
+
+  depends_on = [pveguest_systemd_unit.collingwood_network]
+}
+
+moved {
+  from = pveguest_file.service["dhcp4"]
+  to   = pveguest_file.kea_config["dhcp4"]
+}
+
+moved {
+  from = pveguest_file.service["dhcp6"]
+  to   = pveguest_file.kea_config["dhcp6"]
+}
+
+moved {
+  from = pveguest_file.service["ddns"]
+  to   = pveguest_file.kea_config["ddns"]
 }
 
 # VPP installation requires VPP_INSTALL_SKIP_SYSCTL, which the package resources
@@ -155,10 +192,14 @@ resource "pveguest_systemd_unit" "service" {
   enabled = true
   active  = true
   restart_on = {
-    for name in each.value : name => pveguest_file.service[name].write_id
+    for name in each.value : name => merge(pveguest_file.service, pveguest_file.kea_config)[name].write_id
   }
 
-  depends_on = [pveguest_systemd_unit.inactive]
+  depends_on = [
+    pveguest_systemd_unit.inactive,
+    pveguest_systemd_unit.collingwood_network,
+    pveguest_file.collingwood_zone,
+  ]
 }
 
 resource "pveguest_systemd_unit" "inactive" {

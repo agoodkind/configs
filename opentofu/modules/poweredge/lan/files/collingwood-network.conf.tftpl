@@ -1,0 +1,4 @@
+[Network]
+%{ for name in keys(collingwood_networks) ~}
+VLAN=${name}
+%{ endfor ~}
