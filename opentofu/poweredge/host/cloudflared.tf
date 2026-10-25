@@ -63,13 +63,17 @@ resource "terraform_data" "poweredge_cloudflared" {
     agent = true
   }
 
+  provisioner "remote-exec" {
+    inline = ["systemd-run --unit=poweredge-cloudflared-${self.id} --collect --property=Type=exec --property=RuntimeDirectory=poweredge-cloudflared-${self.id} --property=RuntimeDirectoryMode=0700 --property=RuntimeMaxSec=600 /usr/bin/sleep infinity"]
+  }
+
   provisioner "file" {
     source      = pathexpand(var.poweredge_host_tunnel_token_file)
-    destination = "/run/poweredge-cloudflared-token"
+    destination = "/run/poweredge-cloudflared-${self.id}/token"
   }
 
   provisioner "remote-exec" {
-    inline = ["/usr/local/sbin/install-poweredge-cloudflared '${local.cloudflared_release.url}' '${local.cloudflared_release.sha256}'"]
+    inline = ["/usr/local/sbin/install-poweredge-cloudflared '${local.cloudflared_release.url}' '${local.cloudflared_release.sha256}' 'poweredge-cloudflared-${self.id}.service'"]
   }
 
   depends_on = [remote_file.poweredge_cloudflared]
