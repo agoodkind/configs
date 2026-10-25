@@ -15,7 +15,7 @@ terraform {
   required_providers {
     http     = { source = "hashicorp/http", version = ">= 3.0" }
     proxmox  = { source = "bpg/proxmox", version = "0.116.0" }
-    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.0" }
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.1" }
     remote   = { source = "tenstad/remote", version = ">= 0.2.1" }
   }
 }
