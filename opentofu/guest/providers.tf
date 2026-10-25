@@ -3,7 +3,7 @@ terraform {
     # configsctl selects the shared provider mirror.
     pveguest = {
       source  = "tofu.home.arpa/agoodkind/pveguest"
-      version = "0.1.0"
+      version = "0.1.1"
     }
     proxmox = {
       source  = "bpg/proxmox"
