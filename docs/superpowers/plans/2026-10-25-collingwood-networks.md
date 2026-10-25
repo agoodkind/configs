@@ -49,6 +49,7 @@ Each IPv4 subnet uses `/24`, and each IPv6 prefix uses `/64`. Every new househol
 - [x] Preserve existing DHCP configuration and append new subnet identifiers 101, 102, and 103. Use the existing lifetime settings for both address families.
 - [x] Add the new BIND listeners, forward and reverse zones, Kea update domains, and FRR advertisements. Seed new dynamic zone files once and preserve subsequent Kea updates.
 - [x] Add interface rules for Privileged, General, and Guest while preserving the existing LAN and DAC rules during migration. Apply the validated firewall before activating new VLAN links.
+- [x] Separate firewall activation from VLAN activation with explicit service dependencies. Derive firewall interface groups from each network's access policy.
 - [x] Run the native Kea, BIND, FRR, nftables, and systemd validators against rendered files. Verify authenticated DNS updates and allowed and denied packets in isolated Linux namespaces.
 - [x] Run `./configsctl lint` and canonical OpenTofu format and validation checks.
 - [x] Commit the coherent source change.

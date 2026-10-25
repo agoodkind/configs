@@ -2,6 +2,7 @@ locals {
   collingwood_networks = {
     for index, name in ["privileged", "general", "guest"] : name => {
       vlan_id       = (index + 1) * 100
+      broad_access  = index == 0
       subnet_id     = 101 + index
       subnet4       = "10.230.${index + 1}.0/24"
       subnet6       = "3d06:bad:b01:${301 + index}::/64"
@@ -153,6 +154,14 @@ resource "pveguest_file" "collingwood_network_unit" {
   content = templatefile("${path.module}/files/collingwood-network.service", local.template_vars)
 }
 
+resource "pveguest_file" "collingwood_firewall_unit" {
+  node    = var.node
+  vmid    = var.vmid
+  kind    = "lxc"
+  path    = "/etc/systemd/system/collingwood-firewall.service"
+  content = file("${path.module}/files/collingwood-firewall.service")
+}
+
 resource "pveguest_file" "collingwood_zone" {
   for_each = local.collingwood_zones
 
@@ -186,6 +195,21 @@ resource "pveguest_systemd_unit" "firewall" {
   depends_on = [pveguest_file.service["firewall"]]
 }
 
+resource "pveguest_systemd_unit" "collingwood_firewall" {
+  node    = var.node
+  vmid    = var.vmid
+  kind    = "lxc"
+  name    = "collingwood-firewall.service"
+  enabled = true
+  active  = true
+  restart_on = {
+    config = pveguest_file.service["firewall"].write_id
+    unit   = pveguest_file.collingwood_firewall_unit.write_id
+  }
+
+  depends_on = [pveguest_systemd_unit.firewall]
+}
+
 resource "pveguest_systemd_unit" "collingwood_network" {
   node    = var.node
   vmid    = var.vmid
@@ -197,11 +221,10 @@ resource "pveguest_systemd_unit" "collingwood_network" {
     { for name, config in pveguest_file.collingwood_netdev : "netdev_${name}" => config.write_id },
     { for name, config in pveguest_file.collingwood_network : "network_${name}" => config.write_id },
     {
-      parent   = pveguest_file.collingwood_parent.write_id
-      unit     = pveguest_file.collingwood_network_unit.write_id
-      firewall = pveguest_file.service["firewall"].write_id
+      parent = pveguest_file.collingwood_parent.write_id
+      unit   = pveguest_file.collingwood_network_unit.write_id
     }
   )
 
-  depends_on = [pveguest_systemd_unit.network, pveguest_systemd_unit.firewall]
+  depends_on = [pveguest_systemd_unit.network, pveguest_systemd_unit.collingwood_firewall]
 }

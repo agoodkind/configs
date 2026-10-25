@@ -1,15 +1,13 @@
 [Unit]
 Description=Configure Collingwood VLAN interfaces
-Requires=systemd-networkd.service
-After=systemd-networkd.service
+Requires=systemd-networkd.service collingwood-firewall.service
+After=systemd-networkd.service collingwood-firewall.service
 Before=kea-dhcp4-server.service kea-dhcp6-server.service named.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 TimeoutStartSec=45
-ExecStart=/usr/sbin/nft --check --file /etc/nftables.conf
-ExecStart=/usr/sbin/nft --file /etc/nftables.conf
 ExecStart=/usr/bin/networkctl reload
 ExecStart=/usr/bin/networkctl reconfigure lan-out
 %{ for name in keys(collingwood_networks) ~}
