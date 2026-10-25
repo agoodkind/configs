@@ -59,7 +59,7 @@ resource "cloudflare_zero_trust_device_custom_profile" "berylax_lan" {
     { suffix = var.dns_search_suffix },
   ]
 
-  include = var.berylax_include
+  include = concat(var.berylax_include, local.poweredge_mwan_include)
 
   lifecycle {
     prevent_destroy = true
@@ -95,7 +95,7 @@ resource "cloudflare_zero_trust_device_custom_profile" "tun_only" {
     { suffix = var.dns_search_suffix },
   ]
 
-  include = var.tun_only_include
+  include = concat(var.tun_only_include, local.poweredge_mwan_include)
 
   lifecycle {
     prevent_destroy = true

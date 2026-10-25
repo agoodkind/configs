@@ -81,3 +81,8 @@ output "cloudflare_router_tunnel_token" {
   value       = module.cloudflare.router_tunnel_token
   sensitive   = true
 }
+
+output "poweredge_tunnel_ids" {
+  description = "PowerEdge tunnel identifiers keyed by host or mwan."
+  value       = module.cloudflare.poweredge_tunnel_ids
+}

@@ -42,6 +42,8 @@ tofu:
         proxmox_acme_certificate.poweredge: poweredge
         proxmox_acme_dns_plugin.poweredge: poweredge
         pveguest_host_kernel_modules.poweredge: poweredge
+        remote_file.poweredge_cloudflared: poweredge
+        terraform_data.poweredge_cloudflared: poweredge
       node_hosts:
         poweredge: poweredge
     opentofu/poweredge/routing:
@@ -72,6 +74,7 @@ tofu:
         - cloudflare_zero_trust_device_managed_networks
         - cloudflare_zero_trust_tunnel_cloudflared
         - cloudflare_zero_trust_tunnel_cloudflared_route
+        - cloudflare_zero_trust_tunnel_cloudflared_config
     opentofu/suburban/clyde:
       guest_hosts:
         suburban/224: clyde.suburban.goodkind.io
