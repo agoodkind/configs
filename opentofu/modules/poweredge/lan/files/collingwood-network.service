@@ -1,0 +1,19 @@
+[Unit]
+Description=Configure Collingwood VLAN interfaces
+Requires=systemd-networkd.service collingwood-firewall.service
+After=systemd-networkd.service collingwood-firewall.service
+Before=kea-dhcp4-server.service kea-dhcp6-server.service named.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=45
+ExecStart=/usr/bin/networkctl reload
+ExecStart=/usr/bin/networkctl reconfigure lan-out
+%{ for name in keys(collingwood_networks) ~}
+ExecStart=/usr/bin/networkctl up ${name}
+%{ endfor ~}
+ExecStart=/usr/lib/systemd/systemd-networkd-wait-online --ipv4 --ipv6 --timeout=30 ${join(" ", [for name in keys(collingwood_networks) : "--interface=${name}:routable"])}
+
+[Install]
+WantedBy=multi-user.target

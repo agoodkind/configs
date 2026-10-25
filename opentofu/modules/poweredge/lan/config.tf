@@ -1,5 +1,9 @@
 locals {
-  template_vars = { nat64_prefix = var.nat64_prefix }
+  template_vars = {
+    nat64_prefix         = var.nat64_prefix
+    collingwood_networks = local.collingwood_networks
+    collingwood_zones    = local.collingwood_zones
+  }
   # FRR installs before the container can learn its default routes through BGP.
   frr_debs = jsondecode(file("${path.module}/../../lanrouter/frr-packages.json"))
   network_files = {
@@ -111,12 +115,15 @@ locals {
   service_files = {
     for name, config in local.service_file_overrides : name => merge(local.file_defaults, config)
   }
+  service_content = merge(
+    { for name, config in local.service_files : name => templatefile("${path.module}/files/${config.source}", local.template_vars) },
+    { for name, config in local.collingwood_kea_configs : name => jsonencode(config) }
+  )
   services = {
     "kea-dhcp4-server.service"     = ["dhcp4", "dhcp4_ddns"]
     "kea-dhcp6-server.service"     = ["dhcp6", "dhcp6_ddns"]
     "kea-dhcp-ddns-server.service" = ["ddns", "ddns_dns"]
     "named.service"                = ["dns", "dns_network", "dns_zones"]
-    "nftables.service"             = ["firewall"]
     "vpp.service"                  = ["vpp_startup", "vpp_nat64", "vpp_service"]
     "nginx.service"                = ["nginx", "beacon", "beacon_certificate", "nginx_network"]
   }
