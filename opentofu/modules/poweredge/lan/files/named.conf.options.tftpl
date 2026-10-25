@@ -13,8 +13,6 @@ options {
     directory "/var/cache/bind";
     listen-on { 127.0.0.1; 10.230.0.2; 10.230.5.1; };
     listen-on-v6 { ::1; 3d06:bad:b01:300::2; 3d06:bad:b01:305::1; };
-    query-source address 10.230.5.1;
-    query-source-v6 address 3d06:bad:b01:305::1;
     recursion yes;
     allow-query { lan_clients; };
     allow-recursion { lan_clients; };
