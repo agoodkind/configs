@@ -10,10 +10,16 @@ variable "poweredge_host_tunnel_token_version" {
   default     = 1
 }
 
+variable "poweredge_cloudflared_ssh_host" {
+  description = "PowerEdge IPv6 management address for installing cloudflared."
+  type        = string
+  default     = "3d06:bad:b01:300::254"
+}
+
 locals {
   cloudflared_files   = "${path.module}/../../modules/poweredge/cloudflared"
   cloudflared_release = jsondecode(file("${local.cloudflared_files}/release.json"))
-  cloudflared_host    = local.service_mapping.poweredge_hypervisor.ipv6
+  cloudflared_host    = var.poweredge_cloudflared_ssh_host
   cloudflared_host_files = {
     service = {
       source = "cloudflared.service"
