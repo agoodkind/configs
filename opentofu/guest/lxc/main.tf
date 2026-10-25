@@ -6,7 +6,7 @@ terraform {
     }
     pveguest = {
       source  = "tofu.home.arpa/agoodkind/pveguest"
-      version = "0.1.0"
+      version = "0.1.1"
     }
   }
 }
