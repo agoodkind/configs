@@ -4,7 +4,7 @@ iface lo inet loopback
 auto ens1f0
 iface ens1f0 inet static
 	address 10.230.0.254/24
-	gateway 10.230.0.2
+	gateway 10.230.0.1
 	address 3d06:bad:b01:300::254/64
 	accept-ra 2
 	autoconf 1
@@ -26,6 +26,7 @@ iface nic0 inet manual
 # The driver reads each permanent MAC when it binds in the host namespace.
 auto nic1
 iface nic1 inet manual
+	accept-ra 0
 	post-up if [ "$(cat /sys/class/net/nic1/device/sriov_numvfs)" -eq 0 ]; then echo 5 > /sys/class/net/nic1/device/sriov_numvfs; else test "$(cat /sys/class/net/nic1/device/sriov_numvfs)" -eq 5; fi
 	post-up ip link set nic1 vf 0 mac 02:57:50:04:01:00 spoofchk off trust on
 	post-up ip link set nic1 vf 1 mac 02:57:50:04:01:01 spoofchk off trust on
