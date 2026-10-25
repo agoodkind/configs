@@ -30,13 +30,17 @@ variable "poweredge_idrac_initial_installation" {
   default     = false
 }
 
+locals {
+  idrac_root_ca_certificate_files = var.poweredge_idrac_initial_ca_file == "" ? null : [var.poweredge_idrac_initial_ca_file]
+}
+
 provider "restful" {
   alias    = "idrac_accounts"
   base_url = var.poweredge_idrac_setup_endpoint
   client = {
     certificates              = []
     tls_insecure_skip_verify  = false
-    root_ca_certificate_files = var.poweredge_idrac_initial_ca_file == "" ? null : [var.poweredge_idrac_initial_ca_file]
+    root_ca_certificate_files = local.idrac_root_ca_certificate_files
   }
   security = {
     http = {
@@ -54,7 +58,7 @@ provider "restful" {
   client = {
     certificates              = []
     tls_insecure_skip_verify  = false
-    root_ca_certificate_files = var.poweredge_idrac_initial_ca_file == "" ? null : [var.poweredge_idrac_initial_ca_file]
+    root_ca_certificate_files = local.idrac_root_ca_certificate_files
   }
   security = {
     http = {
