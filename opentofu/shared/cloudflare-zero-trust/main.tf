@@ -52,6 +52,8 @@ module "cloudflare" {
     { address = "10.250.0.0/16", description = "home-v4" },
     { address = "10.240.0.0/16", description = "suburban-v4" },
     { host = "*.cloudflareaccess.com" },
+    { address = "10.230.230.1/32", description = "PowerEdge MWAN IPv4" },
+    { address = "fd06:fab::1/128", description = "PowerEdge MWAN IPv6" },
   ]
 
   tun_only_include = [
@@ -68,6 +70,8 @@ module "cloudflare" {
     { address = "10.240.0.0/16", description = "suburban-v4" },
     { host = "*.cloudflareaccess.com" },
     { address = "10.230.0.0/24", description = "berylax-v4" },
+    { address = "10.230.230.1/32", description = "PowerEdge MWAN IPv4" },
+    { address = "fd06:fab::1/128", description = "PowerEdge MWAN IPv6" },
   ]
 }
 
@@ -80,4 +84,9 @@ output "cloudflare_router_tunnel_token" {
   description = "Tunnel token for the OPNsense Cloudflared plugin."
   value       = module.cloudflare.router_tunnel_token
   sensitive   = true
+}
+
+output "poweredge_tunnel_ids" {
+  description = "PowerEdge tunnel identifiers keyed by host or mwan."
+  value       = module.cloudflare.poweredge_tunnel_ids
 }
