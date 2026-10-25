@@ -67,4 +67,4 @@ Provision the service, timer, and minimal runtime package through the [PowerEdge
 - [x] Remove the factory-certificate connection override and activate the daily timer.
 - [x] Verify that the installed renewal service exits successfully and reports `0 added, 0 changed, 0 destroyed` with an exact leaf certificate match.
 - [x] Confirm that the timer is enabled, active, and waiting with persistent scheduling and a 15-minute randomized delay.
-- [ ] Open the focused pull requests, attach them, and report runtime proof and any remaining work.
+- [x] Open the focused pull requests, attach them, and report runtime proof and any remaining work.
