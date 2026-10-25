@@ -4,6 +4,7 @@ tofu:
   # key as TF_VAR_<key> when a file in that workspace declares a variable with
   # the key name.
   workspaces_dir: opentofu
+  provider_mirror: opentofu/terraform.d/plugins
   # `./configsctl tofu` exports a vault key <env_key_prefix><NAME> as the
   # environment variable <NAME>.
   env_key_prefix: vault_tofu_env_
