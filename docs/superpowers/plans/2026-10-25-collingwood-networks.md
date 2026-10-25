@@ -16,18 +16,20 @@ Each IPv4 subnet uses `/24`, and each IPv6 prefix uses `/64`. Every new househol
 
 | Network | Connection | IPv4 | IPv6 | DNS suffix |
 |---|---|---|---|---|
-| Management | Existing untagged LAN | 10.230.0.0 | 3d06:bad:b01:300:: | mgmt |
-| Privileged | VLAN 100 | 10.230.1.0 | 3d06:bad:b01:301:: | privileged |
-| General | VLAN 200 | 10.230.2.0 | 3d06:bad:b01:302:: | general |
-| Guest | VLAN 300 | 10.230.3.0 | 3d06:bad:b01:303:: | guest |
+| Personal management | Native VLAN 1001; keep the existing untagged LAN during migration | 10.230.0.0 | 3d06:bad:b01:300:: | management |
+| Privileged | VLAN 101 | 10.230.1.0 | 3d06:bad:b01:301:: | privileged |
+| General | VLAN 102 | 10.230.2.0 | 3d06:bad:b01:302:: | general |
+| Guest | VLAN 103 | 10.230.3.0 | 3d06:bad:b01:303:: | guest |
 | VMnet | Dedicated internal VF interfaces | 10.230.4.0 | 3d06:bad:b01:304:: | vmnet |
-| Temporary DAC | Dedicated nic3 VF | 10.230.5.0 | 3d06:bad:b01:305:: | Preserve current naming initially |
+| Temporary DAC | Dedicated nic3 VF | 10.230.5.0 | 3d06:bad:b01:305:: | dac |
 
 ## Global constraints
 
 - Preserve management and DAC addresses, the router's link-local identity, WAN selection, and MWAN transit.
 - Preserve directly assigned VFs and use proven NIC hardware switching and supported offloads. Do not introduce Linux bridges in forwarding.
-- Grant broad access to every device on VLAN 100. Select VLAN membership individually.
+- Grant broad access to every device on VLAN 101. Select VLAN membership individually.
+- Assign ordinary client access ports to General VLAN 102 after controlled tests. Keep management equipment and the PowerEdge uplink on their reviewed native network.
+- Preserve untagged operation on PowerEdge's existing management VF. UniFi can assign that untagged network to native VLAN 1001 without duplicating the management subnet on another router interface.
 - Permit General and Guest Internet access and required router services. Block their new connections to other local networks unless an explicit rule permits them.
 - Keep BIND local and Cloudflare responsible for selected public services. Preserve Kea leases, dynamic records, and old names during migration.
 - Keep the existing LAN's DHCP, DNS, and advertisements operational until its household clients migrate. Management retains its IPv6 prefix.
@@ -66,8 +68,24 @@ Each IPv4 subnet uses `/24`, and each IPv6 prefix uses `/64`. Every new househol
 ## Task 3: Configure UniFi, LAB-146
 
 - [ ] Inspect actual port and Wi-Fi assignments before changing them.
-- [ ] Configure third-party-gateway networks 100, 200, and 300. Preserve native management on the PowerEdge and AP uplinks while permitting the new VLAN tags.
+- [ ] Configure third-party-gateway networks 101, 102, 103, and 1001. Preserve the current untagged network until the reviewed management cutover while permitting the new VLAN tags.
 - [ ] Assign only a test port and temporary Wi-Fi network initially. Verify router services and remote controller access before migrating household assignments.
+
+## Renumber the prepared household VLANs
+
+Linux cannot change an existing VLAN interface's ID. A successful network reload does not prove the requested IDs took effect.
+
+- [ ] Verify the dedicated DAC control connection and save the current router and UniFi configuration in protected backups.
+- [ ] Inspect active leases and switch assignments before replacing the household VLAN interfaces. Preserve the existing untagged management network and DAC connection.
+- [ ] Review a canonical `poweredge/routing` plan containing only the three `.netdev` changes and their network activation trigger. Exclude the unrelated MWAN agent restart.
+- [ ] Stage all three `.netdev` files through the canonical provider before activation. Keep the saved-plan source unchanged during each apply.
+- [ ] Verify that `privileged`, `general`, and `guest` are VLAN children of `lan-out`. Delete only those three interfaces, then activate the reviewed network unit. Preserve the parent VF, management addresses, and DAC VF.
+- [ ] Reopen Kea's DHCPv4 and DHCPv6 sockets after the interfaces restart. Check actual DNS responses before restarting BIND for stale interface bindings.
+- [ ] Verify runtime VLAN IDs 101, 102, and 103, unique connected subnets, BGP return routes, both Internet families, local DNS, and both Cloudflare connectors.
+- [ ] Record the activation trigger through the canonical provider and require a clean router-module plan.
+- [ ] Test native VLAN 1001 and the tagged networks on a controlled port before changing existing native port assignments. Router and switch updates do not share an atomic transaction.
+
+If verification fails, restore the saved `.netdev` files, replace only the three household VLAN interfaces, activate the network unit, and reopen the DHCP sockets. Restore the reviewed UniFi profiles if the switch phase changed them. Test the DAC connection and original management service before resuming.
 
 ## Task 4: Verify hardware and isolation, LAB-147
 
