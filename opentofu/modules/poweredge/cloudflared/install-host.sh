@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+STAGING_UNIT=""
+PACKAGE_FILE=""
+
 cleanup() {
-    local staging_unit="$1"
-    local package_file="$2"
-    systemctl stop "$staging_unit"
-    if [[ -n "$package_file" ]]; then
-        rm -- "$package_file"
+    systemctl stop "$STAGING_UNIT"
+    if [[ -n "$PACKAGE_FILE" ]]; then
+        rm -- "$PACKAGE_FILE"
     fi
 }
 
 main() {
     local package_url="${1:?Supply the cloudflared package URL}"
     local package_sha256="${2:?Supply the cloudflared package SHA-256}"
-    local staging_unit="${3:?Supply the systemd staging unit}"
-    local staging_directory="/run/${staging_unit%.service}"
-    local package_file=""
-    trap 'cleanup "$staging_unit" "$package_file"' EXIT
-    package_file="$(mktemp /var/tmp/cloudflared.XXXXXXXX.deb)"
+    STAGING_UNIT="${3:?Supply the systemd staging unit}"
+    local staging_directory="/run/${STAGING_UNIT%.service}"
+    trap cleanup EXIT
+    PACKAGE_FILE="$(mktemp /var/tmp/cloudflared.XXXXXXXX.deb)"
 
-    curl --fail --silent --show-error --location --proto '=https' --output "$package_file" "$package_url"
+    curl --fail --silent --show-error --location --proto '=https' --output "$PACKAGE_FILE" "$package_url"
     local actual_digest
-    actual_digest="$(sha256sum "$package_file")"
+    actual_digest="$(sha256sum "$PACKAGE_FILE")"
     if [[ "${actual_digest%% *}" != "$package_sha256" ]]; then
         printf '%s\n' 'The cloudflared package does not match the pinned SHA-256.' >&2
         exit 1
     fi
-    dpkg --install "$package_file"
+    dpkg --install "$PACKAGE_FILE"
     install -D -m 0600 "$staging_directory/token" /etc/cloudflared/token
     systemd-analyze verify /etc/systemd/system/cloudflared.service
     systemctl daemon-reload
@@ -34,7 +34,7 @@ main() {
     systemctl restart cloudflared.service
     systemctl is-active cloudflared.service
     trap - EXIT
-    cleanup "$staging_unit" "$package_file"
+    cleanup
 }
 
 main "$@"
