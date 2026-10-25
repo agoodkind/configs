@@ -32,7 +32,7 @@
           "goodkind-mwan-steering:translation": {
             "mode": "ietf-nat:nptv6",
             "nptv6": {
-              "internal-prefix": "3d06:bad:b01:300::/64",
+              "internal-prefix": "3d06:bad:b01:300::/56",
               "external-source": "delegated"
             }
           }
@@ -112,7 +112,7 @@
       "hash-mode": "random",
       "reserved-tables": [400, 500],
       "translation": {
-        "internal-prefix": "3d06:bad:b01:300::/64",
+        "internal-prefix": "3d06:bad:b01:300::/56",
         "opnsense-edge-v6": "fd06:fab::2",
         "mwanbr-edge-v6": "fd06:fab::1"
       },

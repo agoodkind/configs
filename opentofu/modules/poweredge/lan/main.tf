@@ -118,7 +118,9 @@ resource "pveguest_apt_packages" "lan" {
   kind = "lxc"
   packages = toset([
     "bind9", "bind9-dnsutils", "ca-certificates", "curl", "ethtool",
-    "kea-dhcp4-server", "kea-dhcp6-server", "nftables", "nginx", "openssl", "tayga",
+    "iputils-arping", "libndp-tools",
+    "kea-dhcp4-server", "kea-dhcp6-server", "kea-dhcp-ddns-server",
+    "nftables", "nginx", "openssl", "socat", "tayga",
   ])
 
   depends_on = [pveguest_systemd_unit.frr]

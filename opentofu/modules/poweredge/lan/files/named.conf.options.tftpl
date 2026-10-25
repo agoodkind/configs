@@ -1,21 +1,28 @@
+tls nextdns {
+    remote-hostname "99adb9.dns.nextdns.io";
+};
 acl lan_clients {
     127.0.0.0/8;
     ::1;
     10.230.0.0/24;
+    10.230.5.0/24;
     3d06:bad:b01:300::/64;
+    3d06:bad:b01:305::/64;
 };
 options {
     directory "/var/cache/bind";
-    listen-on { 127.0.0.1; 10.230.0.1; };
-    listen-on-v6 { ::1; 3d06:bad:b01:300::1; };
-    query-source address 10.230.0.1;
-    query-source-v6 address 3d06:bad:b01:300::1;
+    listen-on { 127.0.0.1; 10.230.0.2; 10.230.5.1; };
+    listen-on-v6 { ::1; 3d06:bad:b01:300::2; 3d06:bad:b01:305::1; };
     recursion yes;
     allow-query { lan_clients; };
     allow-recursion { lan_clients; };
     allow-transfer { none; };
     forward only;
-    forwarders { 2606:4700:4700::1111; 1.1.1.1; };
+    forwarders port 853 tls nextdns {
+        2a07:a8c0::99:adb9;
+        2a07:a8c1::99:adb9;
+        45.90.28.169;
+        45.90.30.169;
+    };
     dnssec-validation auto;
-    dns64 ${nat64_prefix} { clients { lan_clients; }; };
 };
