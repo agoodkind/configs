@@ -184,6 +184,10 @@ locals {
       path        = "/usr/local/share/pve-overlay-pve-container.patch"
       permissions = "0644"
     }
+    "patches/pve-http-server.patch" = {
+      path        = "/usr/local/share/pve-overlay-pve-http-server.patch"
+      permissions = "0644"
+    }
     "patches/pve-manager.patch" = {
       path        = "/usr/local/share/pve-overlay-pve-manager.patch"
       permissions = "0644"

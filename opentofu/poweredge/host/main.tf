@@ -60,7 +60,7 @@ locals {
   overlay_hosts = { poweredge = {
     ssh_host  = "poweredge.home.goodkind.io"
     node_name = "poweredge"
-    commit    = "662112b62488c8acab16cfe26c7297b6c8f95093"
+    commit    = "2b0a332d39a8876d083c195f7081f73e3988a644"
     guest_api = true
     kernel_modules = {
       allow = [
