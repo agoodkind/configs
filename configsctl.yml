@@ -15,9 +15,8 @@ tofu:
       username_variable: poweredge_idrac_user
       password_variable: poweredge_idrac_password
       dell:
-        endpoint: https://[3d06:bad:b01:300::efb]
-        ca_file: opentofu/poweredge/firmware/idrac-ca.pem
-        server_name: idrac-J9P5L44
+        endpoint: https://idrac.poweredge.management.collingwood.goodkind.io
+        server_name: idrac.poweredge.management.collingwood.goodkind.io
         rotator_user: tofu-rotator
         rotator_password_key: vault_poweredge_idrac_rotator_password
         account_id: "3"
@@ -44,6 +43,7 @@ tofu:
         pveguest_host_kernel_modules.poweredge: poweredge
         remote_file.poweredge_cloudflared: poweredge
         terraform_data.poweredge_cloudflared: poweredge
+        module.idrac_certificate: poweredge
       node_hosts:
         poweredge: poweredge
     opentofu/poweredge/routing:

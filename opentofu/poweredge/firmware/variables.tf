@@ -1,7 +1,7 @@
 variable "poweredge_idrac_endpoint" {
   description = "HTTPS endpoint of the PowerEdge iDRAC Redfish service."
   type        = string
-  default     = "https://[3d06:bad:b01:300::efb]"
+  default     = "https://idrac.poweredge.management.collingwood.goodkind.io"
 }
 
 variable "poweredge_idrac_insecure" {
