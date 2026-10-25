@@ -37,7 +37,7 @@ locals {
     }
     lan = {
       vmid         = 314
-      hostname     = "edge-lan"
+      hostname     = "edge-router"
       cpu_cores    = 16
       memory_mb    = 1024
       disk_size_gb = 8
