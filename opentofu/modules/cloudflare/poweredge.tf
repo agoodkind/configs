@@ -24,6 +24,13 @@ locals {
       }
     }
   ]...)
+
+  poweredge_mwan_include = [
+    for network, description in local.poweredge_tunnels.mwan.routes : {
+      address     = network
+      description = description
+    }
+  ]
 }
 
 resource "cloudflare_zero_trust_tunnel_cloudflared" "poweredge" {
