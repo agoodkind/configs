@@ -6,8 +6,10 @@ ActivationPolicy=always-up
 RequiredForOnline=no
 
 [Network]
+Address=10.230.0.1/24
 Address=10.230.0.2/24
 Address=10.230.255.253/32
+Address=3d06:bad:b01:300::1/64
 Address=3d06:bad:b01:300::2/64
 DHCP=no
 IPv6AcceptRA=no
