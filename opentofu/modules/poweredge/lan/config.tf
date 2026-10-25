@@ -38,6 +38,25 @@ locals {
       mode     = "0640"
       validate = "/usr/sbin/kea-dhcp6 -t %s"
     }
+    ddns = {
+      path     = "/etc/kea/kea-dhcp-ddns.conf"
+      source   = "kea-dhcp-ddns.conf"
+      group    = "_kea"
+      mode     = "0640"
+      validate = "/usr/sbin/kea-dhcp-ddns -t %s"
+    }
+    dhcp4_ddns = {
+      path   = "/etc/systemd/system/kea-dhcp4-server.service.d/ddns.conf"
+      source = "dhcp-ddns-required.conf"
+    }
+    dhcp6_ddns = {
+      path   = "/etc/systemd/system/kea-dhcp6-server.service.d/ddns.conf"
+      source = "dhcp-ddns-required.conf"
+    }
+    ddns_dns = {
+      path   = "/etc/systemd/system/kea-dhcp-ddns-server.service.d/dns.conf"
+      source = "ddns-dns-required.conf"
+    }
     dns = {
       path     = "/etc/bind/named.conf.options"
       source   = "named.conf.options.tftpl"
@@ -47,6 +66,12 @@ locals {
     dns_network = {
       path   = "/etc/systemd/system/named.service.d/network.conf"
       source = "named-network.conf"
+    }
+    dns_zones = {
+      path     = "/etc/bind/named.conf.local"
+      source   = "named-ddns.conf"
+      group    = "bind"
+      validate = "/usr/bin/named-checkconf %s"
     }
     firewall = {
       path     = "/etc/nftables.conf"
@@ -87,11 +112,12 @@ locals {
     for name, config in local.service_file_overrides : name => merge(local.file_defaults, config)
   }
   services = {
-    "kea-dhcp4-server.service" = ["dhcp4"]
-    "kea-dhcp6-server.service" = ["dhcp6"]
-    "named.service"            = ["dns", "dns_network"]
-    "nftables.service"         = ["firewall"]
-    "vpp.service"              = ["vpp_startup", "vpp_nat64", "vpp_service"]
-    "nginx.service"            = ["nginx", "beacon", "beacon_certificate", "nginx_network"]
+    "kea-dhcp4-server.service"     = ["dhcp4", "dhcp4_ddns"]
+    "kea-dhcp6-server.service"     = ["dhcp6", "dhcp6_ddns"]
+    "kea-dhcp-ddns-server.service" = ["ddns", "ddns_dns"]
+    "named.service"                = ["dns", "dns_network", "dns_zones"]
+    "nftables.service"             = ["firewall"]
+    "vpp.service"                  = ["vpp_startup", "vpp_nat64", "vpp_service"]
+    "nginx.service"                = ["nginx", "beacon", "beacon_certificate", "nginx_network"]
   }
 }

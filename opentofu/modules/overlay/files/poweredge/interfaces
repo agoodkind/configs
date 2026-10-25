@@ -4,7 +4,7 @@ iface lo inet loopback
 auto ens1f0
 iface ens1f0 inet static
 	address 10.230.0.254/24
-	gateway 10.230.0.1
+	gateway 10.230.0.2
 	address 3d06:bad:b01:300::254/64
 	accept-ra 2
 	autoconf 1
