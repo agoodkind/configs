@@ -8,9 +8,41 @@
 # other ledger name to the owning guest's pinned address, reached on the
 # published node ports.
 services:
+{% if tack_provision_owner | bool and tack_search_enabled | bool %}
+  tack-ops:
+    volumes:
+      - type: bind
+        source: {{ tack_search_ca_path }}
+        target: {{ tack_search_ca_path }}
+        read_only: true
+        bind:
+          create_host_path: false
+{% endif %}
+{% if tack_cluster_role == 'search' or tack_app_guest | bool %}
+  tack-ops:
+    secrets: !override [TACK_OPS_AUDIT_OPERATOR_DSN]
+    environment:
+      DATABASE_URL_FILE: /run/secrets/TACK_OPS_AUDIT_OPERATOR_DSN
+      AUDIT_READER_DSN_FILE: !reset null
+      AUDIT_REDACTOR_DSN_FILE: !reset null
+      AUDIT_WRITER_PASSWORD_FILE: !reset null
+      AUDIT_READER_PASSWORD_FILE: !reset null
+      AUDIT_REDACTOR_PASSWORD_FILE: !reset null
+      AUDIT_OPERATOR_PASSWORD_FILE: !reset null
+      TACK_APP_PASSWORD_FILE: !reset null
+      TACK_MIGRATOR_PASSWORD_FILE: !reset null
+      TACK_BACKUP_S3_ACCESS_KEY_ID_FILE: !reset null
+      TACK_BACKUP_S3_SECRET_ACCESS_KEY_FILE: !reset null
+      OPENSEARCH_ENDPOINT: !reset null
+      OPENSEARCH_USERNAME: !reset null
+      OPENSEARCH_PASSWORD_FILE: !reset null
+      OPENSEARCH_MAINTENANCE_USERNAME: !reset null
+      OPENSEARCH_MAINTENANCE_PASSWORD_FILE: !reset null
+      OPENSEARCH_CURSOR_KEY_FILE: !reset null
+{% endif %}
 {% if tack_cluster_role == 'search' %}
-  # This service is the guest's OpenSearch member (TACK-539). A search guest
-  # runs no ledger node, and this is the only service its override defines.
+  # The search guest runs one native member. Its operator service supports
+  # reviewed deployment verification.
   # The service uses host networking because a container address changes on
   # every recreate. The node announces the guest's pinned address to its
   # peers, and the proxy dials that address.
@@ -100,10 +132,12 @@ services:
 {% endif %}
 {% if tack_provision_owner and not tack_store_legacy_node_present %}
   # Retired on this guest: the store runs one process per data guest, and the
-  # inactive profile keeps every compose up from starting one here. The deploy
-  # removes the stopped containers. Retire only after `ops store exclude` has
-  # moved every copy of a key off this guest's process, which the migration
-  # plan does before this value flips. The stack file gives the backup agent
+  # inactive profile keeps every compose up that does not name the service
+  # from starting one here. The deploy names fdb only on a guest that runs a
+  # store node, and it removes the stopped containers here. Retire only after
+  # `ops store exclude` has moved every copy of a key off this guest's
+  # process, which the migration plan does before this value flips. The stack
+  # file gives the backup agent
   # the backup profile, which COMPOSE_PROFILES enables, and compose starts a
   # service when any one of its profiles is active. The override replaces the
   # list instead of adding to it.
@@ -112,7 +146,7 @@ services:
   fdb-backup-agent:
     profiles: !override ["retired"]
 {% endif %}
-{% if (tack_provision_owner or tack_app_guest | bool) and tack_ledger_consumers_repointed %}
+{% if (tack_provision_owner or tack_app_guest | bool) and (tack_ledger_consumers_repointed or tack_search_enabled | bool or tack_ledger_tls_enabled | bool) %}
   # The app and the audit consumer reach the ledger at its permanent node
   # names, which resolve here to the owning guests' pinned addresses. The
   # multi-host database URL fails over across the three data nodes, so
@@ -127,19 +161,73 @@ services:
   # the driver waits out the kernel's TCP retry on yb1 and never reaches
   # yb2 or yb3 (TACK-464).
   app:
+{% if tack_search_enabled | bool or tack_ledger_tls_enabled | bool %}
+    volumes:
+{% if tack_search_enabled | bool %}
+      - type: bind
+        source: {{ tack_search_ca_path }}
+        target: {{ tack_search_ca_path }}
+        read_only: true
+        bind:
+          create_host_path: false
+{% endif %}
+{% if tack_ledger_tls_enabled | bool %}
+      - type: bind
+        source: {{ tack_ledger_ca_cert_path }}
+        target: /etc/tack/ledger-certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+{% endif %}
+{% endif %}
+{% if tack_ledger_consumers_repointed %}
     extra_hosts:
 {% for peer_name, peer_address in tack_ledger_peers.items() %}
       - "{{ peer_name }}:{{ peer_address }}"
 {% endfor %}
     environment:
-      DATABASE_URL: postgres://tack_app:${TACK_APP_PASSWORD:?}@yb1:5433,yb2:5433,yb3:5433/${YUGABYTE_DB:?}?{{ tack_ledger_ssl_query }}&connect_timeout={{ tack_database_connect_timeout_seconds }}
+      DATABASE_URL_FILE: /run/secrets/DATABASE_URL
 {% endif %}
-{% if tack_provision_owner and tack_ledger_consumers_repointed %}
+{% endif %}
+{% if tack_provision_owner and (tack_ledger_consumers_repointed or tack_ledger_tls_enabled | bool) %}
   audit-consumer:
+{% if tack_ledger_tls_enabled | bool %}
+    volumes:
+      - type: bind
+        source: {{ tack_ledger_ca_cert_path }}
+        target: /etc/tack/ledger-certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+{% endif %}
+{% if tack_ledger_consumers_repointed %}
     extra_hosts:
 {% for peer_name, peer_address in tack_ledger_peers.items() %}
       - "{{ peer_name }}:{{ peer_address }}"
 {% endfor %}
+{% endif %}
+  # The audit queue commands read the ledger with the reader login, which
+  # dials the same node names as the audit consumer (TACK-610). The image and
+  # profile repeat the Tack base file. Compose rejects a service without an
+  # image, and a Tack ref older than the audit-ops service defines none.
+  audit-ops:
+    image: "ghcr.io/agoodkind/tack-server:${TACK_IMAGE_TAG:-latest}"
+    profiles: [ops]
+{% if tack_ledger_tls_enabled | bool %}
+    volumes:
+      - type: bind
+        source: {{ tack_ledger_ca_cert_path }}
+        target: /etc/tack/ledger-certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+{% endif %}
+{% if tack_ledger_consumers_repointed %}
+    extra_hosts:
+{% for peer_name, peer_address in tack_ledger_peers.items() %}
+      - "{{ peer_name }}:{{ peer_address }}"
+{% endfor %}
+{% endif %}
 {% endif %}
 {% if tack_provision_owner and tack_queue_external_listener_enabled | bool %}
   # The broker keeps its bridge listener for the services on this guest and
@@ -156,6 +244,41 @@ services:
       KAFKA_LISTENERS: "PLAINTEXT://[::]:9092,CONTROLLER://[::]:9093,EXTERNAL://[::]:{{ tack_queue_external_port }}"
       KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092,EXTERNAL://[{{ service_mapping[service_name].ipv6 }}]:{{ tack_queue_external_port }}"
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+{% endif %}
+{% if tack_cluster_role == 'data' %}
+  tack-ops:
+    secrets: !override
+      - TACK_OPS_DATABASE_URL
+      - TACK_OPS_AUDIT_OPERATOR_DSN
+      - TACK_OPS_AUDIT_READER_DSN
+{% if tack_backup_enabled | bool %}
+      - TACK_BACKUP_S3_ACCESS_KEY_ID
+      - TACK_BACKUP_S3_SECRET_ACCESS_KEY
+{% endif %}
+{% if tack_ledger_bootstrap | bool %}
+      - AUDIT_WRITER_PASSWORD
+      - AUDIT_READER_PASSWORD
+      - AUDIT_REDACTOR_PASSWORD
+      - AUDIT_OPERATOR_PASSWORD
+      - TACK_APP_PASSWORD
+      - TACK_MIGRATOR_PASSWORD
+{% endif %}
+    environment:
+      AUDIT_REDACTOR_DSN_FILE: !reset null
+      OPENSEARCH_ENDPOINT: !reset null
+      OPENSEARCH_USERNAME: !reset null
+      OPENSEARCH_PASSWORD_FILE: !reset null
+      OPENSEARCH_MAINTENANCE_USERNAME: !reset null
+      OPENSEARCH_MAINTENANCE_PASSWORD_FILE: !reset null
+      OPENSEARCH_CURSOR_KEY_FILE: !reset null
+{% if not tack_ledger_bootstrap | bool %}
+      AUDIT_WRITER_PASSWORD_FILE: !reset null
+      AUDIT_READER_PASSWORD_FILE: !reset null
+      AUDIT_REDACTOR_PASSWORD_FILE: !reset null
+      AUDIT_OPERATOR_PASSWORD_FILE: !reset null
+      TACK_APP_PASSWORD_FILE: !reset null
+      TACK_MIGRATOR_PASSWORD_FILE: !reset null
+{% endif %}
 {% endif %}
 {% if tack_cluster_role != 'search' and not tack_app_guest | bool %}
   yugabyte:

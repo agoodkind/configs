@@ -333,3 +333,4 @@
 - name: Run the Tack search endpoint proxy
   ansible.builtin.import_tasks: tack-search-proxy.yml
   when: tack_search_proxy_enabled | bool
+  tags: [tack-search-proxy]

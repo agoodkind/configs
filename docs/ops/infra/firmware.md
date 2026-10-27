@@ -1,7 +1,7 @@
 # Configure PowerEdge NIC firmware
 
 The firmware workspace manages the BCM57504 OEM attributes declared in the
-[PowerEdge module](../../../opentofu/firmware/poweredge/main.tf). It uses a
+[PowerEdge module](../../../opentofu/modules/firmware/poweredge/main.tf). It uses a
 separate encrypted state file. configsctl locks PowerEdge while it rotates a
 provider credential and runs an authenticated OpenTofu command.
 
@@ -31,7 +31,7 @@ The service accounts use separate credentials:
    credential through sensitive, ephemeral variables. The rotator password
    remains inside configsctl. `fmt`, `validate`, and `show` do not rotate.
 
-   The adapter verifies the [pinned public iDRAC certificate](../../../opentofu/firmware/idrac-ca.pem)
+   The adapter verifies the [pinned public iDRAC certificate](../../../opentofu/poweredge/firmware/idrac-ca.pem)
    and its server name.
    Replace that certificate only after independently confirming a certificate
    change on the intended controller.
@@ -62,13 +62,13 @@ Coordinate the state import with the operator who controls PowerEdge maintenance
    enabled.
 
    ```bash
-   ./configsctl tofu firmware init
+   ./configsctl tofu poweredge/firmware init
    ```
 
 2. Import each discovered function with its adapter ID and the provider alias:
 
    ```bash
-   ./configsctl tofu firmware import \
+   ./configsctl tofu poweredge/firmware import \
      -var-file=/secure/poweredge-firmware.tfvars \
      'module.poweredge.redfish_network_adapter.bcm57504["<function-id>"]' \
      '{"redfish_alias":"poweredge","system_id":"System.Embedded.1","network_adapter_id":"<adapter-id>","network_device_function_id":"<function-id>"}'
@@ -77,10 +77,10 @@ Coordinate the state import with the operator who controls PowerEdge maintenance
 3. Save and inspect a plan before submitting any changes:
 
    ```bash
-   ./configsctl tofu firmware plan \
+   ./configsctl tofu poweredge/firmware plan \
      -var-file=/secure/poweredge-firmware.tfvars \
      -out=/secure/poweredge-firmware.tfplan
-   ./configsctl tofu firmware show /secure/poweredge-firmware.tfplan
+   ./configsctl tofu poweredge/firmware show /secure/poweredge-firmware.tfplan
    ```
 
    Review the exact function IDs, changed OEM attributes, and maintenance window.
@@ -108,7 +108,7 @@ legitimate update or automatically repair the Dell resource's refresh behavior.
 1. Apply the reviewed plan only during coordinated maintenance:
 
    ```bash
-   ./configsctl tofu firmware apply /secure/poweredge-firmware.tfplan
+   ./configsctl tofu poweredge/firmware apply /secure/poweredge-firmware.tfplan
    ```
 
 2. Read the resulting iDRAC job and pending settings. Perform the separately

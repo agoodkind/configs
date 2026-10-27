@@ -1,0 +1,32 @@
+tls nextdns {
+    remote-hostname "99adb9.dns.nextdns.io";
+};
+acl lan_clients {
+    127.0.0.0/8;
+    ::1;
+    10.230.0.0/24;
+    10.230.5.0/24;
+    3d06:bad:b01:300::/64;
+    3d06:bad:b01:305::/64;
+%{ for name, network in collingwood_networks ~}
+    ${network.subnet4};
+    ${network.subnet6};
+%{ endfor ~}
+};
+options {
+    directory "/var/cache/bind";
+    listen-on { 127.0.0.1; 10.230.0.1; 10.230.5.1; %{ for name, network in collingwood_networks }${network.gateway4}; %{ endfor }};
+    listen-on-v6 { ::1; 3d06:bad:b01:300::1; 3d06:bad:b01:305::1; %{ for name, network in collingwood_networks }${network.gateway6}; %{ endfor }};
+    recursion yes;
+    allow-query { lan_clients; };
+    allow-recursion { lan_clients; };
+    allow-transfer { none; };
+    forward only;
+    forwarders port 853 tls nextdns {
+        2a07:a8c0::99:adb9;
+        2a07:a8c1::99:adb9;
+        45.90.28.169;
+        45.90.30.169;
+    };
+    dnssec-validation auto;
+};

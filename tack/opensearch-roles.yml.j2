@@ -1,0 +1,94 @@
+{# The deploy renders this template into roles.yml on each search guest.
+   The YAML header comment below keeps its earlier wording because production
+   must render a byte-identical copy of its existing role file. #}
+---
+# Ansible copies this file from tack/opensearch-roles.yml. A member reads it
+# into the security index on its first start. After the file changes, the
+# deploy writes its entries into the security index of the running member.
+# Runtime and maintenance identities share the required worker operations.
+# The proxy readiness identity receives only cluster health access.
+_meta:
+  type: roles
+  config_version: 2
+tack_runtime:
+  reserved: true
+  description: This role grants the required application and worker operations.
+  cluster_permissions:
+    # The endpoint ping and the server version read send GET /.
+    - cluster:monitor/main
+    # The index green wait and the proxy readiness check read cluster health.
+    - cluster:monitor/health
+    # The index settings read takes the routing shard count from the index
+    # metadata in the cluster state.
+    - cluster:monitor/state
+    # OpenSearch checks bulk, multi-get, and alias requests at the cluster
+    # level. The index permissions below cover each item in those requests.
+    - indices:data/write/bulk
+    - indices:data/read/mget
+    - indices:admin/aliases
+    # Tack sends these ML Commons requests for the pinned sparse model.
+    - cluster:admin/opensearch/ml/models/search
+    - cluster:admin/opensearch/ml/deploy_model
+    # A model deploy request runs its per-node deploy action as the calling
+    # user.
+    - cluster:admin/opensearch/ml/deploy_model_on_nodes
+    - cluster:admin/opensearch/ml/models/get
+    - cluster:admin/opensearch/ml/tasks/get
+    - cluster:admin/opensearch/ml/tasks/search
+    - cluster:admin/opensearch/ml/profile/nodes
+    - cluster:admin/opensearch/ml/predict
+    # Under the least_load dispatch policy, a predict request reads ML node
+    # statistics as the calling user to choose a node.
+    - cluster:admin/opensearch/ml/stats/nodes
+{# The QA data generator command ops qa datagen search-mixed reads node
+   statistics with the runtime identity. Only QA enables this permission. #}
+{% if tack_search_runtime_node_stats_enabled | bool %}
+    - cluster:monitor/nodes/stats
+{% endif %}
+  index_permissions:
+    # node-pages is the public alias, and each physical index matches
+    # node-pages-*.
+    - index_patterns:
+        - node-pages
+        - node-pages-*
+      allowed_actions:
+        - indices:admin/create
+        - indices:admin/get
+        - indices:admin/delete
+        - indices:admin/mappings/get
+        - indices:monitor/settings/get
+        - indices:admin/settings/update
+        - indices:admin/resize
+        - indices:admin/refresh*
+        - indices:admin/aliases
+        - indices:admin/aliases/get
+        - indices:monitor/stats
+        - indices:data/write/bulk*
+        - indices:data/write/index
+        - indices:data/write/update
+        - indices:data/read/mget*
+        - indices:data/read/count
+        - indices:data/read/search*
+        - indices:data/read/point_in_time/create
+        - indices:data/read/point_in_time/delete
+    # This grant lets the alias lookup read alias metadata on every index and
+    # grants no document read. OpenSearch evaluates a lookup that specifies
+    # only the alias against every index.
+    - index_patterns:
+        - "*"
+      allowed_actions:
+        - indices:admin/aliases/get
+tack_maintenance:
+  reserved: true
+  description: This role adds model provisioning and verification operations.
+  cluster_permissions:
+    - cluster:admin/opensearch/ml/register_model
+    # Verification checks that the cluster does not contain external connectors.
+    - cluster:admin/opensearch/ml/connectors/search
+  index_permissions: []
+tack_health:
+  reserved: true
+  description: This role permits the proxy readiness check.
+  cluster_permissions:
+    - cluster:monitor/health
+  index_permissions: []
