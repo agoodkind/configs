@@ -12,11 +12,12 @@ locals {
 }
 
 locals {
-  poweredge_node             = "poweredge"
-  poweredge_template_file_id = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
-  poweredge_datastore_id     = "vmdata"
-  poweredge_mwan_release     = "202610192152-ef-9bc78a1"
-  poweredge_nat64_prefix     = "3d06:bad:6464::/96"
+  poweredge_node               = "poweredge"
+  poweredge_template_file_id   = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
+  poweredge_datastore_id       = "vmdata"
+  poweredge_mwan_release       = "202610192152-ef-9bc78a1"
+  poweredge_nat64_prefix       = "3d06:bad:6464::/96"
+  poweredge_vpp_idle_wait_usec = 10
 
 
   poweredge_guests = {
@@ -117,9 +118,10 @@ module "poweredge_mwan" {
 module "poweredge_lan_services" {
   source = "../../modules/poweredge/lan"
 
-  node         = local.poweredge_node
-  vmid         = module.poweredge_lxc["lan"].vmid
-  nat64_prefix = local.poweredge_nat64_prefix
+  node               = local.poweredge_node
+  vmid               = module.poweredge_lxc["lan"].vmid
+  nat64_prefix       = local.poweredge_nat64_prefix
+  vpp_idle_wait_usec = local.poweredge_vpp_idle_wait_usec
 }
 
 module "poweredge_failover_services" {
