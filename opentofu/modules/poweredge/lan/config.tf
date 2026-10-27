@@ -1,6 +1,7 @@
 locals {
   template_vars = {
     nat64_prefix         = var.nat64_prefix
+    vpp_idle_wait_usec   = var.vpp_idle_wait_usec
     collingwood_networks = local.collingwood_networks
     collingwood_zones    = local.collingwood_zones
   }
@@ -84,7 +85,7 @@ locals {
     }
     vpp_startup = {
       path   = "/etc/vpp/startup.conf"
-      source = "startup.conf"
+      source = "startup.conf.tftpl"
     }
     vpp_nat64 = {
       path   = "/etc/vpp/nat64.cli"

@@ -1,5 +1,6 @@
 unix {
   nodaemon
+  poll-sleep-usec ${vpp_idle_wait_usec}
   cli-listen /run/vpp/cli.sock
   log /var/log/vpp/vpp.log
   exec /etc/vpp/nat64.cli
