@@ -1,0 +1,55 @@
+---
+- name: Validate the backup retention period
+  ansible.builtin.assert:
+    that:
+      - tack_backup_retention_days is integer
+      - tack_backup_retention_days > 0
+    fail_msg: Backup retention requires a positive whole number of days.
+    quiet: true
+
+- name: Verify the backup retention command in the selected Tack image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - run
+      - --rm
+      - -T
+      - --no-deps
+      - tack-ops
+      - ops
+      - backup
+      - retention
+      - --help
+    chdir: "{{ tack_install_dir }}"
+  changed_when: false
+  when: not ansible_check_mode
+
+- name: Deploy the backup retention service
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/services/tack-backup-retention.service.j2"
+    dest: /etc/systemd/system/tack-backup-retention.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_backup_retention_service
+
+- name: Deploy the backup retention timer
+  ansible.builtin.template:
+    src: "{{ repo_root }}/common/timers/tack-backup-retention.timer.j2"
+    dest: /etc/systemd/system/tack-backup-retention.timer
+    owner: root
+    group: root
+    mode: "0644"
+  register: tack_backup_retention_timer
+
+- name: Enable the backup retention timer
+  ansible.builtin.systemd:
+    name: tack-backup-retention.timer
+    enabled: true
+    state: started
+    daemon_reload: >-
+      {{
+        tack_backup_retention_service.changed
+        or tack_backup_retention_timer.changed
+      }}

@@ -1233,6 +1233,12 @@
             - tack_backup_enabled | bool
             - tack_ledger_consumers_repointed | bool
 
+        - name: Install the backup retention timer
+          ansible.builtin.include_tasks: tasks/tack-backup-retention.yml
+          when:
+            - tack_backup_enabled | bool
+            - tack_ledger_consumers_repointed | bool
+
         # Backup staleness alarm, owner copy (TACK-363). The yb1 data guest
         # runs the same pair; the comment on that copy explains why there are
         # two. Gated on the live ledger topology like the export timer above.
