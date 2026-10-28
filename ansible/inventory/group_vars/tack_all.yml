@@ -33,6 +33,9 @@ tack_search_keep_legacy_user: true
 # cluster:monitor/nodes/stats for node statistics reads.
 # Production keeps this value false.
 tack_search_runtime_node_stats_enabled: false
+# The most point-in-time contexts one search member keeps open. An empty value
+# keeps the OpenSearch default of 300.
+tack_search_max_open_pit_context: ""
 tack_environment_credentials:
   - {name: YUGABYTE_PASSWORD, adopt: true, encoding: hex}
   - {name: AUDIT_WRITER_PASSWORD, adopt: true, encoding: hex}
