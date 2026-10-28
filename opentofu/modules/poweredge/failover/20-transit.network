@@ -1,0 +1,10 @@
+[Match]
+Name=eth1
+
+[Network]
+Address=10.230.230.3/29
+Address=fd06:fab::3/64
+LinkLocalAddressing=ipv6
+IPv6AcceptRA=no
+IPv4Forwarding=yes
+IPv6Forwarding=yes

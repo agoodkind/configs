@@ -1,0 +1,13 @@
+tofu:
+  workspaces_dir: workspace
+  env_key_prefix: vault_tofu_env_
+  lock_targets:
+    workspace:
+      module_hosts:
+        restful_operation.signing_request: poweredge
+        restful_operation.install_certificate: poweredge
+      lock_free_types:
+        - cloudflare_dns_record
+        - acme_registration
+        - acme_certificate
+        - time_sleep

@@ -1,0 +1,24 @@
+---
+# Before the dry run, the playbook creates /var/lib/tack/repair as root:root
+# with mode 0700 and copies the operator input to the --request or --manifest
+# path as root:root with mode 0600. Both tasks run in check mode because the
+# dry run reads the file. The copy hides its arguments and diff.
+- name: Create the guest repair directory with root ownership and mode 0700
+  ansible.builtin.file:
+    path: /var/lib/tack/repair
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  check_mode: false
+
+- name: Copy the node integrity input to the guest with root ownership and mode 0600
+  ansible.builtin.copy:
+    src: "{{ tack_node_integrity_input }}"
+    dest: "{{ (tack_ops_args | select('match', '--(request|manifest)=') | first).split('=', 1)[1] }}"
+    owner: root
+    group: root
+    mode: "0600"
+  check_mode: false
+  diff: false
+  no_log: true

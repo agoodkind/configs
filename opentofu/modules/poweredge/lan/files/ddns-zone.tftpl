@@ -1,0 +1,18 @@
+$ORIGIN ${zone}.
+$TTL 300
+@ IN SOA ${nameserver}. hostmaster.collingwood.goodkind.io. (
+  1 3600 900 604800 300
+)
+@ IN NS ${nameserver}.
+%{ if forward ~}
+@ IN A ${gateway4}
+@ IN AAAA ${gateway6}
+ns IN A ${gateway4}
+ns IN AAAA ${gateway6}
+%{ else ~}
+%{ if reverse6 ~}
+1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0 IN PTR ${nameserver}.
+%{ else ~}
+1 IN PTR ${nameserver}.
+%{ endif ~}
+%{ endif ~}

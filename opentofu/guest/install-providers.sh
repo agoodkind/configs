@@ -7,8 +7,8 @@ REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 readonly SCRIPT_DIR REPOSITORY_ROOT
 
 readonly DEFAULT_PIN_FILE="${SCRIPT_DIR}/providers.pin"
-# OpenTofu reads this implied local mirror because configsctl runs tofu in the guest workspace.
-readonly DEFAULT_MIRROR_DIR="${SCRIPT_DIR}/terraform.d/plugins"
+# configsctl selects this shared mirror for every workspace.
+readonly DEFAULT_MIRROR_DIR="${REPOSITORY_ROOT}/opentofu/terraform.d/plugins"
 readonly DEFAULT_ARCHIVE_DIR="${REPOSITORY_ROOT}/.make/releases"
 readonly SHA256_PATTERN='^[0-9a-f]{64}$'
 readonly PINNED_ARGUMENT_COUNT=3

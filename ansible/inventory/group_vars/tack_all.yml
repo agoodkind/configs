@@ -44,7 +44,6 @@ tack_environment_credentials:
   - {name: OPENSEARCH_PASSWORD, adopt: false, encoding: hex}
   - {name: OPENSEARCH_MAINTENANCE_PASSWORD, adopt: false, encoding: hex}
   - {name: OPENSEARCH_HEALTH_PASSWORD, adopt: false, encoding: hex}
-  - {name: CLICKHOUSE_PASSWORD, adopt: false, encoding: hex}
   - {name: OPENSEARCH_CURSOR_KEY, adopt: true, encoding: base64}
 tack_search_password_names:
   - OPENSEARCH_PASSWORD
@@ -62,7 +61,6 @@ tack_service_source_files:
   - OPENSEARCH_MAINTENANCE_PASSWORD
   - OPENSEARCH_HEALTH_PASSWORD
   - OPENSEARCH_CURSOR_KEY
-  - CLICKHOUSE_PASSWORD
   - OPENSEARCH_PASSWORD.hash
   - OPENSEARCH_MAINTENANCE_PASSWORD.hash
   - OPENSEARCH_HEALTH_PASSWORD.hash

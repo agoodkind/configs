@@ -1,0 +1,14 @@
+[Unit]
+Description=Apply Collingwood firewall rules
+Requires=nftables.service
+After=nftables.service
+Before=collingwood-network.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft --check --file /etc/nftables.conf
+ExecStart=/usr/sbin/nft --file /etc/nftables.conf
+
+[Install]
+WantedBy=multi-user.target
