@@ -46,8 +46,10 @@
 # Verification rejects image digests that differ from the supplied values.
 # In check mode, the playbook runs verification and the command dry run.
 #
-# ops verify strict-validation accepts no extra argument and runs in the app
-# service. With --execute, it activates strict validation for every
+# ops verify strict-validation accepts at most one extra argument,
+# --max-violations=<n> with n from 1 through 9999, and runs in the app
+# service. Tack refuses a value above 5000 before it scans. The flag sets how
+# many invalid records the report lists. With --execute, it activates strict validation for every
 # organization in the FoundationDB cluster, and no command removes the
 # activation. Its prerequisite is a passing ops deploy verify on every guest
 # of the environment that runs the app service: the owner guest
@@ -100,7 +102,9 @@
             'ops verify strict-validation']
           - tack_ops_args is sequence and tack_ops_args is not string and tack_ops_args is not mapping
           - tack_ops_command != 'ops backfill once-drop-killtest-schema' or tack_ops_args == []
-          - tack_ops_command != 'ops verify strict-validation' or tack_ops_args == []
+          - >-
+            tack_ops_command != 'ops verify strict-validation'
+            or (tack_ops_args | join(' ')) is match('(--max-violations=[1-9][0-9]{0,3})?\Z')
           - >-
             tack_ops_command != 'ops backfill once-search-projections'
             or tack_ops_args == ['--manifest=/etc/tack/search-projections.json']
@@ -139,8 +143,9 @@
           digests of the reviewed build; each is sha256: followed by 64
           lowercase hex characters. Each extra argument is one --flag or
           --flag=value token and never --execute, --operator-*, or
-          --deploy-commit. ops backfill once-drop-killtest-schema and
-          ops verify strict-validation accept no extra argument.
+          --deploy-commit. ops backfill once-drop-killtest-schema accepts no
+          extra argument. ops verify strict-validation accepts no extra
+          argument or only --max-violations=<n> with n from 1 through 9999.
           ops backfill once-search-projections accepts only the argument --manifest=/etc/tack/search-projections.json. Command
           "{{ tack_ops_command }}", arguments {{ tack_ops_args }}, commit
           "{{ tack_commit }}", tack-server digest "{{ tack_server_digest }}",
