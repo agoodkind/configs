@@ -160,6 +160,20 @@ tack_ops_execute: false
 # characters. Supply the multi-platform index digest for each reviewed image.
 tack_server_digest: ""
 tack_audit_consumer_digest: ""
+# The guests of this guest's environment that run the app service: the owner
+# guest and each application-only guest. tack-ops runs ops deploy verify on
+# each of them before ops verify strict-validation.
+tack_ops_app_guests: >-
+  {{ (tack_ops_environment_hosts | map('extract', hostvars)
+      | selectattr('tack_provision_owner', 'true')
+      | map(attribute='inventory_hostname') | list)
+     + (tack_ops_environment_hosts | map('extract', hostvars)
+        | selectattr('tack_app_guest', 'true')
+        | map(attribute='inventory_hostname') | sort | list) }}
+# The guests of this guest's environment.
+tack_ops_environment_hosts: >-
+  {{ groups['tack_qa_all'] if inventory_hostname in groups['tack_qa_all']
+     else groups['tack_prod_all'] }}
 
 # Engine packages the deploy holds against the weekly package updater
 # (TACK-487): an unattended upgrade of any of these restarts the daemon and

@@ -243,6 +243,7 @@ deploy:
   lock_host_variables:
     deploy-mwan: [mwan_proxmox_delegate]
     deploy-tack: [tack_service_secret_source]
+    tack-ops: [tack_ops_lock_app_guest]
   # Keys are the second label of a guest host name. Values are the Proxmox node
   # names in ansible_proxmox_host.
   absent_guest_nodes:
