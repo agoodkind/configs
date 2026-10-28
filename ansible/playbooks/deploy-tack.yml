@@ -75,6 +75,35 @@
       run_once: true
       delegate_to: localhost
 
+    # OpenSearch fails to start a member with a value other than "" or a
+    # whole number of 1 or more. This check refuses such a value before
+    # any task changes a guest.
+    - name: Refuse an invalid tack_search_max_open_pit_context value
+      ansible.builtin.assert:
+        that:
+          - >-
+            (tack_search_max_open_pit_context | string) == ''
+            or (tack_search_max_open_pit_context | string) is match('^[1-9][0-9]*$')
+        fail_msg: >-
+          tack_search_max_open_pit_context has the value
+          "{{ tack_search_max_open_pit_context }}". Use "" or a whole number
+          of 1 or more. The value "" keeps the OpenSearch default of 300.
+        quiet: true
+      delegate_to: localhost
+
+    # This check accepts only a whole number of 1 or more followed by s or m.
+    # Tack checks the value against the absolute timeout at app startup.
+    - name: Refuse an invalid tack_search_session_idle_timeout value
+      ansible.builtin.assert:
+        that:
+          - (tack_search_session_idle_timeout | string) is match('^[1-9][0-9]*[sm]$')
+        fail_msg: >-
+          tack_search_session_idle_timeout has the value
+          "{{ tack_search_session_idle_timeout }}". Use a whole number of 1 or
+          more followed by s or m, such as 90s or 2m.
+        quiet: true
+      delegate_to: localhost
+
     - name: Check the operator identity
       ansible.builtin.import_tasks: tasks/tack-ops-identity-guard.yml
 
