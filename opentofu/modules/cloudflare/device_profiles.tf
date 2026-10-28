@@ -66,7 +66,7 @@ resource "cloudflare_zero_trust_device_custom_profile" "berylax_lan" {
   }
 }
 
-# Applies when neither LAN beacon matches.
+# Applies when neither the BerylAX nor PowerEdge LAN beacon matches.
 resource "cloudflare_zero_trust_device_custom_profile" "tun_only" {
   account_id = var.account_id
   name       = "tun-only"
