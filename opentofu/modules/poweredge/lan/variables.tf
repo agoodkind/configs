@@ -14,16 +14,16 @@ variable "nat64_prefix" {
 }
 
 variable "vpp_idle_wait_usec" {
-  description = "Microseconds that VPP waits between polling iterations. Zero disables waiting."
+  description = "The VPP main thread waits this many microseconds between polling iterations. Packet workers do not use this setting. Zero disables the fixed wait."
   type        = number
   default     = 0
 
   validation {
     condition = (
       var.vpp_idle_wait_usec >= 0 &&
-      var.vpp_idle_wait_usec <= 2147483647 &&
+      var.vpp_idle_wait_usec <= 999999 &&
       floor(var.vpp_idle_wait_usec) == var.vpp_idle_wait_usec
     )
-    error_message = "Set vpp_idle_wait_usec to a whole number from 0 through 2147483647."
+    error_message = "Set vpp_idle_wait_usec to a whole number of microseconds from 0 through 999999."
   }
 }
