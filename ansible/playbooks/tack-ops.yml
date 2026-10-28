@@ -6,8 +6,9 @@
 # group tack_servers. On that guest, the playbook accepts only ops deploy
 # verify, audit query, audit last-change, ops backfill once-search-projections,
 # ops backfill once-fixed-definitions, ops backfill once-node-integrity, ops search
-# provision, ops search reindex, and ops search verify. The QA reset runs its
-# hand-run ops commands only through this playbook. Each row that those
+# provision, ops search reindex, ops search verify, and ops verify
+# strict-validation. The QA reset runs its hand-run ops commands only through
+# this playbook. Each row that those
 # commands record includes the agent service, session, accountable operator,
 # and deploy commit.
 #
@@ -44,6 +45,19 @@
 # The playbook runs ops deploy verify before the requested command.
 # Verification rejects image digests that differ from the supplied values.
 # In check mode, the playbook runs verification and the command dry run.
+#
+# ops verify strict-validation accepts no extra argument and runs in the app
+# service. With --execute, it activates strict validation for every
+# organization in the FoundationDB cluster, and no command removes the
+# activation. Its prerequisite is a passing ops deploy verify on every guest
+# of the environment that runs the app service: the owner guest
+# (tack_provision_owner) and each application-only guest (tack_app_guest).
+# Before the dry run, the playbook runs ops deploy verify on each of those
+# guests, with --service app on an application-only guest, and stops the run
+# when any check fails. The dry run and the --execute run both follow a
+# passing check. The run must lock every one of those guests. It targets the
+# owner guest, and ./configsctl deploy also locks the guest in
+# tack_ops_lock_app_guest.
 #
 # Extra vars override every play and group variable. The allowed commands,
 # the service of each command, and the command lines are literals in the
@@ -82,9 +96,11 @@
             'ops backfill once-search-projections', 'ops backfill once-drop-killtest-schema',
             'ops backfill once-fixed-definitions', 'ops backfill once-node-integrity',
             'ops qa datagen repair',
-            'ops search provision', 'ops search reindex', 'ops search verify']
+            'ops search provision', 'ops search reindex', 'ops search verify',
+            'ops verify strict-validation']
           - tack_ops_args is sequence and tack_ops_args is not string and tack_ops_args is not mapping
           - tack_ops_command != 'ops backfill once-drop-killtest-schema' or tack_ops_args == []
+          - tack_ops_command != 'ops verify strict-validation' or tack_ops_args == []
           - >-
             tack_ops_command != 'ops backfill once-search-projections'
             or tack_ops_args == ['--manifest=/etc/tack/search-projections.json']
@@ -105,7 +121,7 @@
                                          'ops backfill once-fixed-definitions',
                                          'ops backfill once-node-integrity',
                                          'ops search provision', 'ops search reindex',
-                                         'ops search verify'])
+                                         'ops search verify', 'ops verify strict-validation'])
           - ansible_play_hosts_all | unique | list | count == 1
         fail_msg: >-
           tack-ops runs one reviewed Tack ops command on exactly one guest. On
@@ -114,7 +130,8 @@
           command is ops deploy verify, audit query, audit last-change,
           ops backfill once-search-projections,
           ops backfill once-fixed-definitions, ops backfill once-node-integrity,
-          ops search provision, ops search reindex, or ops search verify.
+          ops search provision, ops search reindex, ops search verify, or
+          ops verify strict-validation.
           ops qa datagen repair runs only on QA guests. One run never includes
           both a QA guest and a production guest.
           tack_commit is the 40-character Tack commit the guest runs.
@@ -122,15 +139,36 @@
           digests of the reviewed build; each is sha256: followed by 64
           lowercase hex characters. Each extra argument is one --flag or
           --flag=value token and never --execute, --operator-*, or
-          --deploy-commit. ops backfill once-drop-killtest-schema accepts no
-          extra argument. ops backfill once-search-projections accepts only
-          the argument --manifest=/etc/tack/search-projections.json. Command
+          --deploy-commit. ops backfill once-drop-killtest-schema and
+          ops verify strict-validation accept no extra argument.
+          ops backfill once-search-projections accepts only the argument --manifest=/etc/tack/search-projections.json. Command
           "{{ tack_ops_command }}", arguments {{ tack_ops_args }}, commit
           "{{ tack_commit }}", tack-server digest "{{ tack_server_digest }}",
           tack-audit-consumer digest "{{ tack_audit_consumer_digest }}",
           guests {{ ansible_play_hosts_all }}.
         quiet: true
       any_errors_fatal: true
+
+    # The guest runs the command in its app service. ./configsctl deploy locks
+    # this guest and the guest in tack_ops_lock_app_guest. Every other guest of
+    # the environment that runs the app service must be the guest in
+    # tack_ops_lock_app_guest.
+    - name: Refuse ops verify strict-validation unless the run locks every guest that runs the app service
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname in tack_ops_app_guests
+          - tack_ops_app_guests | difference(ansible_play_hosts_all + [tack_ops_lock_app_guest]) | list == []
+        fail_msg: >-
+          ops verify strict-validation runs on the owner guest of its
+          environment. The run locks that guest and the guest in
+          tack_ops_lock_app_guest, and it checks the images on every guest of
+          the environment that runs the app service. Guest
+          {{ inventory_hostname }}, guests that run the app service
+          {{ tack_ops_app_guests }}, tack_ops_lock_app_guest
+          "{{ tack_ops_lock_app_guest }}".
+        quiet: true
+      any_errors_fatal: true
+      when: tack_ops_command == 'ops verify strict-validation'
 
     - name: Validate the node integrity arguments and operator file paths
       ansible.builtin.include_tasks: tasks/tack-ops-node-integrity-check.yml
@@ -155,6 +193,27 @@
         chdir: "{{ tack_install_dir }}"
       changed_when: false
       check_mode: false
+
+    # The task above checks this guest. This task checks each other guest of
+    # the environment that runs the app service before the dry run of ops
+    # verify strict-validation. An application-only guest runs no
+    # audit-consumer, and its check reads only the app service and the
+    # tack-server digest.
+    - name: Verify that each other app guest of this environment runs the Tack images for tack_commit
+      ansible.builtin.command:
+        cmd: >-
+          docker compose run --rm tack-ops ops deploy verify --execute
+          --tag {{ tack_commit }}
+          --tack-server-digest {{ tack_server_digest }}
+          {{ '--service app' if hostvars[item].tack_app_guest | bool
+             else '--tack-audit-consumer-digest ' ~ tack_audit_consumer_digest }}
+          {{ tack_ops_identity_flags }}
+        chdir: "{{ tack_install_dir }}"
+      delegate_to: "{{ item }}"
+      loop: "{{ tack_ops_app_guests | difference([inventory_hostname]) }}"
+      changed_when: false
+      check_mode: false
+      when: tack_ops_command == 'ops verify strict-validation'
 
     # ops search provision and ops search reindex read node types and
     # property definitions through the metadata name index (TACK-542). The
