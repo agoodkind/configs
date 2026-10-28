@@ -33,6 +33,16 @@ tack_search_keep_legacy_user: true
 # cluster:monitor/nodes/stats for node statistics reads.
 # Production keeps this value false.
 tack_search_runtime_node_stats_enabled: false
+# This value limits open point-in-time contexts per OpenSearch node.
+# On 2026-10-28 at about 05:35 UTC, the QA search-mixed run filled the
+# default limit of 300 at 120 searches per minute. OpenSearch refused
+# every new search with HTTP 429.
+# With 300 contexts open, JVM heap use was 0.16 to 0.23 GiB of 3.00 GiB.
+# Free disk space remained unchanged at 35.37 GiB.
+# At 120 searches per minute, Tack needs 1800 contexts for its 15-minute
+# context lifetime. A limit of 3000 adds margin.
+# To restore the default of 300, set the value to "" and deploy.
+tack_search_max_open_pit_context: 3000
 tack_environment_credentials:
   - {name: YUGABYTE_PASSWORD, adopt: true, encoding: hex}
   - {name: AUDIT_WRITER_PASSWORD, adopt: true, encoding: hex}

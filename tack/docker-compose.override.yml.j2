@@ -84,6 +84,11 @@ services:
       # OpenSearch blocks writes at 95 percent. With 1 GiB it starts at 97.5
       # percent use.
       plugins.ml_commons.disk_free_space_threshold: 1gb
+{% if tack_search_max_open_pit_context != '' %}
+      # OpenSearch refuses a new point in time on this member while this many
+      # point-in-time contexts are open.
+      search.max_open_pit_context: "{{ tack_search_max_open_pit_context }}"
+{% endif %}
       # The HTTP and transport layers both use TLS with this member's
       # certificate, and each side verifies the other against the search
       # authority. A peer joins only when its certificate subject matches a
