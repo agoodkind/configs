@@ -54,10 +54,12 @@ module "cloudflare" {
     { host = "*.cloudflareaccess.com" },
   ]
 
+  # LAB-151: Keep 10.230.0.0/24 and 3d06:bad:b01:300::/56 outside WARP during
+  # the BerylAX-to-PowerEdge cutover. Restore them after the cutover and beacon
+  # profile checks pass.
   tun_only_include = [
     { address = "3d06:bad:b01::/56", description = "home" },
     { address = "3d06:bad:b01:6400::/56", description = "production NAT64" },
-    { address = "3d06:bad:b01:300::/56", description = "berylax" },
     { address = "3d06:bad:b01:2600::/56", description = "suburban NAT64" },
     { address = "3d06:bad:b01:2400::/56", description = "monkeybrains sim NPTv6 egress" },
     { address = "3d06:bad:b01:2300::/56", description = "att sim NPTv6 egress" },
@@ -67,7 +69,6 @@ module "cloudflare" {
     { address = "10.250.0.0/16", description = "home-v4" },
     { address = "10.240.0.0/16", description = "suburban-v4" },
     { host = "*.cloudflareaccess.com" },
-    { address = "10.230.0.0/24", description = "berylax-v4" },
   ]
 }
 
