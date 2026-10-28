@@ -42,6 +42,9 @@ tack_search_runtime_node_stats_enabled: false
 # At 120 searches per minute, Tack needs 1800 contexts for its 15-minute
 # context lifetime. A limit of 3000 adds margin.
 # To restore the default of 300, set the value to "" and deploy.
+# A QA or production environment group var overrides this value.
+# A changed value takes effect when deploy-tack recreates the
+# OpenSearch member on each search guest.
 tack_search_max_open_pit_context: 3000
 tack_environment_credentials:
   - {name: YUGABYTE_PASSWORD, adopt: true, encoding: hex}
