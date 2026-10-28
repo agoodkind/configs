@@ -134,13 +134,6 @@ tack_search_model_repair_enabled: true
 # QA search capacity runs (TACK-574 and TACK-575) record OpenSearch node CPU,
 # memory, JVM heap, and disk values with the runtime identity.
 tack_search_runtime_node_stats_enabled: true
-# On 2026-10-28, a search-mixed run of 120 searches per minute filled the
-# default limit of 300 open point-in-time contexts, and OpenSearch refused
-# every new search with HTTP 429. Tack keeps each point in time for 15
-# minutes. At 120 searches per minute, 1800 contexts stay open. JVM heap
-# stayed below 0.23 GiB of 3.00 GiB with 300 contexts open. To roll back,
-# remove this value and deploy QA, which restores the default of 300.
-tack_search_max_open_pit_context: 3000
 
 # QA runs a second application process on tack_app2_suburban for the search
 # two-process continuation check (TACK-544). That app publishes audit events
