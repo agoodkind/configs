@@ -33,6 +33,16 @@ tack_search_keep_legacy_user: true
 # cluster:monitor/nodes/stats for node statistics reads.
 # Production keeps this value false.
 tack_search_runtime_node_stats_enabled: false
+# This value limits open point-in-time contexts per OpenSearch node.
+# On 2026-10-28 at about 05:35 UTC, the QA search-mixed run filled the
+# default limit of 300 at 120 searches per minute. OpenSearch refused
+# every new search with HTTP 429.
+# With 300 contexts open, JVM heap use was 0.16 to 0.23 GiB of 3.00 GiB.
+# Free disk space remained unchanged at 35.37 GiB.
+# At 120 searches per minute, Tack needs 1800 contexts for its 15-minute
+# context lifetime. A limit of 3000 adds margin.
+# To restore the default of 300, set the value to "" and deploy.
+tack_search_max_open_pit_context: 3000
 tack_environment_credentials:
   - {name: YUGABYTE_PASSWORD, adopt: true, encoding: hex}
   - {name: AUDIT_WRITER_PASSWORD, adopt: true, encoding: hex}
@@ -44,7 +54,6 @@ tack_environment_credentials:
   - {name: OPENSEARCH_PASSWORD, adopt: false, encoding: hex}
   - {name: OPENSEARCH_MAINTENANCE_PASSWORD, adopt: false, encoding: hex}
   - {name: OPENSEARCH_HEALTH_PASSWORD, adopt: false, encoding: hex}
-  - {name: CLICKHOUSE_PASSWORD, adopt: false, encoding: hex}
   - {name: OPENSEARCH_CURSOR_KEY, adopt: true, encoding: base64}
 tack_search_password_names:
   - OPENSEARCH_PASSWORD
@@ -62,7 +71,6 @@ tack_service_source_files:
   - OPENSEARCH_MAINTENANCE_PASSWORD
   - OPENSEARCH_HEALTH_PASSWORD
   - OPENSEARCH_CURSOR_KEY
-  - CLICKHOUSE_PASSWORD
   - OPENSEARCH_PASSWORD.hash
   - OPENSEARCH_MAINTENANCE_PASSWORD.hash
   - OPENSEARCH_HEALTH_PASSWORD.hash
@@ -461,6 +469,10 @@ tack_backup_yb_master_addresses: >-
 tack_ledger_export_oncalendar: "*-*-* 03:17:00 UTC"
 tack_ledger_export_randomized_delay: 300
 tack_ledger_archive_interval: 15min
+
+tack_backup_retention_days: 14
+tack_backup_retention_oncalendar: "*-*-* 04:45:00 UTC"
+tack_backup_retention_randomized_delay: 300
 
 # Backup staleness alarm cadence (TACK-363). The check dates every backup
 # mechanism and exits nonzero once one is past its threshold. The acceptance

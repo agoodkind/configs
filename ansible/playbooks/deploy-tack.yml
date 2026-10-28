@@ -783,7 +783,7 @@
             cmd: >-
               docker compose up -d --wait --wait-timeout 300
               {{ 'yugabyte' if tack_ledger_legacy_node_present else '' }}
-              kafka clickhouse
+              kafka
             chdir: "{{ tack_install_dir }}"
           register: tack_compose_up_first
           changed_when: true
@@ -1229,6 +1229,12 @@
         # flag flips.
         - name: Install the ledger export timer
           ansible.builtin.include_tasks: tasks/tack-ledger-export.yml
+          when:
+            - tack_backup_enabled | bool
+            - tack_ledger_consumers_repointed | bool
+
+        - name: Install the backup retention timer
+          ansible.builtin.include_tasks: tasks/tack-backup-retention.yml
           when:
             - tack_backup_enabled | bool
             - tack_ledger_consumers_repointed | bool
