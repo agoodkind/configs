@@ -39,13 +39,18 @@ tack_search_runtime_node_stats_enabled: false
 # every new search with HTTP 429.
 # With 300 contexts open, JVM heap use was 0.16 to 0.23 GiB of 3.00 GiB.
 # Free disk space remained unchanged at 35.37 GiB.
-# At 120 searches per minute, Tack needs 1800 contexts for its 15-minute
-# context lifetime. A limit of 3000 adds margin.
+# With a 2m keep-alive, abandoned first pages need up to 240 contexts at
+# 120 searches per minute. 3000 allows higher rates and longer traversals.
 # To restore the default of 300, set the value to "" and deploy.
 # A QA or production environment group var overrides this value.
 # A changed value takes effect when deploy-tack recreates the
 # OpenSearch member on each search guest.
 tack_search_max_open_pit_context: 3000
+# This Go duration in whole seconds or minutes sets the search session
+# inactivity window and the OpenSearch point-in-time keep-alive.
+# Each successful page renews both.
+# A change takes effect when deploy-tack recreates the app container.
+tack_search_session_idle_timeout: 2m
 tack_environment_credentials:
   - {name: YUGABYTE_PASSWORD, adopt: true, encoding: hex}
   - {name: AUDIT_WRITER_PASSWORD, adopt: true, encoding: hex}
