@@ -455,8 +455,8 @@ mwan_providers:
       targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
       http_targets: ["https://ifconfig.co/ip"]
 
-  - name: monkeybrains
-    connection_id: monkeybrains
+  - name: tertiary
+    connection_id: tertiary
     owner: mwan
     iface: "{{ mwan_monkeybrains_iface }}"
     vlan_id: ""
@@ -469,29 +469,20 @@ mwan_providers:
       forwarding: true
       dhcp: true
       route_metric: 5000
-    # The DUID is the link-layer-time value networkd built from an empty raw
-    # value: a zero time and the link address. The route metric applies to the
-    # default route from the router advertisement.
     ipv6:
       translation:
-        mode: ietf-nat:nptv6
-        nptv6:
-          internal_prefix: "{{ mwan_internal_prefix }}"
-          external_source: delegated
-          expected_prefix: "3d06:bad:b01:2400::/60"
+        mode: masquerade
       forwarding: true
       dhcp: true
       accept_ra: true
       route_metric: 5000
-      delegation:
-        hint: "::/56"
-        iaid: 714156292
-        duid_type: link-layer-time
-        duid: "00:01:00:01:00:00:00:00:{{ mwan_mbrains_mac | lower }}"
-        without_ra: solicit
+      autoconf: true
       dhcpv6_client:
+        duid: "00:03:00:01:{{ mwan_mbrains_mac | lower }}"
         address_iaid: 714156292
         request_address: true
+        request_prefix: false
+        without_ra: solicit
     table: 300
     mark: 3
     mark_prio: 300
