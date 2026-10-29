@@ -22,14 +22,32 @@ variable "config_toml_path" {
   type        = string
 }
 
+variable "kind" {
+  description = "The kind input selects an LXC container or a QEMU virtual machine for the mwan gateway runtime."
+  type        = string
+  default     = "lxc"
+
+  validation {
+    condition     = contains(["lxc", "qemu"], var.kind)
+    error_message = "The kind input must be lxc or qemu."
+  }
+}
+
 variable "container_options" {
   description = "The value maps applied Proxmox gateway container option names to values."
   type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = var.kind != "qemu" || length(var.container_options) == 0
+    error_message = "A QEMU virtual machine does not use container_options. Remove container_options or set kind to lxc."
+  }
 }
 
 variable "host_kernel_modules_loaded" {
   description = "The value maps host kernel module names to loaded states."
   type        = map(bool)
+  default     = {}
 }
 
 variable "node" {
@@ -68,11 +86,10 @@ data "mwan_release" "this" {
 
 data "mwan_role" "this" {
   role       = var.role
-  guest_type = local.kind
+  guest_type = var.kind
 }
 
 locals {
-  kind        = "lxc"
   stack_dir   = "/var/cache/mwan/stack"
   has_network = var.network_json_path != null
 
@@ -186,7 +203,7 @@ resource "terraform_data" "gateway_host" {
 resource "pveguest_download" "mwan" {
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   fetch          = "controller"
   url            = local.architecture.mwan_url
@@ -201,7 +218,7 @@ resource "pveguest_download" "stack_deb" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   fetch          = "controller"
   url            = local.architecture.stack_url
@@ -215,7 +232,7 @@ resource "pveguest_deb_packages" "stack" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   packages = { for name, deb in pveguest_download.stack_deb : name => deb.path }
 }
@@ -225,7 +242,7 @@ resource "pveguest_file" "role" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path    = each.value.path
   content = each.value.content
@@ -237,7 +254,7 @@ resource "pveguest_file" "yang" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path    = each.value.path
   content = each.value.content
@@ -250,7 +267,7 @@ resource "pveguest_systemd_unit" "firewall_stopped" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   name    = each.key
   enabled = false
@@ -264,7 +281,7 @@ resource "pveguest_link" "mask" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path   = "/etc/systemd/system/${each.key}"
   target = "/dev/null"
@@ -280,7 +297,7 @@ resource "pveguest_systemd_unit" "stack_masked" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   name    = each.key
   enabled = false
@@ -297,7 +314,7 @@ resource "pveguest_sysrepo_module" "ietf_yang_types" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path     = each.value.path
   features = toset(each.value.features)
@@ -315,7 +332,7 @@ resource "pveguest_sysrepo_module" "ietf_inet_types" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path     = each.value.path
   features = toset(each.value.features)
@@ -333,7 +350,7 @@ resource "pveguest_sysrepo_module" "iana_if_type" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path     = each.value.path
   features = toset(each.value.features)
@@ -351,7 +368,7 @@ resource "pveguest_sysrepo_module" "ietf_interfaces" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path     = each.value.path
   features = toset(each.value.features)
@@ -369,7 +386,7 @@ resource "pveguest_sysrepo_module" "ietf_ip" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path     = each.value.path
   features = toset(each.value.features)
@@ -387,7 +404,7 @@ resource "pveguest_sysrepo_module" "ietf_routing" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path     = each.value.path
   features = toset(each.value.features)
@@ -405,7 +422,7 @@ resource "pveguest_sysrepo_module" "ietf_nat" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path     = each.value.path
   features = toset(each.value.features)
@@ -423,7 +440,7 @@ resource "pveguest_sysrepo_module" "goodkind_mwan_steering" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path     = each.value.path
   features = toset(each.value.features)
@@ -441,7 +458,7 @@ resource "pveguest_sysrepo_module" "extra" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path     = each.value.path
   features = toset(each.value.features)
@@ -459,7 +476,7 @@ resource "pveguest_sysrepo_data" "role" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   datastore = each.value.datastore
   module    = each.value.module
@@ -484,7 +501,7 @@ resource "pveguest_file" "network" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path    = "/etc/mwan/network.json"
   content = data.mwan_network.gateway[0].canonical_content
@@ -524,7 +541,7 @@ resource "pveguest_file" "network" {
 resource "pveguest_file" "runtime_config" {
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path    = "/etc/mwan/config.toml"
   content = file(var.config_toml_path)
@@ -550,7 +567,7 @@ resource "pveguest_file" "sysctl" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   path = "/etc/sysctl.d/91-mwan.conf"
   content = "${join("\n", [
@@ -578,7 +595,7 @@ resource "pveguest_systemd_unit" "excluded_stopped" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   name    = each.key
   enabled = false
@@ -592,7 +609,7 @@ resource "pveguest_systemd_unit" "role" {
 
   node = var.node
   vmid = var.vmid
-  kind = local.kind
+  kind = var.kind
 
   name    = each.key
   enabled = each.value.enabled
