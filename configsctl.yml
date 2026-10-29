@@ -211,6 +211,9 @@ tofu:
       module_hosts:
         module.vault: vault
     opentofu/vault/mwan:
+      guest_hosts:
+        vault/113: mwan.home.goodkind.io
+        vault/116: mwan-failover.home.goodkind.io
       module_hosts:
         module.vault: vault
       node_hosts:
@@ -228,8 +231,17 @@ tofu:
       module_hosts:
         module.vault: vault
     opentofu/vault/tack-prod:
+      guest_hosts:
+        vault/117: tack.home.goodkind.io
+        vault/120: tack-data1.home.goodkind.io
+        vault/121: tack-data2.home.goodkind.io
+        vault/122: tack-data3.home.goodkind.io
+        vault/123: tack-app2.home.goodkind.io
+        vault/125: tack-search1.home.goodkind.io
       module_hosts:
         module.vault: vault
+      node_hosts:
+        vault: vault
     opentofu/vault/unifi:
       module_hosts:
         module.vault: vault
@@ -239,6 +251,8 @@ tofu:
     suburban/mwan: module.base
     suburban/seaweedfs: module.base
     suburban/tack-qa: module.base
+    vault/mwan: module.base
+    vault/tack-prod: module.base
 deploy:
   # For non-check deploys, `./configsctl deploy` reads each declared variable
   # on each play host and locks the named inventory host with the play hosts.
