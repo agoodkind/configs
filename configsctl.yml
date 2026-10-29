@@ -213,6 +213,8 @@ tofu:
     opentofu/vault/mwan:
       module_hosts:
         module.vault: vault
+      node_hosts:
+        vault: vault
     opentofu/vault/opnsense:
       module_hosts:
         module.vault: vault

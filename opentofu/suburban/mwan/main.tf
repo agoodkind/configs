@@ -79,6 +79,27 @@ output "mwan_suburban_vmid" {
   value       = module.suburban.mwan_suburban_vmid
 }
 
+resource "pveguest_file" "failover_dhcp6" {
+  node = "suburban"
+  vmid = local.service_mapping.mwan_failover_suburban.vmid
+  kind = "lxc"
+
+  path    = "/etc/systemd/system/mwan-failover-dhcp6.service"
+  content = file("${local.repository_root}/mwan-failover/dhcp6.service")
+  mode    = "0644"
+}
+
+resource "pveguest_systemd_unit" "failover_dhcp6" {
+  node = "suburban"
+  vmid = local.service_mapping.mwan_failover_suburban.vmid
+  kind = "lxc"
+
+  name       = "mwan-failover-dhcp6.service"
+  enabled    = true
+  active     = true
+  restart_on = { unit = pveguest_file.failover_dhcp6.write_id }
+}
+
 data "http" "github_ssh_keys" {
   url = "https://github.com/${local.shared_vars.github_ssh_keys_user}.keys"
 

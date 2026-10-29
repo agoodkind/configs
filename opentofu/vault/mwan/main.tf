@@ -43,3 +43,24 @@ data "http" "github_ssh_keys" {
 }
 
 locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
+
+resource "pveguest_file" "failover_dhcp6" {
+  node = "vault"
+  vmid = local.service_mapping.mwan_failover.vmid
+  kind = "lxc"
+
+  path    = "/etc/systemd/system/mwan-failover-dhcp6.service"
+  content = file("${local.repository_root}/mwan-failover/dhcp6.service")
+  mode    = "0644"
+}
+
+resource "pveguest_systemd_unit" "failover_dhcp6" {
+  node = "vault"
+  vmid = local.service_mapping.mwan_failover.vmid
+  kind = "lxc"
+
+  name       = "mwan-failover-dhcp6.service"
+  enabled    = true
+  active     = true
+  restart_on = { unit = pveguest_file.failover_dhcp6.write_id }
+}
