@@ -22,8 +22,9 @@ Each bridge carries one role:
 
 ## Guests
 
-OpenTofu provisions every suburban guest, and Ansible configures what runs
-inside it.
+OpenTofu provisions every suburban guest and writes the ISP simulator firewall,
+sysctl, router advertisement, and return-route files, and Ansible writes the
+Kea configuration and configures the rest of what runs inside each guest.
 
 A guest that mirrors a production service takes its counterpart's VMID plus 100,
 and the simulated ISPs, which do not have a production counterpart, sit in the 9xx
