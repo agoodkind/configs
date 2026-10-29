@@ -62,6 +62,10 @@ locals {
   }
 
   scripts_updater_timer_overrides = {
+    mwan = {
+      activation_run           = false
+      randomized_delay_seconds = 3600
+    }
     mwan_suburban = {
       activation_run           = false
       randomized_delay_seconds = 3600
