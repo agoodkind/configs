@@ -5,10 +5,12 @@
 # isp fields: id, name, ipv6_enabled, routed_ipv6_enabled, routed_ipv6_prefix,
 #   routed_ipv4_prefix, routed_ipv4_route_to, v4_subnet, dynamic_v4,
 #   static_v4_block, static_v4_route_to, v4_reservations.
-# DHCPv6/RA uses pd_prefix, pd_len, ia_na, slaac_prefix, and optional ia_na_pool.
-# The return-route service installs delegated IPv6 and configured family routes.
+# DHCPv6 uses pd_prefix, pd_len, ia_na, slaac_prefix, and optional ia_na_pool.
 # DHCPv4 uses v4_gateway, v4_pool, and v4_dns.
 #   repo_root is set in the parent play.
+#
+# The simulator OpenTofu root installs the Kea packages, which create /etc/kea and the
+# Kea services. Apply the root of a rebuilt simulator before deploy-testbed runs.
 
 - name: Validate optional ISP protocol timings
   ansible.builtin.assert:
@@ -117,9 +119,6 @@
       && systemctl restart kea-rebind'
   changed_when: true
 
-# The simulator OpenTofu root installs the Kea packages. Apply the root of a rebuilt
-# simulator before deploy-testbed runs, because the Kea services below do not exist until
-# OpenTofu installs those packages.
 - name: Enable and restart ISP DHCPv6 service
   ansible.builtin.command:
     cmd: >-
