@@ -2,13 +2,13 @@
 
 > Use `subagent-driven-development` or `executing-plans` to implement each task and record its verification with checkbox syntax.
 
-**Goal:** Install, configure, update, and recover Tack and MWAN on Suburban and Vault without invoking Ansible.
+**Goal:** OpenTofu must install, configure, update, and support recovery of Tack and MWAN on Suburban and Vault without invoking Ansible.
 
-**Architecture:** Configs combines existing general providers with the shared guest module. Service providers implement only application rules. Each application owns its configuration root and state; shared host resources keep separate owners.
+**Architecture:** The OpenTofu configuration in the Configs repository combines existing general providers with the shared guest module. Service providers implement only application rules. Each application owns its configuration root and state; shared host resources keep separate owners.
 
-**Tech Stack:** OpenTofu, configsctl, Proxmox, pveguest, the Docker provider, and the Tack and MWAN providers.
+**Tech Stack:** The implementation uses OpenTofu, configsctl, Proxmox, pveguest, the Docker provider, and the Tack and MWAN providers.
 
-**Spec:** Read the [migration contract](spec.md#12-tack-and-mwan-migration) and the [workspace separation design](../specs/2026-10-23-workspace-separation-design.md).
+**Spec:** The [migration contract](spec.md#12-tack-and-mwan-migration) and the [workspace separation design](../specs/2026-10-23-workspace-separation-design.md) define the required behavior and ownership.
 
 ## Global constraints
 
@@ -53,7 +53,7 @@ The detailed plans map individual tasks to their existing issues. The deployment
 5. Adopt the corresponding Vault resources after the relevant Suburban checks pass and within existing production authorization.
 6. Retire the replaced service writers and command dependencies. Enable automatic deployment only after its separate consumer prerequisites pass.
 
-This documentation change stays in Configs PR #813. Runtime PR boundaries follow the task boundaries in the detailed plans. Keep provider changes separate from Configs adoption and from live deployment receipts. Use a dependent PR stack only when one source change requires another unmerged source change.
+Runtime PR boundaries follow the task boundaries in the detailed plans. Keep provider changes separate from Configs adoption and from live deployment receipts. Use a dependent PR stack only when one source change requires another unmerged source change.
 
 ## Verify every adopted root
 

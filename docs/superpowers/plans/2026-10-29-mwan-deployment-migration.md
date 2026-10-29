@@ -2,13 +2,13 @@
 
 > Use `subagent-driven-development` or `executing-plans` to implement the tasks and track steps with checkbox syntax.
 
-**Goal:** Install, configure, update, and recover MWAN on Suburban and Vault without Ansible, including required hosts, failover guests, observers, router operations, and Suburban simulators.
+**Goal:** OpenTofu must manage MWAN installation, configuration, updates, and recovery on Suburban and Vault without Ansible, including required hosts, failover guests, observers, router operations, and Suburban simulators.
 
-**Architecture:** Reuse the shared MWAN installation module and general resources. Preserve the existing deployment-operation engine for snapshot, readiness, commitment, and recovery decisions. Configuration projections remain separate from live installation and observation.
+**Architecture:** The shared MWAN installation module and general resources manage persistent state. The existing deployment-operation engine manages snapshots, readiness, commitment, and recovery. Configuration projections remain separate from live installation and observation.
 
-**Tech Stack:** OpenTofu, Go, configsctl, Proxmox, pveguest, MWAN, systemd, FreeBSD/OPNsense, Kea, and existing simulator tools.
+**Tech Stack:** The implementation uses OpenTofu, Go, configsctl, Proxmox, pveguest, MWAN, systemd, FreeBSD/OPNsense, Kea, and existing simulator tools.
 
-**Spec:** Read the [migration contract](../gueststate/spec.md#12-tack-and-mwan-migration), [network planning specification](https://github.com/agoodkind/mwan/blob/main/docs/superpowers/networkplan/spec.md), and [coordination plan](../gueststate/plan.md).
+**Spec:** The [migration contract](../gueststate/spec.md#12-tack-and-mwan-migration), [network planning specification](https://github.com/agoodkind/mwan/blob/main/docs/superpowers/networkplan/spec.md), and [coordination plan](../gueststate/plan.md) define the required behavior and ownership.
 
 ## Global constraints
 

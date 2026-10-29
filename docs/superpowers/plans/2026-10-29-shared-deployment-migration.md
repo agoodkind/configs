@@ -2,13 +2,13 @@
 
 > Use `subagent-driven-development` or `executing-plans` to implement the tasks and track steps with checkbox syntax.
 
-**Goal:** Supply reusable guest resources and controller interfaces that Tack and MWAN can use without Ansible.
+**Goal:** Tack and MWAN must use reusable guest resources and controller interfaces without Ansible.
 
-**Architecture:** Extend existing providers only for verified gaps. Configs combines their resources in the existing application roots. Local commands and CI reuse one execution and locking implementation.
+**Architecture:** General providers manage shared state. The OpenTofu configuration combines their resources in the existing application roots. Local commands and CI reuse one execution and locking implementation.
 
-**Tech Stack:** OpenTofu, Go, configsctl, pveguest, Proxmox, and the Docker provider.
+**Tech Stack:** The implementation uses OpenTofu, Go, configsctl, pveguest, Proxmox, and the Docker provider.
 
-**Spec:** Read the [migration contract](../gueststate/spec.md#12-tack-and-mwan-migration) and the [coordination plan](../gueststate/plan.md).
+**Spec:** The [migration contract](../gueststate/spec.md#12-tack-and-mwan-migration) and the [coordination plan](../gueststate/plan.md) define the required behavior and ownership.
 
 ## Global constraints
 

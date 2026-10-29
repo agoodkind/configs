@@ -2,13 +2,13 @@
 
 > Use `subagent-driven-development` or `executing-plans` to implement the tasks and track steps with checkbox syntax.
 
-**Goal:** Manage complete Tack QA and production deployment through OpenTofu while preserving existing data and identities.
+**Goal:** OpenTofu must manage the complete Tack QA and production deployment and preserve existing data and identities.
 
-**Architecture:** Configs declares generic runtime resources and dependencies in the existing Tack roots. The Tack provider owns application-specific state and audited transitions. Reuse its existing schema resource.
+**Architecture:** The OpenTofu configuration declares generic runtime resources and dependencies in the existing Tack roots. The Tack provider manages application-specific state and audited transitions. Its existing schema resource manages migration versions.
 
-**Tech Stack:** OpenTofu, Proxmox, pveguest, Docker/Compose, FoundationDB, YugabyteDB, OpenSearch, Kafka, and the Tack provider.
+**Tech Stack:** The implementation uses OpenTofu, Proxmox, pveguest, Docker/Compose, FoundationDB, YugabyteDB, OpenSearch, Kafka, and the Tack provider.
 
-**Spec:** Read the [approved Tack deployment specification](https://github.com/agoodkind/tack/blob/main/docs/superpowers/specs/2026-10-10-tack-provider.md) and the [coordination plan](../gueststate/plan.md).
+**Spec:** The [approved Tack deployment specification](https://github.com/agoodkind/tack/blob/main/docs/superpowers/specs/2026-10-10-tack-provider.md) and the [coordination plan](../gueststate/plan.md) define the required behavior and ownership.
 
 ## Global constraints
 
