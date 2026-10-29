@@ -1,0 +1,81 @@
+---
+# The controller requires --output=json and exactly one --request=<path> or
+# --manifest=<path> under /var/lib/tack/repair/. The file name permits letters,
+# digits, dots, underscores, and hyphens and must not start with a dot.
+# The check substitutes "repair file" and compares the sorted list with
+# ['--output=json', 'repair file']; the earlier space check prevents an
+# operator argument from matching that text.
+# The check refuses --request with tack_ops_execute=true; --manifest execution
+# uses the existing tack_ops_execute gate on QA and the production owner guest.
+# The paths must be absolute strings with an existing regular input file and
+# an existing output parent directory. The output and its .execute path must
+# not be directories. tack_node_integrity_output must equal its resolved path
+# without symbolic links or repeated or trailing slashes. The resolved input
+# must differ from both output paths. The copy module replaces destination
+# symbolic links. Both writes use the directory that the .git check inspected.
+# Every directory above either resolved path through / must not contain a .git
+# entry.
+- name: Validate node integrity arguments and absolute paths and reject request execution
+  ansible.builtin.assert:
+    that:
+      - >-
+        tack_ops_args
+        | map('regex_replace', '\A--(request|manifest)=/var/lib/tack/repair/[A-Za-z0-9_-][A-Za-z0-9._-]*\Z',
+              'repair file')
+        | sort == ['--output=json', 'repair file']
+      - not (tack_ops_execute | bool) or tack_ops_args | select('match', '--request=') | list == []
+      - tack_node_integrity_input is string and tack_node_integrity_input is match('/')
+      - tack_node_integrity_output is string and tack_node_integrity_output is match('/')
+    fail_msg: >-
+      ops backfill once-node-integrity requires exactly two arguments:
+      --output=json and either --request=<path> or --manifest=<path>.
+      The path must start with /var/lib/tack/repair/ and contain one file
+      name that uses only letters, digits, dots, underscores, and hyphens
+      and does not start with a dot. The playbook refuses --request with
+      tack_ops_execute=true. tack_node_integrity_input and
+      tack_node_integrity_output must each contain an absolute path string.
+      Arguments {{ tack_ops_args }}, tack_ops_execute "{{ tack_ops_execute }}",
+      input "{{ tack_node_integrity_input }}", output "{{ tack_node_integrity_output }}".
+    quiet: true
+  any_errors_fatal: true
+
+- name: Inspect the node integrity input, output, .execute path, and output parent directory on the controller
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: true
+    get_checksum: false
+  loop:
+    - "{{ tack_node_integrity_input }}"
+    - "{{ tack_node_integrity_output }}"
+    - "{{ tack_node_integrity_output | dirname }}"
+    - "{{ tack_node_integrity_output }}.execute"
+  register: tack_node_integrity_paths
+  delegate_to: localhost
+
+- name: Validate the node integrity file paths
+  ansible.builtin.assert:
+    that:
+      - tack_node_integrity_paths.results[0].stat.exists and tack_node_integrity_paths.results[0].stat.isreg
+      - not (tack_node_integrity_paths.results[1].stat.exists and tack_node_integrity_paths.results[1].stat.isdir)
+      - tack_node_integrity_paths.results[2].stat.exists and tack_node_integrity_paths.results[2].stat.isdir
+      - not (tack_node_integrity_paths.results[3].stat.exists and tack_node_integrity_paths.results[3].stat.isdir)
+      - (tack_node_integrity_output | realpath) == tack_node_integrity_output
+      - (tack_node_integrity_input | realpath) != tack_node_integrity_output
+      - (tack_node_integrity_input | realpath) != tack_node_integrity_output ~ '.execute'
+    fail_msg: >-
+      The controller requires an existing regular input file. The output path
+      must equal its resolved path without symbolic links or repeated or trailing
+      slashes. The output and its .execute path must not be directories, and the
+      output's parent directory must exist. The resolved input must differ from
+      both output paths.
+      Input "{{ tack_node_integrity_input }}", output "{{ tack_node_integrity_output }}".
+    quiet: true
+  any_errors_fatal: true
+
+- name: Check both node integrity paths for Git checkouts and worktrees
+  ansible.builtin.include_tasks: tack-ops-node-integrity-git-markers.yml
+  loop:
+    - "{{ tack_node_integrity_input }}"
+    - "{{ tack_node_integrity_output }}"
+  loop_control:
+    loop_var: tack_node_integrity_marker_path

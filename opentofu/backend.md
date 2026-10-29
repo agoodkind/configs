@@ -11,30 +11,38 @@ Run every tofu command through configsctl. configsctl reads the credentials
 from the Ansible vault.
 
 ```bash
-./configsctl tofu plan
-./configsctl tofu apply
+./configsctl tofu suburban/tack-qa plan
+./configsctl tofu suburban/tack-qa apply
 ```
 
-A fresh checkout needs one `./configsctl tofu init` before its first plan.
+Each directory with a `backend` block defines a workspace with its own state
+file. A slash-separated selector relative to the workspaces directory selects
+that workspace.
 
-Each directory under the workspaces directory with a `backend` block is a
-workspace with its own state file. A workspace name before the tofu command
-selects that workspace.
+Initialize each selected root before its first plan.
 
-```bash
-./configsctl tofu guest plan
-```
-
-Each workspace needs its own `init`.
-
-Run [opentofu/guest/install-providers.sh](guest/install-providers.sh) before the first `./configsctl tofu guest init` in a checkout. The script installs both pinned providers into the guest workspace's implied local mirror.
+Run the existing [provider installer](guest/install-providers.sh) before
+initializing a root that uses the pinned local providers. The installer uses
+the shared mirror that `tofu.provider_mirror` selects in
+[configsctl.yml](../configsctl.yml). configsctl resolves that path relative to
+the settings file and creates a private OpenTofu CLI configuration in the user
+cache directory. Every workspace uses that configuration. Public providers
+retain direct registry installation.
 
 ```bash
 opentofu/guest/install-providers.sh
-./configsctl tofu guest init
+./configsctl tofu suburban/tack-qa init
 ```
 
-Run the script again after a change to [providers.pin](guest/providers.pin). After a new release under the unchanged provider version `0.1.0`, delete `opentofu/guest/.terraform.lock.hcl` before running `./configsctl tofu guest init` again.
+Run the installer again after a change to [providers.pin](guest/providers.pin).
+Initialize the selected root again after its provider installation changes.
+If a changed pin retains its provider version, remove the selected root's
+provider dependency lock before initializing that root again.
+
+The independent roots use the ownership and migration contract in the
+[workspace separation design](../docs/superpowers/specs/2026-10-23-workspace-separation-design.md).
+The retained root, `guest`, and `firmware` backends support the complete state
+transfer. They do not declare managed resources after the source cutover.
 
 ## Secrets
 
@@ -51,7 +59,7 @@ The S3 backend reads its credentials from the environment variables
 supply them.
 
 To change the workspaces directory (`workspaces_dir`) or the `vault_tofu_env_`
-prefix, edit [configsctl.yml](../configsctl.yml).
+prefix, edit the settings file.
 
 ## Add a secret
 
@@ -97,7 +105,7 @@ The Proxmox provider uses these import identifiers:
 Import the live object through the repo control tool:
 
 ```bash
-./configsctl tofu import \
+./configsctl tofu '<workspace>' import \
   '<resource_address>' '<provider_import_id>'
 ```
 
@@ -120,8 +128,8 @@ For a ZFS-backed guest, renaming each dataset preserves its child snapshots.
 5. Remove the resource from state, then import it with the new VMID:
 
 ```bash
-./configsctl tofu state rm '<resource_address>'
-./configsctl tofu import \
+./configsctl tofu '<workspace>' state rm '<resource_address>'
+./configsctl tofu '<workspace>' import \
   '<resource_address>' '<node_name>/<new_vmid>'
 ```
 

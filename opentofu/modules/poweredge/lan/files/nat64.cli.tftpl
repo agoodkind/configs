@@ -1,0 +1,16 @@
+create tap id 64 host-if-name nat64-in host-mac-addr 02:64:00:00:00:01 host-ip6-addr fd06:fab:6464::1/64
+set interface ip address tap64 fd06:fab:6464::2/64
+set interface state tap64 up
+set interface rx-mode tap64 adaptive
+create tap id 65 host-if-name nat64-out host-ip4-addr 10.230.230.4/31
+set interface ip address tap65 10.230.230.5/31
+set interface state tap65 up
+set interface rx-mode tap65 adaptive
+nat64 plugin enable
+set interface nat64 in tap64 out tap65
+nat64 add pool address 10.230.231.254
+nat64 add prefix ${nat64_prefix}
+ip route add 0.0.0.0/0 via 10.230.230.4 tap65
+ip route add 3d06:bad:b01:300::/64 via fd06:fab:6464::1 tap64
+ip route add 3d06:bad:b01:305::/64 via fd06:fab:6464::1 tap64
+set ip neighbor tap64 fd06:fab:6464::1 02:64:00:00:00:01 static

@@ -1,0 +1,34 @@
+[Unit]
+Description=Renew the PowerEdge iDRAC HTTPS certificate
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/configs/idrac-certificate
+StateDirectory=configs-idrac-certificate
+StateDirectoryMode=0700
+RuntimeDirectory=configs-idrac-certificate
+RuntimeDirectoryMode=0700
+LoadCredentialEncrypted=vault.pass:/etc/credstore.encrypted/idrac-certificate-vault.pass
+BindReadOnlyPaths=%d/vault.pass:/root/.config/ansible/vault.pass
+BindReadOnlyPaths=/opt/configs/idrac-certificate/hosts:/etc/hosts
+Environment=PATH=/opt/configs/idrac-certificate/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=TF_DATA_DIR=/var/lib/configs-idrac-certificate/terraform
+Environment=XDG_CONFIG_HOME=/var/lib/configs-idrac-certificate/config
+Environment=TF_IN_AUTOMATION=1
+Environment=TF_LOG=OFF
+Environment=TMPDIR=/var/lib/configs-idrac-certificate/tmp
+UMask=0077
+PrivateTmp=true
+ProtectHome=tmpfs
+ProtectSystem=strict
+ReadWritePaths=/var/lib/configs-idrac-certificate /var/lib/configs
+TimeoutStartSec=15min
+ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/configs-idrac-certificate/tmp
+ExecStartPre=/opt/configs/idrac-certificate/bin/configsctl tofu init -input=false -lockfile=readonly
+ExecStart=/opt/configs/idrac-certificate/bin/configsctl tofu apply -input=false -auto-approve
+
+[Install]
+WantedBy=multi-user.target

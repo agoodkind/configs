@@ -29,14 +29,74 @@
     group: root
     mode: "0750"
 
-- name: Create the ledger certificate authority directory
+- name: Create the protected authority parent directory
   ansible.builtin.file:
-    path: "{{ tack_ledger_certs_dir }}/ca"
+    path: "{{ tack_ledger_authority_dir | dirname }}"
     state: directory
     owner: root
     group: root
     mode: "0700"
   delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+
+- name: Check the previous ledger authority directory
+  ansible.builtin.stat:
+    path: "{{ tack_ledger_certs_dir }}/ca"
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+  register: tack_previous_ledger_authority
+
+- name: Check the protected ledger authority directory
+  ansible.builtin.stat:
+    path: "{{ tack_ledger_authority_dir }}"
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+  register: tack_protected_ledger_authority
+
+- name: Refuse conflicting ledger authority directories
+  ansible.builtin.assert:
+    that:
+      - not (tack_previous_ledger_authority.stat.exists and tack_protected_ledger_authority.stat.exists)
+    fail_msg: >-
+      Both ledger authority directories exist. Compare and preserve the current
+      authority before retrying the migration from {{ tack_ledger_certs_dir }}/ca
+      to {{ tack_ledger_authority_dir }}.
+  run_once: true
+
+- name: Move the existing ledger authority outside runtime mounts
+  ansible.builtin.command:
+    argv: [mv, "{{ tack_ledger_certs_dir }}/ca", "{{ tack_ledger_authority_dir }}"]
+    creates: "{{ tack_ledger_authority_dir }}"
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+  when: tack_previous_ledger_authority.stat.exists
+  no_log: true
+
+- name: Create the ledger certificate authority directory
+  ansible.builtin.file:
+    path: "{{ tack_ledger_authority_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+
+- name: Check the preserved ledger authority files
+  ansible.builtin.stat:
+    path: "{{ tack_ledger_authority_dir }}/{{ item }}"
+  loop: [ca.crt, ca.key]
+  delegate_to: "{{ tack_ledger_ca_host }}"
+  run_once: true
+  register: tack_preserved_ledger_authority
+
+- name: Refuse an incomplete ledger authority
+  ansible.builtin.assert:
+    that:
+      - tack_preserved_ledger_authority.results[0].stat.exists == tack_preserved_ledger_authority.results[1].stat.exists
+    fail_msg: >-
+      The ledger authority key and certificate must both exist or both be absent.
+      Restore the missing file in {{ tack_ledger_authority_dir }} before retrying.
   run_once: true
 
 # openssl 3 writes the key and the self-signed certificate in one command.
@@ -50,15 +110,15 @@
       -subj "/CN=Tack ledger authority {{ tack_domain }}"
       -addext "basicConstraints=critical,CA:TRUE"
       -addext "keyUsage=critical,keyCertSign,cRLSign"
-      -keyout {{ tack_ledger_certs_dir }}/ca/ca.key
-      -out {{ tack_ledger_certs_dir }}/ca/ca.crt
-    creates: "{{ tack_ledger_certs_dir }}/ca/ca.crt"
+      -keyout {{ tack_ledger_authority_dir }}/ca.key
+      -out {{ tack_ledger_authority_dir }}/ca.crt
+    creates: "{{ tack_ledger_authority_dir }}/ca.crt"
   delegate_to: "{{ tack_ledger_ca_host }}"
   run_once: true
 
 - name: Restrict the ledger authority key
   ansible.builtin.file:
-    path: "{{ tack_ledger_certs_dir }}/ca/ca.key"
+    path: "{{ tack_ledger_authority_dir }}/ca.key"
     owner: root
     group: root
     mode: "0600"
@@ -76,9 +136,9 @@
       openssl req -new -newkey rsa:2048 -nodes -sha256
       -subj "/CN={{ item.key }}"
       -addext "subjectAltName=DNS:{{ item.key }},IP:{{ item.value }}"
-      -keyout {{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.key
-      -out {{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.csr
-    creates: "{{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.csr"
+      -keyout {{ tack_ledger_authority_dir }}/node.{{ item.key }}.key
+      -out {{ tack_ledger_authority_dir }}/node.{{ item.key }}.csr
+    creates: "{{ tack_ledger_authority_dir }}/node.{{ item.key }}.csr"
   loop: "{{ tack_ledger_certificate_subjects | dict2items }}"
   delegate_to: "{{ tack_ledger_ca_host }}"
   run_once: true
@@ -87,12 +147,12 @@
   ansible.builtin.command:
     cmd: >-
       openssl x509 -req -sha256 -days {{ tack_ledger_cert_days }}
-      -in {{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.csr
-      -CA {{ tack_ledger_certs_dir }}/ca/ca.crt
-      -CAkey {{ tack_ledger_certs_dir }}/ca/ca.key
+      -in {{ tack_ledger_authority_dir }}/node.{{ item.key }}.csr
+      -CA {{ tack_ledger_authority_dir }}/ca.crt
+      -CAkey {{ tack_ledger_authority_dir }}/ca.key
       -CAcreateserial -copy_extensions copy
-      -out {{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.crt
-    creates: "{{ tack_ledger_certs_dir }}/ca/node.{{ item.key }}.crt"
+      -out {{ tack_ledger_authority_dir }}/node.{{ item.key }}.crt
+    creates: "{{ tack_ledger_authority_dir }}/node.{{ item.key }}.crt"
   loop: "{{ tack_ledger_certificate_subjects | dict2items }}"
   delegate_to: "{{ tack_ledger_ca_host }}"
   run_once: true
@@ -102,7 +162,7 @@
 # it dialed with it.
 - name: Read the ledger authority certificate
   ansible.builtin.slurp:
-    src: "{{ tack_ledger_certs_dir }}/ca/ca.crt"
+    src: "{{ tack_ledger_authority_dir }}/ca.crt"
   register: tack_ledger_ca_certificate
   delegate_to: "{{ tack_ledger_ca_host }}"
   run_once: true
@@ -135,14 +195,14 @@
 # retires) skips these and keeps only the authority certificate above.
 - name: Read this guest's ledger node certificate
   ansible.builtin.slurp:
-    src: "{{ tack_ledger_certs_dir }}/ca/node.{{ tack_ledger_node_name }}.crt"
+    src: "{{ tack_ledger_authority_dir }}/node.{{ tack_ledger_node_name }}.crt"
   register: tack_ledger_node_certificate
   delegate_to: "{{ tack_ledger_ca_host }}"
   when: tack_ledger_node_name in tack_ledger_certificate_subjects
 
 - name: Read this guest's ledger node key
   ansible.builtin.slurp:
-    src: "{{ tack_ledger_certs_dir }}/ca/node.{{ tack_ledger_node_name }}.key"
+    src: "{{ tack_ledger_authority_dir }}/node.{{ tack_ledger_node_name }}.key"
   register: tack_ledger_node_key
   delegate_to: "{{ tack_ledger_ca_host }}"
   no_log: true

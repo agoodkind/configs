@@ -82,7 +82,7 @@
   "local-address": session.local_address,
   "local-as": session.local_as | int,
   "remote-as": session.remote_as | int,
-  "router-id": session.router_id,
+  "family": session.family,
   "keepalive": session.keepalive | int,
   "hold": session.hold | int,
   "connect-retry": session.connect_retry | int,
@@ -92,6 +92,9 @@
 } %}
 {% if session.multihop_ttl | int > 0 %}
 {% set _ = rendered_session.update({"multihop-ttl": session.multihop_ttl | int}) %}
+{% endif %}
+{% if session.graceful_restart is defined %}
+{% set _ = rendered_session.update({"graceful-restart-time": session.graceful_restart | int}) %}
 {% endif %}
 {% set _ = sessions.append(rendered_session) %}
 {% endfor %}

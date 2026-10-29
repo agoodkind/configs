@@ -1,0 +1,7 @@
+{% set password = tack_credential_values[item.password] %}
+{% set encoded_password = password | urlencode | replace('/', '%2F') %}
+{% if item.form == 'keyword' %}
+host={{ [tack_ledger_node_addresses.yb1, tack_ledger_node_addresses.yb2, tack_ledger_node_addresses.yb3] | join(',') }} port=5433 user={{ item.login }} password='{{ password | replace('\\', '\\\\') | replace("'", "\\'") }}' dbname={{ tack_yugabyte_db }} {{ tack_ledger_ssl_keywords }} connect_timeout={{ tack_database_connect_timeout_seconds }}
+{% else %}
+postgres://{{ item.login }}:{{ encoded_password }}@{{ item.hosts }}/{{ tack_yugabyte_db }}?{{ tack_ledger_ssl_query }}&connect_timeout={{ tack_database_connect_timeout_seconds }}
+{% endif %}

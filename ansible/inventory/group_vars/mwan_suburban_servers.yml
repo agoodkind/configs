@@ -160,6 +160,12 @@ mwan_routing_ipv6_routes: >-
   {{ testbed_routing_scenarios.values() | map(attribute='routes') | flatten
   | selectattr('node', 'equalto', 'mwan') | selectattr('family', 'equalto', 'ipv6') | list }}
 mwan_bgp_session_connect_retry_seconds: 5
+# RFC 4724 suggests a restart time at or below the 9-second hold time. The
+# restarted daemon connects only after the first IPv6 path verdict, and that
+# verdict waits for a probe cycle of check_interval 10 seconds. Sixty seconds
+# covers the daemon start and the first probe cycle with margin. A session
+# connects at the latest at the restart time minus the hold time.
+mwan_bgp_session_graceful_restart_seconds: 60
 
 # The daemon owns both links. The served configuration rejects a false IPv6
 # dhcp leaf on a daemon-owned link. Each IPv6 family omits that leaf.
@@ -449,8 +455,8 @@ mwan_providers:
       targets_v6: ["2606:4700:4700::1111", "2001:4860:4860::8888"]
       http_targets: ["https://ifconfig.co/ip"]
 
-  - name: monkeybrains
-    connection_id: monkeybrains
+  - name: tertiary
+    connection_id: tertiary
     owner: mwan
     iface: "{{ mwan_monkeybrains_iface }}"
     vlan_id: ""
@@ -463,29 +469,20 @@ mwan_providers:
       forwarding: true
       dhcp: true
       route_metric: 5000
-    # The DUID is the link-layer-time value networkd built from an empty raw
-    # value: a zero time and the link address. The route metric applies to the
-    # default route from the router advertisement.
     ipv6:
       translation:
-        mode: ietf-nat:nptv6
-        nptv6:
-          internal_prefix: "{{ mwan_internal_prefix }}"
-          external_source: delegated
-          expected_prefix: "3d06:bad:b01:2400::/60"
+        mode: masquerade
       forwarding: true
       dhcp: true
       accept_ra: true
       route_metric: 5000
-      delegation:
-        hint: "::/56"
-        iaid: 714156292
-        duid_type: link-layer-time
-        duid: "00:01:00:01:00:00:00:00:{{ mwan_mbrains_mac | lower }}"
-        without_ra: solicit
+      autoconf: true
       dhcpv6_client:
+        duid: "00:03:00:01:{{ mwan_mbrains_mac | lower }}"
         address_iaid: 714156292
         request_address: true
+        request_prefix: false
+        without_ra: solicit
     table: 300
     mark: 3
     mark_prio: 300
@@ -697,11 +694,12 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.etheric_native_home.local.address }}"
         local_as: "{{ mwan_routing_sessions.etheric_native_home.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.etheric_native_home.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.etheric_native_home.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.etheric_native_home.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.etheric_native_home.hold_seconds }}"
         connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        graceful_restart: "{{ mwan_bgp_session_graceful_restart_seconds }}"
         route_metric: 8500
         import_prefixes: "{{ mwan_routing_sessions.etheric_native_home.policy.import_prefixes }}"
         export_prefixes: "{{ mwan_routing_sessions.etheric_native_home.policy.export_prefixes }}"
@@ -837,11 +835,12 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.tunnel_upstream_home.local.address }}"
         local_as: "{{ mwan_routing_sessions.tunnel_upstream_home.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.tunnel_upstream_home.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.tunnel_upstream_home.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.tunnel_upstream_home.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.tunnel_upstream_home.hold_seconds }}"
         connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        graceful_restart: "{{ mwan_bgp_session_graceful_restart_seconds }}"
         route_metric: 8600
         import_prefixes: "{{ mwan_routing_sessions.tunnel_upstream_home.policy.import_prefixes }}"
         export_prefixes: "{{ mwan_routing_sessions.tunnel_upstream_home.policy.export_prefixes }}"
@@ -893,11 +892,12 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.local.address }}"
         local_as: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.hold_seconds }}"
         connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        graceful_restart: "{{ mwan_bgp_session_graceful_restart_seconds }}"
         route_metric: 8700
         import_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.policy.import_prefixes }}"
         export_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_sonic_1.policy.export_prefixes }}"
@@ -949,11 +949,12 @@ mwan_providers:
         local_address: "{{ mwan_routing_sessions.tunnel_vps_home_astound.local.address }}"
         local_as: "{{ mwan_routing_sessions.tunnel_vps_home_astound.local.asn }}"
         remote_as: "{{ mwan_routing_sessions.tunnel_vps_home_astound.remote.asn }}"
-        router_id: "{{ bgp_router_id }}"
+        family: [ipv6-unicast]
         multihop_ttl: "{{ mwan_routing_sessions.tunnel_vps_home_astound.multihop_ttl }}"
         keepalive: "{{ mwan_routing_sessions.tunnel_vps_home_astound.keepalive_seconds }}"
         hold: "{{ mwan_routing_sessions.tunnel_vps_home_astound.hold_seconds }}"
         connect_retry: "{{ mwan_bgp_session_connect_retry_seconds }}"
+        graceful_restart: "{{ mwan_bgp_session_graceful_restart_seconds }}"
         route_metric: 8800
         import_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_astound.policy.import_prefixes }}"
         export_prefixes: "{{ mwan_routing_sessions.tunnel_vps_home_astound.policy.export_prefixes }}"

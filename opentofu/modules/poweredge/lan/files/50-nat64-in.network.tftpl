@@ -1,0 +1,10 @@
+[Match]
+Name=nat64-in
+
+[Network]
+KeepConfiguration=yes
+IPv6AcceptRA=no
+
+[Route]
+Destination=${nat64_prefix}
+Gateway=fd06:fab:6464::2

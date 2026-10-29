@@ -89,6 +89,13 @@ tack_ledger_node_addresses:
 # authority. The owner guest issues and holds that authority.
 tack_ledger_tls_enabled: true
 tack_ledger_ca_host: "{{ service_mapping.tack_qa_suburban.hostname }}"
+# ./configsctl deploy deploy-tack reads this value without Jinja templating
+# and locks this host. Use a literal inventory host name.
+tack_service_secret_source: tack-qa.suburban.goodkind.io
+# ./configsctl deploy tack-ops reads this value without Jinja templating and
+# locks this host. Use a literal inventory host name. tack-ops checks the
+# images on this application-only guest before ops verify strict-validation.
+tack_ops_lock_app_guest: tack-app2.suburban.goodkind.io
 
 # Phase 4 QA migration (TACK-408). A data guest with no cluster file receives a
 # copy of the live one during the deploy. The deploy reads that copy from the
@@ -128,6 +135,9 @@ tack_search_routing_shards: 8
 tack_search_replicas: 0
 tack_search_public_enabled: true
 tack_search_model_repair_enabled: true
+# QA search capacity runs (TACK-574 and TACK-575) record OpenSearch node CPU,
+# memory, JVM heap, and disk values with the runtime identity.
+tack_search_runtime_node_stats_enabled: true
 
 # QA runs a second application process on tack_app2_suburban for the search
 # two-process continuation check (TACK-544). That app publishes audit events
