@@ -3,7 +3,7 @@
 # Consumed by deploy-mwan-failover.yml when targeting `mwan_failover_servers`.
 
 mwan_failover_hostname: "mwan-failover"
-mwan_failover_networkd_uplink: false
+mwan_failover_uplink_mode: ifupdown
 mwan_failover_email_from: "mwan@goodkind.io"
 
 # Subject prefix distinct from main-host so failover alerts are visually

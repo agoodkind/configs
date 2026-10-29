@@ -6,7 +6,7 @@ auto lo
 iface lo inet loopback
 
 auto eth0
-{% if mwan_failover_networkd_uplink %}
+{% if mwan_failover_uplink_mode == 'networkd' %}
 iface eth0 inet manual
 {% else %}
 iface eth0 inet dhcp

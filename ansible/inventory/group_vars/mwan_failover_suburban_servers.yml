@@ -3,7 +3,7 @@
 # Consumed by deploy-mwan-failover.yml when targeting `mwan_failover_suburban_servers`.
 
 mwan_failover_hostname: "{{ service_mapping.mwan_failover_suburban.hostname.split('.')[0] }}"
-mwan_failover_networkd_uplink: true
+mwan_failover_uplink_mode: networkd
 mwan_failover_email_from: "mwan-testbed@goodkind.io"
 mwan_failover_subject_prefix: "[MWAN-suburban-failover]"
 
