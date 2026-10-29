@@ -18,22 +18,18 @@ requirements for Tack and MWAN deployment.
 
 ### 1. Transport
 
-The provider calls the Proxmox API of each hypervisor with an API token. For a
-container it uses the overlay methods `exec`, `exec-status`, `file-read`, and
-`file-write` under `/nodes/{node}/lxc/{vmid}/`, which require the privileges
-`VM.Guest.Exec`, `VM.Guest.FileRead`, and `VM.Guest.FileWrite` on
-`/vms/{vmid}`. For a VM it uses the guest agent methods `agent/exec` and
-`agent/exec-status`. `exec` returns at once, and the provider reads the result
-with `exec-status` after the command exits. The provider writes file content
-to the guest command's standard input in chunks.
+The provider calls each hypervisor's Proxmox API with an API token. It uses
+the overlay methods `exec`, `exec-status`, and `exec-ack` for both containers
+and virtual machines, with `VM.Guest.Exec` on the selected guest. The VM
+transport requires the QEMU guest agent. The provider polls the returned
+command identifier, reads the complete result, and acknowledges it without
+repeating the command. File transfer uses chunked command input. The
+[provider transport contract](https://github.com/agoodkind/terraform-provider-pveguest/blob/main/README.md)
+defines the API paths, limits, timeouts, and required overlay behavior.
 
 The provider does not require guest SSH, an authorized key in the guest, a
 controller network route to the guest, or root access to the hypervisor. One
 transport serves a healthy guest and a guest with broken SSH.
-
-The provider acceptance tests passed on poweredge container 9004 on
-2026-10-04 through these methods with a token that has only the three guest
-privileges.
 
 ### 2. Provider
 
@@ -51,7 +47,7 @@ guests works on the resources.
 | --- | --- | --- |
 | `pveguest_file` | Path, content, mode, owner, group. Also absence. | `stat` and `sha256sum` |
 | `pveguest_link` | A symbolic link and its target | `readlink` |
-| `pveguest_apt_packages` | A set of installed package names | `dpkg-query --show` |
+| `pveguest_apt_packages` | Packages, versions, upgrade restrictions, and declared removal policy | `dpkg-query --show` and package policy reads |
 | `pveguest_systemd_unit` | Enabled state, active state, and restart triggers | `systemctl is-enabled` and `systemctl is-active` |
 
 The apt and systemd command logic follows `neuspaces/system` (MPL-2.0) as a
@@ -101,7 +97,7 @@ service mapping. A guest joins through an explicit enrolled set.
 | `/root/.bashrc` line edits | The module uses `pveguest_file` for `/etc/profile.d/98-prep-guests-environment.sh`, which login shells read. |
 | `EXTERNALLY-MANAGED` removal | `pveguest_file` for `/etc/pip.conf` |
 | `/opt/scripts` installer | The module declares the update script, service, timer, and both PATH files with `pveguest_file`. The module enables and starts `scripts-updater.timer` with `pveguest_systemd_unit`. |
-| Mail relay file | The module uses `pveguest_mail_relay` for the SMTP2GO user and `/etc/msmtprc` on `clyde_suburban`. |
+| Mail relay file | The module uses `pveguest_mail_relay` for each declared SMTP2GO user and its guest mail configuration. |
 | Hostname | Already declared by the Proxmox provider for containers |
 
 The guest module uses the declared timezone instead of the deployment
@@ -109,8 +105,8 @@ machine's timezone.
 
 ### 7. Mail credential
 
-Each guest has one SMTP2GO user. The password is generated once and stays the
-same across applies. A declared version number per guest rotates it: a higher
+Each guest that requires mail declares one SMTP2GO user. The provider generates
+its password once and preserves it across applies. A version number rotates it: a higher
 number creates a new password, updates the SMTP2GO user, and rewrites the
 file. The `pveguest_mail_relay` resource Read warns when the SMTP2GO user is
 missing or blocked.
@@ -171,6 +167,19 @@ interface binds to `nic0`, `nic3`, or `ens1f1`, or to a bridge with one of
 those LAN ports. LAN client traffic, LAN forwarding, and LAN-facing services
 stay disabled until a separate user instruction.
 
+### 11. Approaches
+
+The adopted approach combines existing general providers in Configs and extends
+them only for demonstrated gaps. Tack and MWAN providers implement their own
+application rules. This preserves shared package, file, service, container, and
+database behavior while allowing each service to migrate independently.
+
+A single custom service provider would duplicate general resources and require
+separate maintenance for the same operation. The reuse requirement excludes that
+approach. Wrapping an Ansible playbook in a command resource would retain Ansible
+and would not make each managed object's live state visible in a plan. The
+read and planning requirements exclude that approach too.
+
 ### 12. Tack and MWAN migration
 
 Configs combines infrastructure, reusable configuration, and application
@@ -203,7 +212,7 @@ and the application rules that require a separate implementation.
 Every managed object and field has one writer. Resources that manage deployed
 objects read live state and show meaningful proposed changes before apply.
 MWAN's configuration-only projections retain the network planning contract
-in section 11; the resources that write deployed state own its live readback.
+referenced in section 10. Resources that write deployed state own its live readback.
 A record that a command ran does not establish the resulting state. Deployed
 object contracts must cover import, changes, removal, failed operations, and
 recovery after interruption. Import preserves existing cluster identities
@@ -217,6 +226,38 @@ dependency remains unfinished. The [implementation plan](plan.md) requires an
 owner, a concrete action, evidence, dependencies, and a completion check for
 each remaining item. A genuine decision requires options and a recommendation.
 
+Suburban and Vault use the same reusable modules with explicit environment
+inputs. Their adoption records remain separate. Declaring a VM or container
+does not declare the application inside it. An implemented provider resource
+does not establish that an application root declares, imports, or deploys it.
+Acceptance records each of those results separately.
+
+Guest preparation includes the required timezone and mail declarations.
+Consumers verify the selected package and Docker transport capabilities before
+proposing extensions. Bootstrap and recovery acceptance still apply when a
+provider or adapter already implements the required operation.
+
+Tack coverage includes container runtime state, FoundationDB and YugabyteDB
+administration, schema migration ownership, coordinated search replacement,
+audit configuration, credentials, certificates, backup policy, and backup
+mounts. Its approved deployment specification remains the detailed authority.
+MWAN coverage includes gateway and failover installation, safe deployment and
+recovery, host services, observers, OPNsense, and both ISP and routing simulators.
+General installation stays separate from each application's health decisions.
+
+Simulator coverage includes firewall, sysctl, router advertisement, return routes,
+Kea configuration and service transitions, management authorization, observer
+installation, and routing runtime. Completion verifies actual client traffic
+in both directions on every applicable path. Preserve current tertiary policy,
+which uses DHCPv6 addresses without prefix delegation.
+
+The controller must select connection settings, credentials, and lock targets
+without executing Ansible inventory or vault commands for the migrated services.
+Shared YAML values may remain inputs while other services still use Ansible;
+renaming their directory does not prove controller independence. Ordered CI
+deployment follows its own approved contracts and consumes the same controller
+implementation. Local service migration does not wait for unrelated CI tasks.
+
 ## Boundaries
 
 - Tack and MWAN must install, configure, update, and recover without invoking
@@ -224,9 +265,11 @@ each remaining item. A genuine decision requires options and a recommendation.
   Removal of the playbooks alone does not satisfy the completion criteria.
 - `deploy-ssh-keys` is deleted after the last guest is enrolled. The transport
   in section 1 repairs a locked-out guest.
-- The first version covers apt and systemd on Debian. Alpine guests are out of
-  scope.
-- A VM file larger than 1 MiB exceeds the stdin limit of `qm guest exec`.
+- Guest preparation uses apt and systemd on Debian. Required FreeBSD router
+  operations use the selected general capability from the reuse review.
+  Alpine guest preparation remains outside this scope.
+- Use the provider's chunked transfer for large files. Do not bypass its command
+  input or captured-output limits.
 - For the PowerEdge gateway, OpenTofu writes `/etc/mwan/network.json` and
   the firewall file. The first apply requires deletion of the gateway's
   Ansible `network.json` render and install task. The daemon owns
@@ -320,35 +363,26 @@ Guest enrollment and service migration can overlap. Each task requires only
 its own prerequisites. Completing enrollment of every guest does not gate
 independent Tack or MWAN work.
 
-1. Add workspace selection to configsctl and create the `guest` workspace.
-   Build `pveguest_file` and `pveguest_systemd_unit`. Enroll `clyde_suburban`
-   with the SSH files and the static files. clyde_suburban does not run a
-   service subject to the readiness gate.
-2. Add `pveguest_apt_packages` and `pveguest_link`. Add the remaining items on
-   the same guest.
-3. Add the mail credential on the same guest.
-4. Enroll the other suburban containers, then the suburban MWAN VM.
-5. Add the plan gate to `configsctl deploy`.
-6. Enroll the poweredge guests, then the vault guests one group at a time. The
-   proxy guest is last.
-7. Enroll the PowerEdge gateway and LAN containers after the mwan release
-   with the `guest-type` change, the `terraform-provider-mwan` release with
-   pull request 202, and the overlay release with the `hostnic` option.
-8. Delete `prep-guests`, `deploy-ssh-keys`, the marker tasks, and their specs.
-9. Complete the shared capability review and assign implementation owners.
+1. Preserve the application roots, host roots, and encrypted states established
+   by the workspace separation design. Do not recreate a shared guest root.
+2. Reuse existing guest preparation resources and complete missing root inputs.
+   Enroll the applicable Vault guests without replacing their existing guests.
+3. Keep unrelated service preparation and marker consumers until their owners
+   complete enrollment. Retire Tack and MWAN dependencies independently.
+4. Complete the shared capability review and assign implementation owners.
    Record existing resources, verified gaps, dependencies, actions, and
    completion checks. Confirm coverage of both services before selecting
    application-specific resources.
-10. Develop generic capabilities, Tack resources, and MWAN resources in
-    parallel. Each adoption requires acceptance of its actual dependencies.
-    Import existing state and stop each previous writer before provider
-    writes. Complete the applicable AC16 checks for each adopted capability.
-11. Prove Tack on QA and MWAN on the test environment independently, then
-    adopt their production environments within existing authorization.
-    Complete AC17 and AC18. Neither service waits for the other to finish.
-12. Remove replaced Tack and MWAN Ansible tasks and dependencies after their
-    acceptance checks pass. Complete AC19 while preserving other service
-    deployments. Steps 9 through 12 order dependencies, not unrelated work.
+5. Develop generic capabilities, Tack resources, and MWAN resources in
+   parallel. Each adoption requires acceptance of its actual dependencies.
+   Import existing state and stop each previous writer before provider
+   writes. Complete the applicable AC16 checks for each adopted capability.
+6. Prove Tack on QA and MWAN on the test environment independently, then
+   adopt their production environments within existing authorization.
+   Complete AC17 and AC18. Neither service waits for the other to finish.
+7. Remove replaced Tack and MWAN Ansible tasks and dependencies after their
+   acceptance checks pass. Complete AC19 while preserving other service
+   deployments. Each step orders its actual dependencies, not unrelated work.
 
 Tack epic LAB-65 tracks this work. LAB-71, LAB-72, LAB-74, and LAB-77 track
 the guest API transport.
@@ -364,6 +398,4 @@ below are recorded for reconsideration. None of them is selected or scheduled.
 | SSH into each guest | A guest with broken SSH requires a second repair path. | The option does not require hypervisor privileges. Each guest needs sshd and an authorized key before OpenTofu manages it. | The overlay guest methods stop applying to a Proxmox release and a patch is not feasible. |
 | Upstream the guest methods to Proxmox | The overlay patches each Proxmox release. | Upstream methods remove the overlay maintenance. Acceptance and timing depend on the Proxmox maintainers. | The overlay methods run on all three hypervisors without a change for one Proxmox minor release. |
 | A Debian package for the overlay | `pve-overlay` installs Perl modules and AppArmor profiles from patch files. | A package can install binaries and units and uses dpkg triggers. It needs a build pipeline and a package source. | The overlay needs a compiled helper, or it installs more than ten host files. |
-| An overlay privilege for VM command execution | The stock `agent/exec` method requires `VM.GuestAgent.Unrestricted`. | A narrow privilege limits a VM token to command execution. It adds one more overlay method. | The first VM guest is enrolled (AC11). |
 | A liveness check for exec workers | A pvedaemon restart during a command leaves its result missing, and `exec-status` reports a running command for up to two hours. | A check of the worker process detects the loss at once. It adds a process identity record per command. | A guest workspace apply fails or waits on a lost worker. |
-| A controller download with chunked `file-write` | `pveguest_download` runs `curl` in the guest and requires guest network access and `curl`. | A controller download serves a guest without egress. It sends the whole file through the API in 96 KiB chunks. | A guest without egress needs a pinned binary. |

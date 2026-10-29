@@ -1,111 +1,81 @@
-# Tack and MWAN implementation plan
+# Tack and MWAN Migration Implementation Plan
 
-Remove Ansible from [Tack deployment](https://tack.home.goodkind.io/browse/TACK-567)
-and [MWAN deployment](https://tack.home.goodkind.io/browse/MWAN-585). Use reusable
-OpenTofu resources under the [deployment contract](spec.md#12-tack-and-mwan-migration).
-Develop both services together. Each task waits only for the capabilities it needs.
+> Use `subagent-driven-development` or `executing-plans` to implement each task and record its verification with checkbox syntax.
 
-## Review shared capabilities
+**Goal:** Install, configure, update, and recover Tack and MWAN on Suburban and Vault without invoking Ansible.
 
-The generic provider maintainer owns one capability list under [LAB-89](https://tack.home.goodkind.io/browse/LAB-89).
-The deployment maintainer inventories existing behavior and combines the
-selected resources in Configs. Service provider maintainers implement the
-application-specific rules that pass the reuse review.
+**Architecture:** Configs combines existing general providers with the shared guest module. Service providers implement only application rules. Each application owns its configuration root and state; shared host resources keep separate owners.
 
-For each capability, record the source operation, consumers, proposed provider
-and version, supporting contract, exact gap, implementation owner, dependencies,
-next action, and completion check. Record how the resource reads live state,
-plans changes, applies them, performs declared removal, and recovers from
-interruption.
-Distinguish an existing implementation from one that still needs development.
+**Tech Stack:** OpenTofu, configsctl, Proxmox, pveguest, the Docker provider, and the Tack and MWAN providers.
 
-The source tasks establish required behavior. Their current grouping does not
-determine provider ownership.
+**Spec:** Read the [migration contract](spec.md#12-tack-and-mwan-migration) and the [workspace separation design](../specs/2026-10-23-workspace-separation-design.md).
 
-Docker connection selection must account for initial setup and recovery.
-Verify a fresh guest before Docker and its management endpoint exist. Verify
-repair after guest management networking becomes unavailable. Use the existing
-Proxmox guest API for prerequisite setup and repair. A Docker network endpoint
-cannot be the only management path. Preserve the generic Docker resource
-model and prove the exact connection gap before implementing an adapter.
-These checks use existing real test guests; they do not require new PowerEdge
-simulators.
+## Global constraints
 
-| Work | Tickets | Owner | Concrete action | Completion check |
-| --- | --- | --- | --- | --- |
-| Guest preparation | [LAB-90](https://tack.home.goodkind.io/browse/LAB-90) | Generic provider maintainer | Reuse the [base module](../../../opentofu/guest/base/main.tf). Check the provider contract for package versions, upgrade restrictions, repositories, users, directories, file differences, and removal behavior before proposing extensions. | Each required operation has an existing resource or a verified gap. Both services use the same implementation where they require that operation. |
-| Containers and images | [LAB-91](https://tack.home.goodkind.io/browse/LAB-91) | Generic provider maintainer | Evaluate the Docker resources cited below for container state, image identity, downloads, authentication, health checks, and import. Verify the required connection method and access permissions. Treat Compose configuration separately from application rules. | Record supported fields and exact gaps. Prove live reads, adoption, and image updates on a disposable guest before selecting the implementation. |
-| Databases, credentials, certificates, and protection | [LAB-92](https://tack.home.goodkind.io/browse/LAB-92) | Generic provider maintainer with service maintainers | Review existing providers for database administration, credential lifecycle, certificates, backup storage, schedules, and snapshots. Separate each reusable operation from application compatibility or recovery rules. | Each operation has a provider contract and acceptance evidence, or a specific reusable extension task. Preserve the service's audit and data protection requirements. |
-| Host and network configuration | [LAB-93](https://tack.home.goodkind.io/browse/LAB-93) | Generic provider maintainer | Inventory live host settings and routes in [testbed deployment](../../../ansible/playbooks/deploy-testbed.yml) and [host deployment](../../../ansible/playbooks/deploy-proxmox.yml). Select generic host, network, and Proxmox resources, including narrowly scoped API extensions where required. | Planning detects changes to running settings and routes. Apply restores declared state through the approved transport and permissions. A configuration file alone does not prove live state. |
-| Simulator behavior | [LAB-94](https://tack.home.goodkind.io/browse/LAB-94) | Deployment maintainer | Reuse the existing guest work. Convert [ISP configuration](../../../ansible/playbooks/tasks/deploy-testbed-isp-lxc.yml) and [routing simulator configuration](../../../ansible/playbooks/tasks/deploy-routing-simulators.yml) into package, file, service, and network declarations. | Simulators assign the expected addresses, install return routes, and pass their traffic checks. A second apply does not perform extra work. |
-| Tack rules | [TACK-568](https://tack.home.goodkind.io/browse/TACK-568), [TACK-569](https://tack.home.goodkind.io/browse/TACK-569) | Tack provider maintainer | Compare [Tack deployment](../../../ansible/playbooks/deploy-tack.yml) with the approved Tack design. Implement only the justified application rules after identifying generic resources for the other operations. | Each custom resource has the specification's justification and passes Tack acceptance through its public OpenTofu interface. |
-| MWAN rules | [MWAN-586](https://tack.home.goodkind.io/browse/MWAN-586) | MWAN provider maintainer | Compare [gateway deployment](../../../ansible/playbooks/deploy-mwan.yml), [failover deployment](../../../ansible/playbooks/deploy-mwan-failover.yml), and [OPNsense deployment](../../../ansible/playbooks/deploy-opnsense.yml) with the MWAN contract. Separate generic installation and host operations from MWAN network and deployment health rules. | Each custom resource has a justified state contract. MWAN acceptance includes failover, observers, watchdog recovery, and required OPNsense behavior. |
+- Preserve the existing application roots and encrypted backends. Do not recreate the retired shared guest workspace.
+- Reuse existing providers before extending them. Keep reusable implementation outside Configs; Configs declares values and dependencies.
+- Separate provider implementation, root declarations, import, deployment, and live acceptance. Evidence for one does not prove another.
+- Preserve guest identities, database identities, signing identities, disks, and data volumes during import.
+- Assign one writer to each managed field. Retire only the matching Ansible writer after replacement acceptance.
+- Develop Tack and MWAN independently. Give tertiary MWAN deployments priority when operations require the same host or guest.
+- Preserve current production authorization and other owners' active locks. This plan does not authorize a production outage or change the PowerEdge assignment.
+- Keep secrets absent from plans, state, logs, and public reports. Use the existing protected credential interfaces.
+- Keep task ledgers and runtime receipts in private harness state. Publish durable requirements, source contracts, and completed acceptance references in the owning issue or PR.
+- Preserve Ansible deployment of other services under LAB-96.
 
-## Implement and adopt resources
+## Review focus
 
-1. **Assign owners and complete the reuse review.** The deployment maintainer
-   confirms the shared owner and both service owners. Recover the existing
-   MWAN provider assignment before starting a competing implementation. If
-   that owner cannot resume, present two options: assign a dedicated MWAN
-   provider maintainer, or give that work to the shared maintainer. Recommend
-   a dedicated maintainer to preserve parallel work. Completion requires a
-   named owner for each implementation task and a capability list that
-   accounts for both services. Independent work continues during assignment.
-2. **Implement each verified capability gap.** The appropriate provider
-   maintainer adds only the missing behavior and updates that provider's
-   public contract. New runtime behavior requires acceptance through
-   OpenTofu against real disposable dependencies. Verify read-only planning,
-   visible changes, drift repair, import, declared removal, interruption
-   recovery, and secret handling. Completion requires a released provider
-   that passes the checks for its consumers. Release independent changes
-   separately; neither service waits for the entire generic backlog.
-3. **Compose each ready part of the deployment.** The deployment maintainer
-   updates the [guest declarations](../../../opentofu/guest/main.tf), the
-   [MWAN module](../../../opentofu/guest/mwan/main.tf), and the
-   [PowerEdge dependencies](../../../opentofu/guest/poweredge.tf) where the
-   selected resources apply. Keep shared configuration reusable and declare
-   actual dependencies. Track remaining guest enrollment under [LAB-95](https://tack.home.goodkind.io/browse/LAB-95)
-   without blocking independent service work. Run
-   `./configsctl tofu guest validate`, then review
-   `./configsctl tofu guest plan -detailed-exitcode` in the authorized
-   environment. Exit 0 means zero changes; exit 2 requires review of the
-   proposed changes; exit 1 reports an error. Completion requires a valid
-   configuration and a reviewed plan for the exact state under adoption.
-4. **Adopt existing objects without competing writers.** The deployment
-   maintainer imports live objects and compares their identities and data
-   volumes before changing writer ownership. Stop the matching Ansible
-   writer before the provider's first write. Complete
-   [Tack QA adoption](https://tack.home.goodkind.io/browse/TACK-570) or
-   [MWAN test environment adoption](https://tack.home.goodkind.io/browse/MWAN-587)
-   for the applicable resource group. Adopt production under
-   [TACK-573](https://tack.home.goodkind.io/browse/TACK-573) and
-   [MWAN-588](https://tack.home.goodkind.io/browse/MWAN-588) within the existing
-   authorization and coordination requirements. Completion requires
-   the applicable service acceptance, preserved data, a clean subsequent
-   plan, and an idempotent second apply. One service's adoption does not
-   require completion of the other service.
-5. **Retire the remaining Ansible dependencies.** The deployment maintainer
-   checks service commands, shared inventory, locks, and controller paths.
-   Complete Tack's writer and command-path retirement under
-   [TACK-572](https://tack.home.goodkind.io/browse/TACK-572).
-   Remove replaced tasks only after their replacement passes acceptance.
-   Preserve deployments of other services. Completion requires execution
-   evidence for installation, configuration, update, and recovery without
-   Ansible, plus every capability's recorded completion check.
+1. A feature exists in a provider but the application root does not declare it: track declaration and import as remaining work.
+2. A guest loses management networking: bootstrap and repair use the existing Proxmox guest API.
+3. A runner stops after a remote write: inspect actual state before retrying; preserve the same deployment lock until completion or deliberate abandonment.
+4. A disabled feature leaves a service running: verify explicit stop, disable, and removal behavior, rather than deleting state records alone.
+5. A test selects another ISP: require packet evidence on the intended simulator and verify restoration after the test.
 
-Record later service migrations under
-[LAB-96](https://tack.home.goodkind.io/browse/LAB-96). Their application migration
-does not block this plan.
+## Read the implementation plans
 
-For every unresolved implementation decision, state the verified constraint,
-available options, practical effects, and recommendation. Only dependent work
-waits for the decision. The migration does not authorize production changes
-or physical LAN activation beyond the existing limits.
+Each workstream has one accountable role and its own task details:
 
-## Supporting references
+| Workstream | Owner | Plan | Existing issues |
+| --- | --- | --- | --- |
+| Shared provider capabilities, guest enrollment, and controller dependencies | Generic provider maintainer | [Shared implementation](../plans/2026-10-29-shared-deployment-migration.md) | [LAB-89](https://tack.home.goodkind.io/browse/LAB-89), LAB-90 through LAB-93, LAB-95 |
+| Tack service resources and adoption | Tack provider maintainer | [Tack implementation](../plans/2026-10-29-tack-deployment-migration.md) | [TACK-567](https://tack.home.goodkind.io/browse/TACK-567), TACK-568 through TACK-570, TACK-572, TACK-573 |
+| MWAN service resources, hosts, OPNsense, and simulators | MWAN provider maintainer | [MWAN implementation](../plans/2026-10-29-mwan-deployment-migration.md) | [MWAN-585](https://tack.home.goodkind.io/browse/MWAN-585), MWAN-586 through MWAN-588, LAB-94 |
+| Ordered CI deployment | Deployment workflow maintainer | [Existing queued deployment plan](https://github.com/agoodkind/tofu-workflows/blob/6c5e5e807881cbf7275ed54fe3562a318b9da77d/docs/superpowers/plans/2026-10-22-queued-deployment.md) | [LAB-141](https://tack.home.goodkind.io/browse/LAB-141) |
 
-- The [Tack deployment design](https://github.com/agoodkind/tack/blob/main/docs/superpowers/specs/2026-10-10-tack-provider.md) requires generic provider reuse and complete deployment acceptance.
-- The [MWAN network specification](https://github.com/agoodkind/mwan/blob/main/docs/superpowers/networkplan/spec.md) defines network state and validation requirements.
-- The [pveguest contract](https://github.com/agoodkind/terraform-provider-pveguest/blob/main/README.md) establishes existing guest resource behavior.
-- The Docker provider documents [container lifecycle](https://github.com/kreuzwerker/terraform-provider-docker/blob/master/docs/resources/container.md) and [image management](https://github.com/kreuzwerker/terraform-provider-docker/blob/master/docs/resources/image.md) as reuse candidates.
-- OpenTofu documents [planning](https://opentofu.org/docs/cli/commands/plan/), [import](https://opentofu.org/docs/cli/import/), and [resource behavior](https://opentofu.org/docs/language/resources/behavior/).
+The deployment coordinator assigns an actual engineer to each role before starting that role's task. Reuse these issues; create a new issue only when the capability review establishes an independent gap. Do not reopen completed package or Docker transport work. Issue status changes require current implementation and acceptance evidence.
+
+## Sequence reviewable changes
+
+1. Complete the shared capability map and use each service's source task coverage to identify exact gaps.
+2. Release each necessary provider change in its own repository with its public-interface acceptance tests. Keep independent capabilities on sibling branches.
+3. Declare the ready resources in the owning Configs root. A declaration PR consumes an immutable provider release; order dependent PRs after that release.
+4. Adopt the corresponding Suburban resources and verify their service behavior. Tack adoption does not wait for MWAN adoption, or vice versa.
+5. Adopt the corresponding Vault resources after the relevant Suburban checks pass and within existing production authorization.
+6. Retire the replaced service writers and command dependencies. Enable automatic deployment only after its separate consumer prerequisites pass.
+
+This documentation change stays in Configs PR #813. Runtime PR boundaries follow the task boundaries in the detailed plans. Keep provider changes separate from Configs adoption and from live deployment receipts. Use a dependent PR stack only when one source change requires another unmerged source change.
+
+## Verify every adopted root
+
+Use the application selector from the detailed plan, not the retired `guest` selector:
+
+1. Run `./configsctl tofu <selector> validate`; require a valid configuration.
+2. Run `./configsctl tofu <selector> plan -detailed-exitcode`; read exit 0 as unchanged, 2 as planned changes, and 1 as failure.
+3. Review the exact resource identities and proposed changes before the authorized apply. Reject guest replacement or data destruction during adoption.
+4. Apply with the existing controller and lock protocol. Run the service checks specified by the task.
+5. Require a subsequent plan with exit 0 and a second apply that does not perform extra work.
+6. Exercise drift repair and interrupted-operation recovery on Suburban. Preserve existing production failure-test authorization limits.
+
+## Prove completion
+
+The coordinator closes each workstream only when its task checks and the applicable specification criteria pass:
+
+| Requirement | Implementation and evidence owner |
+| --- | --- |
+| Reuse, guest preparation, bootstrap, secret handling; AC1 through AC11 and AC16 where applicable | Shared tasks S1 through S4 |
+| Tack runtime, databases, search, audit, protection, and adoption; AC17 | Tack tasks T1 through T5 and the approved Tack deployment specification |
+| MWAN gateway, failover, hosts, observers, OPNsense, and simulators; AC12, AC13, AC18 | MWAN tasks M1 through M5 |
+| Existing PowerEdge AC14 and AC15 obligations | Preserve the separate routing owner's evidence and authority; do not schedule that host through this plan |
+| Writer retirement, controller independence, and all supported lifecycle commands; AC19 | Shared S4, Tack T5, and MWAN M5 |
+
+Completion requires a manifest for each service and environment with the source revision, provider releases, state root, imported identities, former writer, passing task checks, final plan, recovery result, and reservation release. Keep secret values out of the manifest. A partial simulator migration or a successful application release does not establish full service migration.
