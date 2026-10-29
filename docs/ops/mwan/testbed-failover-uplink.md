@@ -16,9 +16,12 @@ before deploying either speaker.
    connections use `tertiary` for both address families. Capture packets on
    the tertiary ISP simulator and confirm that each source address matches
    the primary speaker's acquired address for that family.
-4. Repeat with router advertisements and without DHCPv6 address service.
-   Confirm that IPv6 connections use the acquired SLAAC address.
-5. Restore DHCPv6 address service and the tier 0 uplinks. Confirm that new
+4. On the tertiary ISP simulator, run `systemctl stop kea-dhcp6-server` and
+   keep `radvd` running. Restart the primary speaker and repeat the client
+   traffic and packet capture checks from step 3. Confirm that DHCPv6 is
+   waiting for a lease and that IPv6 connections use the acquired SLAAC address.
+5. On the simulator, run `systemctl start kea-dhcp6-server` and restore the
+   tier 0 uplinks. Confirm that new
    connections use the preferred healthy providers again.
 
 ## Test the failover speaker
@@ -36,9 +39,9 @@ before deploying either speaker.
    traffic from a testbed client passes through the failover guest. Capture
    packets on the simulated ISP and check that their source addresses match
    the guest's uplink addresses.
-7. Repeat the startup and traffic checks with the simulator providing router
-   advertisements without a DHCPv6 address. Confirm that the guest starts
-   and forwards IPv6 using its SLAAC address.
-8. Restore the simulator's DHCPv6 service and verify that the failover guest
+7. On the tertiary ISP simulator, run `systemctl stop kea-dhcp6-server` and
+   keep `radvd` running. Repeat steps 4 through 6. Confirm that the guest
+   does not retain a DHCPv6 address and forwards IPv6 using its SLAAC address.
+8. On the simulator, run `systemctl start kea-dhcp6-server` and verify that the failover guest
    acquires an IPv6 address. Exercise the SLAAC health recovery toggle and
    confirm that IPv6 addresses, the default route, and forwarding recover.
