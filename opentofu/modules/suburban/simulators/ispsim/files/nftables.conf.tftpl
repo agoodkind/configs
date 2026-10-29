@@ -22,9 +22,10 @@ table ip nat {
 }
 %{~ if ipv6_enabled || routed_ipv6_enabled }
 
-# Both families masquerade only the sim's own downstream sources. Return
-# traffic the sim forwards toward suburban (tunnel and testbed destinations)
-# keeps its original source. The far end's TCP sees the address it dialed.
+# Both families masquerade only the simulator's own downstream sources. The
+# simulator forwards return traffic toward suburban (tunnel and testbed
+# destinations) without changing its source address. The far end's TCP
+# connection receives replies from the address that it dialed.
 table ip6 nat {
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
