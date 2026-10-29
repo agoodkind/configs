@@ -1,0 +1,167 @@
+---
+- name: Collect the preferred providers from the primary inventory
+  ansible.builtin.set_fact:
+    tertiary_preferred_providers: >-
+      {{ hostvars[groups['mwan_suburban_servers'][0]].mwan_providers
+      | selectattr('name', 'in', ['att', 'webpass']) | list }}
+    tertiary_preferred_sources: {}
+
+- name: Require both preferred providers and a valid ICMP identifier
+  ansible.builtin.assert:
+    that:
+      - tertiary_icmp_identifier | int > 0
+      - tertiary_icmp_identifier | int <= 65535
+      - tertiary_preferred_providers | length == 2
+      - >-
+        tertiary_preferred_providers | map(attribute='name') | list | sort
+        == ['att', 'webpass']
+
+- name: Require the preferred provider mappings
+  ansible.builtin.assert:
+    that:
+      - >-
+        item.ipv4.translation.static_mappings
+        | selectattr('internal', 'equalto', service_mapping.opnsense_suburban.ipv4_transit)
+        | list | length == 1
+      - item.ipv6.translation.nptv6.external_source == 'delegated'
+  loop: "{{ tertiary_preferred_providers }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Collect the expected preferred provider addresses
+  ansible.builtin.set_fact:
+    tertiary_preferred_sources: "{{ tertiary_preferred_sources | combine(tertiary_preferred_source) }}"
+  vars:
+    tertiary_preferred_source:
+      "{{ item.name }}":
+        vmid: "{{ service_mapping['isp_' ~ item.name ~ '_suburban'].vmid }}"
+        ipv4: >-
+          {{ (item.ipv4.translation.static_mappings
+          | selectattr('internal', 'equalto', service_mapping.opnsense_suburban.ipv4_transit)
+          | map(attribute='external') | list)[0] }}
+        ipv6_prefix: "{{ item.ipv6.translation.nptv6.expected_prefix }}"
+  loop: "{{ tertiary_preferred_providers }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Define preferred provider packet captures
+  ansible.builtin.set_fact:
+    tertiary_icmp_identifier: "{{ (tertiary_icmp_identifier | int % 65535) + 1 }}"
+
+- name: Define preferred provider captures for fresh connections
+  ansible.builtin.set_fact:
+    tertiary_preferred_captures: >-
+      {%- set captures = [] -%}
+      {%- for name, source in tertiary_preferred_sources.items() -%}
+      {%- set id = tertiary_icmp_identifier | string -%}
+      {%- set _ = captures.append({'provider': name, 'vmid': source.vmid, 'family': 'ipv4',
+        'direction': 'request', 'filter': 'icmp and icmp[icmptype] == icmp-echo and icmp[4:2] == '
+        ~ id ~ ' and src host ' ~ source.ipv4 ~ ' and dst host ' ~ tertiary_target_ipv4}) -%}
+      {%- set _ = captures.append({'provider': name, 'vmid': source.vmid, 'family': 'ipv4',
+        'direction': 'reply', 'filter': 'icmp and icmp[icmptype] == icmp-echoreply and icmp[4:2] == '
+        ~ id ~ ' and src host ' ~ tertiary_target_ipv4 ~ ' and dst host ' ~ source.ipv4}) -%}
+      {%- set _ = captures.append({'provider': name, 'vmid': source.vmid, 'family': 'ipv6',
+        'direction': 'request', 'filter': 'icmp6 and ip6[40] == 128 and ip6[44:2] == '
+        ~ id ~ ' and src net ' ~ source.ipv6_prefix ~ ' and dst host ' ~ tertiary_target_ipv6}) -%}
+      {%- set _ = captures.append({'provider': name, 'vmid': source.vmid, 'family': 'ipv6',
+        'direction': 'reply', 'filter': 'icmp6 and ip6[40] == 129 and ip6[44:2] == '
+        ~ id ~ ' and src host ' ~ tertiary_target_ipv6 ~ ' and dst net ' ~ source.ipv6_prefix}) -%}
+      {%- endfor -%}
+      {{ captures }}
+
+- name: Start preferred provider packet captures
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ item.vmid }}"
+      - --
+      - timeout
+      - "{{ testbed_routing_checks.capture_timeout_seconds }}"
+      - tcpdump
+      - -n
+      - -i
+      - eth0
+      - -c
+      - "1"
+      - "{{ item.filter }}"
+  loop: "{{ tertiary_preferred_captures }}"
+  loop_control:
+    label: "{{ item.provider }} {{ item.family }} {{ item.direction }}"
+  async: "{{ testbed_routing_checks.capture_timeout_seconds * 2 }}"
+  poll: 0
+  register: tertiary_preferred_capture_jobs
+  changed_when: false
+
+- name: Wait for the preferred provider captures to open
+  ansible.builtin.pause:
+    seconds: "{{ testbed_routing_checks.ping_timeout_seconds }}"
+
+- name: Send an echo request from the downstream client
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ service_mapping.mwan_test_client_a_suburban.vmid }}"
+      - --
+      - ping
+      - "{{ item.family }}"
+      - -c
+      - "1"
+      - -e
+      - "{{ tertiary_icmp_identifier }}"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - -I
+      - "{{ item.source }}"
+      - "{{ item.target }}"
+  loop:
+    - family: "-4"
+      source: "{{ service_mapping.mwan_test_client_a_suburban.ipv4 }}"
+      target: "{{ tertiary_target_ipv4 }}"
+    - family: "-6"
+      source: "{{ service_mapping.mwan_test_client_a_suburban.ipv6 }}"
+      target: "{{ tertiary_target_ipv6 }}"
+  loop_control:
+    label: "{{ item.family }}"
+  register: tertiary_preferred_ping_results
+  changed_when: false
+  failed_when: false
+
+- name: Wait for the preferred provider packet captures
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ tertiary_preferred_capture_jobs.results }}"
+  loop_control:
+    label: "{{ item.item.provider }} {{ item.item.family }} {{ item.item.direction }}"
+  register: tertiary_preferred_capture_results
+  until: tertiary_preferred_capture_results.finished
+  retries: "{{ testbed_routing_checks.capture_timeout_seconds }}"
+  delay: 2
+  failed_when: false
+
+- name: Initialize the preferred provider packet pairs
+  ansible.builtin.set_fact:
+    tertiary_preferred_pairs: []
+
+- name: Collect matching request and reply pairs
+  ansible.builtin.set_fact:
+    tertiary_preferred_pairs: "{{ tertiary_preferred_pairs + [{'family': item.0, 'provider': item.1}] }}"
+  loop: "{{ ['ipv4', 'ipv6'] | product(['att', 'webpass']) | list }}"
+  loop_control:
+    label: "{{ item.1 }} {{ item.0 }}"
+  when: >-
+    tertiary_preferred_capture_results.results
+    | selectattr('item.item.family', 'equalto', item.0)
+    | selectattr('item.item.provider', 'equalto', item.1)
+    | selectattr('rc', 'equalto', 0) | list | length == 2
+
+- name: Require preferred provider replies and packet pairs
+  ansible.builtin.assert:
+    that:
+      - tertiary_preferred_ping_results.results | rejectattr('rc', 'equalto', 0) | list == []
+      - "['ipv4', 'ipv6'] | difference(tertiary_preferred_pairs | map(attribute='family') | list) == []"
+    fail_msg: >-
+      Preferred provider pings or packet pairs failed. Ping results:
+      {{ tertiary_preferred_ping_results.results }}. Capture results:
+      {{ tertiary_preferred_capture_results.results }}.

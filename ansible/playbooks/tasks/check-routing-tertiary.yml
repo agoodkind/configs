@@ -1,0 +1,189 @@
+---
+- name: Require one primary and one failover speaker
+  ansible.builtin.assert:
+    that:
+      - groups['mwan_suburban_servers'] | length == 1
+      - groups['mwan_failover_suburban_servers'] | length == 1
+      - not hostvars[tertiary_primary_host].mwan_bgp_graceful_restart_enabled
+    fail_msg: The tertiary check requires the suburban speakers and primary BGP withdrawal on stop.
+
+- name: Read the primary agent state before faults
+  delegate_to: "{{ tertiary_primary_host }}"
+  ansible.builtin.command:
+    argv: [systemctl, show, mwan-agent.service, --property=ActiveState, --value]
+  register: tertiary_initial_agent
+  changed_when: false
+
+- name: Read the testbed watchdog state before faults
+  ansible.builtin.command:
+    argv: [systemctl, show, mwan-watchdog-testbed.service, --property=ActiveState, --value]
+  register: tertiary_initial_watchdog
+  changed_when: false
+
+- name: Read the preferred provider health before faults
+  delegate_to: "{{ tertiary_primary_host }}"
+  ansible.builtin.command:
+    argv: [cat, "{{ hostvars[tertiary_primary_host].mwan_ifmgr_wan_health_state_file }}"]
+  register: tertiary_initial_health
+  changed_when: false
+
+- name: Read the DHCPv6 service state before faults
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ service_mapping.isp_mbrains_suburban.vmid }}"
+      - --
+      - systemctl
+      - show
+      - kea-dhcp6-server.service
+      - --property=ActiveState
+      - --value
+  register: tertiary_initial_kea
+  changed_when: false
+
+- name: Require a healthy primary before the acceptance test
+  ansible.builtin.assert:
+    that:
+      - tertiary_initial_agent.stdout == 'active'
+      - tertiary_initial_kea.stdout == 'active'
+      - tertiary_initial_watchdog.stdout in ['active', 'inactive']
+      - tertiary_initial_health.stdout_lines | intersect(['att:healthy', 'webpass:healthy']) != []
+      - "'tertiary:healthy' in tertiary_initial_health.stdout_lines"
+    fail_msg: >-
+      The acceptance test requires an active primary and a healthy preferred provider.
+      Agent: {{ tertiary_initial_agent.stdout }}. Watchdog: {{ tertiary_initial_watchdog.stdout }}.
+      Health: {{ tertiary_initial_health.stdout }}.
+
+- name: Read the initial tier 0 link states
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ item }}", --, ip, -j, link, show, dev, eth0]
+  loop:
+    - "{{ service_mapping.isp_att_suburban.vmid }}"
+    - "{{ service_mapping.isp_webpass_suburban.vmid }}"
+  register: tertiary_initial_link_reads
+  changed_when: false
+
+- name: Initialize the tier 0 restoration inputs
+  ansible.builtin.set_fact:
+    tertiary_initial_links: []
+    tertiary_initial_preferred_health: >-
+      {{ tertiary_initial_health.stdout_lines | intersect(['att:healthy', 'webpass:healthy']) }}
+
+- name: Save each original link state
+  ansible.builtin.set_fact:
+    tertiary_initial_links: >-
+      {{ tertiary_initial_links + [{'vmid': item.item,
+      'up': 'UP' in (item.stdout | from_json)[0].flags}] }}
+  loop: "{{ tertiary_initial_link_reads.results }}"
+
+- name: Generate a unique packet identifier for this run
+  ansible.builtin.command:
+    argv: [cat, /proc/sys/kernel/random/uuid]
+  register: tertiary_test_uuid
+  changed_when: false
+
+- name: Select the packet identifier
+  ansible.builtin.set_fact:
+    tertiary_icmp_identifier: >-
+      {{ 10000 + (((tertiary_test_uuid.stdout | replace('-', ''))[:4] | int(base=16)) % 50000) }}
+
+- name: Test tertiary acquisition and both forwarding paths
+  block:
+    - name: Stop the testbed watchdog during deliberate faults
+      ansible.builtin.systemd:
+        name: mwan-watchdog-testbed
+        state: stopped
+
+    - name: Check DHCP acquisition and both speaker paths
+      ansible.builtin.include_tasks: check-routing-tertiary-paths.yml
+      vars:
+        tertiary_phase: dhcp
+
+    - name: Check both speakers without a DHCPv6 server
+      ansible.builtin.include_tasks: check-routing-tertiary-slaac.yml
+
+    - name: Verify the original primary acquisition after restoration
+      ansible.builtin.include_tasks: check-routing-tertiary-source.yml
+      vars:
+        tertiary_phase: dhcp
+        tertiary_speaker:
+          id: primary
+          host: "{{ tertiary_primary_host }}"
+          iface: "{{ tertiary_primary_iface }}"
+
+    - name: Verify the original failover acquisition after restoration
+      ansible.builtin.include_tasks: check-routing-tertiary-source.yml
+      vars:
+        tertiary_phase: dhcp
+        tertiary_speaker:
+          id: failover
+          host: "{{ tertiary_failover_host }}"
+          iface: eth0
+  always:
+    - name: Restore the primary BGP agent after the test
+      delegate_to: "{{ tertiary_primary_host }}"
+      ansible.builtin.command:
+        argv: [systemctl, start, mwan-agent.service]
+      register: tertiary_final_agent_restore
+      changed_when: true
+      failed_when: false
+
+    - name: Restore every initial tier 0 link state after the test
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ item.vmid }}"
+          - --
+          - ip
+          - link
+          - set
+          - dev
+          - eth0
+          - "{{ item.up | ternary('up', 'down') }}"
+      loop: "{{ tertiary_initial_links }}"
+      register: tertiary_final_link_restore
+      changed_when: true
+      failed_when: false
+
+    - name: Wait for the initial provider health before restoring the watchdog
+      delegate_to: "{{ tertiary_primary_host }}"
+      ansible.builtin.command:
+        argv: [cat, "{{ hostvars[tertiary_primary_host].mwan_ifmgr_wan_health_state_file }}"]
+      register: tertiary_final_health
+      changed_when: false
+      until:
+        - >-
+          tertiary_final_health.stdout_lines
+          | intersect(tertiary_initial_preferred_health) | length
+          == tertiary_initial_preferred_health | length
+        - "'tertiary:healthy' in tertiary_final_health.stdout_lines"
+      retries: "{{ testbed_routing_checks.tertiary_health_retries }}"
+      delay: "{{ testbed_routing_checks.tertiary_health_delay_seconds }}"
+      ignore_errors: true
+      ignore_unreachable: true
+
+    - name: Restore the original testbed watchdog state
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - "{{ (tertiary_initial_watchdog.stdout == 'active') | ternary('start', 'stop') }}"
+          - mwan-watchdog-testbed.service
+      register: tertiary_final_watchdog_restore
+      changed_when: true
+      failed_when: false
+
+    - name: Require every fault restoration to succeed
+      ansible.builtin.assert:
+        that:
+          - tertiary_final_agent_restore.rc == 0
+          - tertiary_final_watchdog_restore.rc == 0
+          - tertiary_final_link_restore.results | rejectattr('rc', 'equalto', 0) | list == []
+          - tertiary_final_health is succeeded
+          - tertiary_final_health is not unreachable
+        fail_msg: >-
+          Tertiary restoration failed. Agent: {{ tertiary_final_agent_restore }}.
+          Links: {{ tertiary_final_link_restore.results }}.
+          Watchdog: {{ tertiary_final_watchdog_restore }}.
+          Health: {{ tertiary_final_health }}.

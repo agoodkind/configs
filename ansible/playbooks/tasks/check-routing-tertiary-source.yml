@@ -1,0 +1,111 @@
+---
+- name: Wait for a speaker IPv4 assignment
+  delegate_to: "{{ tertiary_speaker.host }}"
+  ansible.builtin.command:
+    argv: [ip, -j, -4, address, show, dev, "{{ tertiary_speaker.iface }}"]
+  register: tertiary_addresses_ipv4
+  changed_when: false
+  until: >-
+    ((tertiary_addresses_ipv4.stdout | from_json)[0].addr_info
+    | selectattr('scope', 'equalto', 'global') | list) != []
+  retries: "{{ testbed_routing_checks.tertiary_health_retries }}"
+  delay: "{{ testbed_routing_checks.tertiary_health_delay_seconds }}"
+
+- name: Wait for the required speaker IPv6 assignments
+  delegate_to: "{{ tertiary_speaker.host }}"
+  ansible.builtin.command:
+    argv: [ip, -j, -6, address, show, dev, "{{ tertiary_speaker.iface }}"]
+  register: tertiary_addresses_ipv6
+  changed_when: false
+  until:
+    - >-
+      ((tertiary_addresses_ipv6.stdout | from_json)[0].addr_info
+      | selectattr('scope', 'equalto', 'global')
+      | selectattr('prefixlen', 'equalto', 64) | list) != []
+    - >-
+      ((((tertiary_addresses_ipv6.stdout | from_json)[0].addr_info
+      | selectattr('scope', 'equalto', 'global')
+      | selectattr('prefixlen', 'equalto', 128) | list) == [])
+      == (tertiary_phase == 'slaac'))
+  retries: "{{ testbed_routing_checks.tertiary_health_retries }}"
+  delay: "{{ testbed_routing_checks.tertiary_health_delay_seconds }}"
+
+- name: Read the acquired speaker addresses
+  ansible.builtin.set_fact:
+    tertiary_global_ipv4: >-
+      {{ (tertiary_addresses_ipv4.stdout | from_json)[0].addr_info
+      | selectattr('scope', 'equalto', 'global') | list }}
+    tertiary_global_ipv6: >-
+      {{ (tertiary_addresses_ipv6.stdout | from_json)[0].addr_info
+      | selectattr('scope', 'equalto', 'global') | list }}
+
+- name: Wait for the speaker IPv4 source and route
+  delegate_to: "{{ tertiary_speaker.host }}"
+  ansible.builtin.command:
+    argv: [ip, -j, -4, route, get, "{{ tertiary_target_ipv4 }}", oif, "{{ tertiary_speaker.iface }}"]
+  register: tertiary_route_ipv4
+  changed_when: false
+  until: >-
+    tertiary_route_ipv4.rc == 0 and
+    (tertiary_route_ipv4.stdout | from_json)[0].prefsrc
+    in (tertiary_global_ipv4 | map(attribute='local') | list)
+  retries: "{{ testbed_routing_checks.tertiary_health_retries }}"
+  delay: "{{ testbed_routing_checks.tertiary_health_delay_seconds }}"
+
+- name: Wait for the speaker IPv6 source and router advertisement route
+  delegate_to: "{{ tertiary_speaker.host }}"
+  ansible.builtin.command:
+    argv: [ip, -j, -6, route, get, "{{ tertiary_target_ipv6 }}", oif, "{{ tertiary_speaker.iface }}"]
+  register: tertiary_route_ipv6
+  changed_when: false
+  until: >-
+    tertiary_route_ipv6.rc == 0 and
+    (tertiary_route_ipv6.stdout | from_json)[0].prefsrc
+    in (tertiary_global_ipv6 | map(attribute='local') | list)
+  retries: "{{ testbed_routing_checks.tertiary_health_retries }}"
+  delay: "{{ testbed_routing_checks.tertiary_health_delay_seconds }}"
+
+- name: Collect the selected speaker sources
+  ansible.builtin.set_fact:
+    tertiary_source_ipv4: "{{ (tertiary_route_ipv4.stdout | from_json)[0].prefsrc }}"
+    tertiary_source_ipv6: "{{ (tertiary_route_ipv6.stdout | from_json)[0].prefsrc }}"
+
+- name: Require the IPv6 default route from router advertisements
+  ansible.builtin.assert:
+    that:
+      - (tertiary_route_ipv6.stdout | from_json)[0].protocol == 'ra'
+    fail_msg: >-
+      Speaker {{ tertiary_speaker.id }} did not acquire its IPv6 default route
+      from router advertisements: {{ tertiary_route_ipv6.stdout }}.
+
+- name: Require the primary DHCP lease evidence
+  ansible.builtin.include_tasks: check-routing-tertiary-primary-lease.yml
+  when: tertiary_speaker.id == 'primary'
+
+- name: Require the failover networkd acquisition evidence
+  when: tertiary_speaker.id == 'failover'
+  block:
+    - name: Read the failover networkd status
+      delegate_to: "{{ tertiary_speaker.host }}"
+      ansible.builtin.command:
+        argv: [networkctl, --json=short, status, "{{ tertiary_speaker.iface }}"]
+      register: tertiary_networkd_status
+      changed_when: false
+
+    - name: Require DHCPv4 and the selected IPv6 acquisition mode
+      ansible.builtin.assert:
+        that:
+          - (tertiary_networkd_status.stdout | from_json).AdministrativeState == 'configured'
+          - >-
+            ((tertiary_networkd_status.stdout | from_json).Addresses
+            | selectattr('ConfigSource', 'equalto', 'DHCPv4') | list) != []
+          - >-
+            ((tertiary_networkd_status.stdout | from_json).Addresses
+            | selectattr('ConfigSource', 'equalto', 'NDisc') | list) != []
+          - >-
+            ((((tertiary_networkd_status.stdout | from_json).Addresses
+            | selectattr('ConfigSource', 'equalto', 'DHCPv6') | list) == [])
+            == (tertiary_phase == 'slaac'))
+        fail_msg: >-
+          The failover acquisition does not match phase {{ tertiary_phase }}:
+          {{ tertiary_networkd_status.stdout }}.

@@ -29,7 +29,7 @@
         routing_check_modes: [infrastructure, mwan]
         routing_check_all_scenarios:
           infrastructure: [all]
-          mwan: []
+          mwan: [tertiary]
 
     - name: Validate the routing simulator inventory
       ansible.builtin.import_tasks: tasks/validate-routing-simulators.yml
@@ -79,6 +79,7 @@
       loop: "{{ routing_check_scenarios }}"
       loop_control:
         loop_var: routing_scenario_name
+      when: routing_scenario != 'tertiary'
 
     - name: Check faults and recovery for each selected scenario
       ansible.builtin.include_tasks:
@@ -86,7 +87,18 @@
       loop: "{{ routing_check_scenarios }}"
       loop_control:
         loop_var: routing_scenario_name
-      when: routing_check_mode == 'mwan'
+      when: routing_check_mode == 'mwan' and routing_scenario != 'tertiary'
+
+    - name: Check the tertiary WAN on both speakers
+      ansible.builtin.include_tasks:
+        file: tasks/check-routing-tertiary.yml
+      when: routing_scenario == 'tertiary'
+      vars:
+        tertiary_primary_host: "{{ groups['mwan_suburban_servers'][0] }}"
+        tertiary_failover_host: "{{ groups['mwan_failover_suburban_servers'][0] }}"
+        tertiary_primary_iface: "{{ hostvars[groups['mwan_suburban_servers'][0]].mwan_monkeybrains_iface }}"
+        tertiary_target_ipv4: "{{ testbed_routing_checks.tertiary_target_ipv4 }}"
+        tertiary_target_ipv6: "{{ testbed_routing_checks.tertiary_target_ipv6 }}"
 
     - name: Report the routing simulator checks
       ansible.builtin.debug:

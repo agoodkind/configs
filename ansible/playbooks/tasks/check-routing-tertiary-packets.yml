@@ -1,0 +1,114 @@
+---
+- name: Require an ICMP identifier
+  ansible.builtin.assert:
+    that:
+      - tertiary_icmp_identifier | int > 0
+      - tertiary_icmp_identifier | int <= 65535
+
+- name: Define tertiary packet captures
+  ansible.builtin.set_fact:
+    tertiary_icmp_identifier: "{{ (tertiary_icmp_identifier | int % 65535) + 1 }}"
+
+- name: Define captures for the fresh connection
+  ansible.builtin.set_fact:
+    tertiary_packet_captures:
+      - family: ipv4
+        direction: request
+        filter: >-
+          icmp and icmp[icmptype] == icmp-echo and icmp[4:2] == {{ tertiary_icmp_identifier }}
+          and src host {{ tertiary_source_ipv4 }} and dst host {{ tertiary_target_ipv4 }}
+      - family: ipv4
+        direction: reply
+        filter: >-
+          icmp and icmp[icmptype] == icmp-echoreply and icmp[4:2] == {{ tertiary_icmp_identifier }}
+          and src host {{ tertiary_target_ipv4 }} and dst host {{ tertiary_source_ipv4 }}
+      - family: ipv6
+        direction: request
+        filter: >-
+          icmp6 and ip6[40] == 128 and ip6[44:2] == {{ tertiary_icmp_identifier }}
+          and src host {{ tertiary_source_ipv6 }} and dst host {{ tertiary_target_ipv6 }}
+      - family: ipv6
+        direction: reply
+        filter: >-
+          icmp6 and ip6[40] == 129 and ip6[44:2] == {{ tertiary_icmp_identifier }}
+          and src host {{ tertiary_target_ipv6 }} and dst host {{ tertiary_source_ipv6 }}
+
+- name: Start the tertiary packet captures
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ service_mapping.isp_mbrains_suburban.vmid }}"
+      - --
+      - timeout
+      - "{{ testbed_routing_checks.capture_timeout_seconds }}"
+      - tcpdump
+      - -n
+      - -i
+      - eth0
+      - -c
+      - "1"
+      - "{{ item.filter }}"
+  loop: "{{ tertiary_packet_captures }}"
+  loop_control:
+    label: "{{ item.family }} {{ item.direction }}"
+  async: "{{ testbed_routing_checks.capture_timeout_seconds * 2 }}"
+  poll: 0
+  register: tertiary_capture_jobs
+  changed_when: false
+
+- name: Wait for the captures to open the interface
+  ansible.builtin.pause:
+    seconds: "{{ testbed_routing_checks.ping_timeout_seconds }}"
+
+- name: Send an echo request from the downstream client
+  ansible.builtin.command:
+    argv:
+      - pct
+      - exec
+      - "{{ service_mapping.mwan_test_client_a_suburban.vmid }}"
+      - --
+      - ping
+      - "{{ item.family }}"
+      - -c
+      - "1"
+      - -e
+      - "{{ tertiary_icmp_identifier }}"
+      - -W
+      - "{{ testbed_routing_checks.ping_timeout_seconds }}"
+      - -I
+      - "{{ item.source }}"
+      - "{{ item.target }}"
+  loop:
+    - family: "-4"
+      source: "{{ service_mapping.mwan_test_client_a_suburban.ipv4 }}"
+      target: "{{ tertiary_target_ipv4 }}"
+    - family: "-6"
+      source: "{{ service_mapping.mwan_test_client_a_suburban.ipv6 }}"
+      target: "{{ tertiary_target_ipv6 }}"
+  loop_control:
+    label: "{{ item.family }}"
+  register: tertiary_ping_results
+  changed_when: false
+  failed_when: false
+
+- name: Wait for the tertiary packet captures
+  ansible.builtin.async_status:
+    jid: "{{ item.ansible_job_id }}"
+  loop: "{{ tertiary_capture_jobs.results }}"
+  loop_control:
+    label: "{{ item.item.family }} {{ item.item.direction }}"
+  register: tertiary_capture_results
+  until: tertiary_capture_results.finished
+  retries: "{{ testbed_routing_checks.capture_timeout_seconds }}"
+  delay: 2
+  failed_when: false
+
+- name: Require replies and translated packets for both families
+  ansible.builtin.assert:
+    that:
+      - tertiary_ping_results.results | rejectattr('rc', 'equalto', 0) | list == []
+      - tertiary_capture_results.results | rejectattr('rc', 'equalto', 0) | list == []
+    fail_msg: >-
+      The downstream ping or a tertiary capture failed. Ping results:
+      {{ tertiary_ping_results.results }}. Capture results: {{ tertiary_capture_results.results }}.
