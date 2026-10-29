@@ -17,6 +17,7 @@ module "guest_inputs" {
   shared_vars     = local.shared_vars
   service_mapping = local.service_mapping
   proxy_vars      = module.contracts.proxy_vars
+  timezone        = "America/Los_Angeles"
 }
 
 module "github_keys" {
@@ -56,12 +57,23 @@ module "base" {
   public_keys                 = each.value.authorized_key_lines == null ? local.github_keys : []
   restricted_key_lines        = each.value.authorized_key_lines == null ? local.sshpiper_lines : []
   mail_relay                  = try(local.mail_relays[each.key], null)
+  timezone                    = each.value.timezone
   login_dir                   = local.shared_vars.login_dir
   revision                    = local.shared_vars.guest_prep_revision
   revision_file               = local.shared_vars.guest_prep_revision_file
 
   scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
   scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
+}
+
+# Ansible created the SMTP2GO user and /etc/msmtprc on each guest.
+# The pveguest provider imports the existing mail configuration and keeps the
+# SMTP2GO password. A new pveguest_mail_relay resource would rotate the
+# password.
+import {
+  for_each = local.mail_relays
+  to       = module.base[each.key].pveguest_mail_relay.smtp["smtp2go"]
+  id       = "${local.guests[each.key].node}/${local.guests[each.key].vmid}/${local.guests[each.key].kind}/${each.value.username}/${each.value.password_version}"
 }
 
 module "suburban" {

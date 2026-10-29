@@ -6,6 +6,11 @@ variable "service_mapping" { type = any }
 
 variable "proxy_vars" { type = any }
 
+variable "timezone" {
+  type     = string
+  nullable = false
+}
+
 locals {
 
   shared_vars     = var.shared_vars
@@ -20,6 +25,14 @@ locals {
   # in clyde.suburban.goodkind.io.
   guest_sites = {
     for name in local.enrolled : name => split(".", local.service_mapping[name].hostname)[1]
+  }
+
+  # Hostname site labels select keys in the pveguest provider's nodes map.
+  # The home site uses the vault node. An unlisted site causes evaluation to
+  # fail.
+  site_nodes = {
+    home     = "vault"
+    suburban = "suburban"
   }
 
 
@@ -66,7 +79,8 @@ locals {
     for name in local.enrolled : name => {
       vmid                        = local.service_mapping[name].vmid
       kind                        = local.guest_kinds[name]
-      node                        = local.guest_sites[name]
+      node                        = local.site_nodes[local.guest_sites[name]]
+      timezone                    = var.timezone
       authorized_key_lines        = try(local.authorized_key_lines_overrides[name], null)
       extra_authorized_keys_files = try(local.authorized_keys_files_overrides[name], [])
       scripts_updater_timer = try(
@@ -76,7 +90,27 @@ locals {
     }
   }
 
-  mail_relay_guests = setintersection(local.enrolled, toset(["clyde_suburban", "dns64_suburban", "seaweedfs_suburban"]))
+  mail_relay_guests = setintersection(local.enrolled, toset([
+    "clyde_suburban",
+    "dns64_suburban",
+    "mwan",
+    "mwan_failover",
+    "mwan_failover_suburban",
+    "mwan_suburban",
+    "seaweedfs_suburban",
+    "tack",
+    "tack_app2",
+    "tack_app2_suburban",
+    "tack_data1",
+    "tack_data1_suburban",
+    "tack_data2",
+    "tack_data2_suburban",
+    "tack_data3",
+    "tack_data3_suburban",
+    "tack_qa_suburban",
+    "tack_search1",
+    "tack_search1_suburban",
+  ]))
 
   default_mail_password_version = 1
 
