@@ -23,7 +23,7 @@ variable "repository_root" {
 }
 
 variable "name" {
-  description = "The name variable selects the testbed_isp_lxcs entry with the same name field, such as att. The plan fails when the name matches zero entries or more than one entry."
+  description = "The name variable selects the testbed_isp_lxcs entry with the same name field, such as att. The plan fails with an invalid index error when no entry has the name, and with a duplicate object key error when more than one entry has the name."
   type        = string
 }
 
@@ -34,24 +34,17 @@ locals {
     file("${var.repository_root}/ansible/inventory/group_vars/suburban_servers.yml")
   )
 
-  matching_entries = [
-    for entry in local.suburban_servers.testbed_isp_lxcs : entry
-    if entry.name == var.name
-  ]
-
-  # The locals below need a complete entry. This placeholder stands in when the name does not
-  # select exactly one entry, and the entry_check resource then reports the error message.
-  placeholder_entry = {
-    ipv6_enabled = false
-    dynamic_v4   = false
-    v4_subnet    = ""
+  # Building a map keyed by name fails the plan with "Duplicate object key" when two entries
+  # share a name, and the lookup below fails with "Invalid index" when no entry has the name.
+  entries_by_name = {
+    for entry in local.suburban_servers.testbed_isp_lxcs : entry.name => entry
   }
 
   # The merge gives each testbed_isp_lxcs entry precedence over testbed_isp_protocol_defaults,
   # as the Ansible combine filter does.
   entry = merge(
     local.suburban_servers.testbed_isp_protocol_defaults,
-    length(local.matching_entries) == 1 ? local.matching_entries[0] : local.placeholder_entry,
+    local.entries_by_name[var.name],
   )
 
   # The simulator object collects the entry fields that the module reads. A simulator does
@@ -106,17 +99,6 @@ locals {
     ? toset(["pd-route.service"])
     : toset([])
   )
-}
-
-resource "terraform_data" "entry_check" {
-  input = var.name
-
-  lifecycle {
-    precondition {
-      condition     = length(local.matching_entries) == 1
-      error_message = "The testbed_isp_lxcs list in ansible/inventory/group_vars/suburban_servers.yml must contain exactly one entry with name \"${var.name}\", but it contains ${length(local.matching_entries)}."
-    }
-  }
 }
 
 resource "pveguest_apt_packages" "simulator" {

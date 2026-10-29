@@ -119,7 +119,7 @@
 
 # The simulator OpenTofu root installs the Kea packages. Apply the root of a rebuilt
 # simulator before deploy-testbed runs, because the Kea services below do not exist until
-# the packages are installed.
+# OpenTofu installs those packages.
 - name: Enable and restart ISP DHCPv6 service
   ansible.builtin.command:
     cmd: >-
