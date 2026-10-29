@@ -115,8 +115,8 @@
         - Restart mwan-ifmgr
 
     - name: Deploy failover sysctl config
-      ansible.builtin.copy:
-        src: "{{ repo_root }}/mwan-failover/sysctl.conf"
+      ansible.builtin.template:
+        src: "{{ repo_root }}/mwan-failover/sysctl.conf.j2"
         dest: /etc/sysctl.d/99-mwan-failover.conf
         mode: "0644"
       notify:
@@ -130,6 +130,25 @@
         src: "{{ repo_root }}/mwan-failover/interfaces.j2"
         dest: /etc/network/interfaces
         mode: "0644"
+
+    - name: Configure failover uplink
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan-failover/10-uplink.network"
+        dest: /etc/systemd/network/10-uplink.network
+        mode: "0644"
+      when: mwan_failover_networkd_uplink | bool
+
+    - name: Enable systemd-networkd
+      ansible.builtin.systemd:
+        name: systemd-networkd
+        enabled: true
+      when: mwan_failover_networkd_uplink | bool
+
+    - name: Disable systemd-networkd wait online
+      ansible.builtin.systemd:
+        name: systemd-networkd-wait-online
+        enabled: false
+      when: mwan_failover_networkd_uplink | bool
 
     - name: Deploy nftables ruleset
       ansible.builtin.copy:

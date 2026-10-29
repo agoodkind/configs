@@ -11,6 +11,9 @@ MWAN runs as one binary spread across a few hosts, and each host runs only the s
 
 The ISP-simulator containers and the unrelated service containers on these hosts do not run any MWAN command.
 
+[Configure the testbed failover uplink](testbed-failover-uplink.md) to verify
+its DHCP and router advertisement behavior.
+
 Each host's MWAN units come from the released binary, not from this repository. After the deploy installs the binary, it runs `mwan install --role <role> --apply`, which writes and enables the units without restarting any unit. The MWAN VM deploy does not restart any unit before it reboots the VM. The failover LXC and Proxmox host deploys restart units through their handlers. The roles are `wan` for the MWAN VM, `failover` for the failover LXC, and `host` for a Proxmox host.
 
 ## Binary rollout order
