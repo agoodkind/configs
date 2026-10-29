@@ -2,16 +2,16 @@
 
 MWAN serves N downstream routers. Each router peers with both MWAN speakers
 over iBGP, learns its default routes from them, and announces its own LAN
-prefixes back, so MWAN routes return traffic per router with no static
-internal next hop. Adding router N+1 changes nothing on MWAN: the new
+prefixes back, so MWAN routes return traffic per router without a static
+internal next hop. Adding router N+1 does not change MWAN: the new
 router peers over the transit link and announces what it routes.
 
 ## Defect this replaces
 
 MWAN assumes exactly one downstream router. The return route for the whole
 internal prefix is static, written by the wan.routes module toward one
-configured edge address, and the speaker uses nothing a peer announces. A
-second router has no way to receive return traffic for its own LANs.
+configured edge address, and the speaker does not use peer announcements. A
+second router cannot receive return traffic for its own LANs.
 
 ## Contract
 
@@ -19,10 +19,10 @@ second router has no way to receive return traffic for its own LANs.
    accepts a BGP session from any address on the internal transit segment,
    as dynamic neighbors on the transit v4 net and the transit v6 /64,
    alongside the statically configured sessions that exist today. Bringing
-   up router N+1 requires no MWAN config change and no deploy.
+   up router N+1 does not require a MWAN config change or a deploy.
 2. **The agent installs what routers announce.** Neighbors are trusted to
    announce only what they route, the way eBGP peers are trusted; the
-   speaker applies no import filter, and how a router subdivides its own
+   speaker does not apply an import filter, and how a router subdivides its own
    space is its business. IPv6 unicast best paths learned from peers
    install into the kernel; locally originated announcements, the
    defaults, never do. When two routers announce the same prefix, BGP
@@ -35,7 +35,7 @@ second router has no way to receive return traffic for its own LANs.
    primitives, tagged with the BGP routing-protocol number so tooling and
    wan.routes distinguish them from static state. Installed routes are never
    torn down on agent stop and are re-reconciled on start, so a graceful
-   restart moves no packets. A dropped session removes exactly that
+   restart does not interrupt packet forwarding. A dropped session removes exactly that
    router's routes within the hold timer; the installer tracks which peer
    owns each installed prefix. Stale-route cleanup arms only after a
    startup grace period, so a restart cannot sweep live routes before the
@@ -44,8 +44,8 @@ second router has no way to receive return traffic for its own LANs.
    and the failover LXC. The LXC runs the same receive path into its main
    table, so return traffic to every router flows during failover.
 5. **BGP-learned routes are authoritative.** The speakers install learned
-   IPv6 return routes into the kernel, and no static internal return route
-   exists on either speaker. IPv4 keeps a static return route on the
+   IPv6 return routes into the kernel, and neither speaker has a static internal
+   return route. IPv4 keeps a static return route on the
    failover LXC because routers source-NAT v4 onto their transit address.
 6. **Routers announce what they own.** Every router announces its own
    prefixes over iBGP in AS 4200000001. For OPNsense that is FRR network
@@ -76,4 +76,4 @@ second router has no way to receive return traffic for its own LANs.
   the learned routes.
 - Automating the router-side BGP config is out of scope. The FRR
   announcement change stays a manual exercise; who eventually owns pushing
-  that config is the separate MWAN-276 decision and gates nothing here.
+  that config is the separate MWAN-276 decision and does not gate this work.

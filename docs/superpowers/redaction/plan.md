@@ -96,7 +96,7 @@ type automaton struct {
 }
 
 // newAutomaton builds the matcher from pattern byte slices. Empty or nil input
-// yields a matcher that finds nothing.
+// yields a matcher that does not find any matches.
 func newAutomaton(patterns [][]byte) *automaton {
 	ac := &automaton{
 		next: []map[byte]int{{}},
@@ -283,8 +283,8 @@ type labeledSpan struct {
 }
 
 // Validate returns the label of the first pattern whose value is non-empty and
-// shorter than MinLen, with ok=false. Empty values are ignored (they match
-// nothing). ok=true means every value is safe to redact.
+// shorter than MinLen, with ok=false. Empty values are ignored (they do not
+// match any input). ok=true means every value is safe to redact.
 func Validate(patterns []Pattern) (badKey string, ok bool) {
 	for _, p := range patterns {
 		if len(p.Value) > 0 && len(p.Value) < MinLen {
@@ -657,9 +657,9 @@ func (e *shortSecretError) Error() string {
 	return fmt.Sprintf("vault key %q value shorter than %d chars", e.key, redact.MinLen)
 }
 
-// loadSecretPatterns reads the vault and builds redaction patterns. An absent
-// vault or password file returns no patterns and no error, because nothing
-// decrypts anywhere in that case. A too-short secret returns *shortSecretError.
+// loadSecretPatterns reads the vault and builds redaction patterns. If the vault
+// or password file is absent, it does not return patterns or an error. Decryption
+// does not occur anywhere in that case. A too-short secret returns *shortSecretError.
 func loadSecretPatterns() ([]redact.Pattern, error) {
 	passwordFile, err := vaultPassPath()
 	if err != nil {
@@ -707,7 +707,7 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 // no patterns it is a no-op and leaves the real descriptors in place. It returns
 // a restore func to call on exit. A pipe-creation failure is fatal: with secrets
 // present and no way to filter, the tool must not run, so the error propagates
-// and no command dispatches.
+// and commands do not dispatch.
 func installRedaction(patterns []redact.Pattern) (func(), error) {
 	realStdout, realStderr := os.Stdout, os.Stderr
 	if len(patterns) == 0 {
@@ -868,7 +868,7 @@ func InventoryDump() error {
 }
 ```
 
-Remove the `gopkg.in/yaml.v3` import from this file (no other function uses it).
+Remove the `gopkg.in/yaml.v3` import from this file (other functions do not use it).
 
 - [ ] **Step 2: Build**
 

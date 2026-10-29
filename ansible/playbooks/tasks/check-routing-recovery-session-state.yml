@@ -1,0 +1,19 @@
+---
+# Each routing_session_peers entry is the simulator node of a BGP session with
+# the gateway and the gateway address of the session.
+# When routing_session_established is true, Ansible repeats the summary read
+# until each session is Established. When routing_session_established is false,
+# Ansible repeats the summary read until no session is Established.
+- name: Wait for the expected state of each gateway session
+  ansible.builtin.command:
+    argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, vtysh, -c, show bgp ipv6 unicast summary json]
+  loop: "{{ routing_session_peers }}"
+  loop_control:
+    label: "{{ item.0 }} {{ item.1 }}"
+  register: routing_session_summary
+  changed_when: false
+  until: >-
+    ((routing_session_summary.stdout | from_json).get('peers', {}).get(item.1, {}).get('state') == 'Established')
+    == routing_session_established
+  retries: "{{ routing_session_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"

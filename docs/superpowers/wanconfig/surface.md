@@ -1,11 +1,11 @@
 # One: the model and the read-only surface
 
 Define the model for the whole daemon and serve it against the system as it
-stands, before any behavior moves. This piece changes nothing an operator
+stands, before any behavior moves. This piece does not change anything an operator
 would notice in the data path, and it produces the instrument every later
 piece is verified against.
 
-Depends on nothing. The model it defines lives in [model.md](model.md).
+This piece does not depend on other work. The model it defines lives in [model.md](model.md).
 
 ## What the daemon serves
 
@@ -60,7 +60,7 @@ configuration part of the tree. It publishes once, at startup, after it has
 loaded and validated its configuration and before it programs anything, and
 it publishes from the typed configuration it is about to run with, not from
 the file. Editing the file on disk without restarting the daemon therefore
-changes nothing in the tree, which is the acceptance test.
+does not change anything in the tree, which is the acceptance test.
 
 Publishing is gated on one configuration setting. A host whose rendered
 configuration does not turn it on never opens a connection to the datastore,
@@ -97,7 +97,7 @@ and network, and the probe timeout. Each member whose loaded configuration
 carries a translation prefix also appears as a prefix-translation instance with
 both prefixes explicit. A value the configuration does not carry is left to the
 schema default or left out: the interface type is published as unspecified
-because the configuration has no type, and the kernel's addresses and routes
+because the configuration does not specify a type, and the kernel's addresses and routes
 are not published as configuration because the daemon holds them only as live
 state, which the live-state piece serves from the operational datastore.
 
@@ -118,20 +118,20 @@ losing it is logged and the daemon runs on, exactly like a failed publish.
 The daemon also holds the change subscription for the modules it
 publishes, because the datastore shows a module's configuration in the
 operational view only while some application owns it. That subscription
-observes and never applies anything, since the surface accepts no writes;
+observes and never applies anything, since the surface does not accept writes;
 its effect is that one operational read carries the configuration and the
 live state together, which is what the two operator questions need.
 
 A provider callback answers from a snapshot the modules already maintain,
 never by taking a lock the reconcile path holds and never by probing
 on demand. A read is bounded in time, and a reader that stalls or asks for
-a malformed path costs the daemon one bounded callback and nothing else.
+a malformed path does not cost the daemon more than one bounded callback.
 
 What each acceptance item reads, and where the value comes from:
 
 - **Delegated prefix.** Each member's currently held delegation, as the
   daemon's prefix tracking sees it, on the member's ipv6 container through
-  a leaf the steering module adds. A member holding no delegation has no
+  a leaf the steering module adds. A member that does not have a delegation does not have this
   leaf.
 - **Health and probe results.** Each member's verdict plus the evidence
   behind it: per-family last result, consecutive failures, and the time of
@@ -143,8 +143,8 @@ What each acceptance item reads, and where the value comes from:
   module's last reconciled decision.
 - **Translation realized.** Per translation instance, whether the daemon
   found its rules present in the kernel on the last reconcile, as a
-  steering-module leaf on the nat instance. The published model has no
-  such node, so the local module augments it.
+  steering-module leaf on the nat instance. The published model does not define
+  such a node, so the local module augments it.
 - **Routing session.** Whether the BGP session is established, per peer.
   The speaker lives in the agent process, not the interface manager, so
   the provider answers from a short-lived cache filled over the agent's
@@ -181,30 +181,31 @@ subscriber never sees a raw probe result, and after the snapshot the
 tree serves has been updated, so a read that follows the notification
 sees the new state. A tier change streams when a routing pass installs
 a different active tier than the previous pass; the first pass after
-startup establishes the baseline and streams nothing.
+startup establishes the baseline and does not stream an event.
 
 Delivery cannot reach back into the daemon. A writer hands the event to
 a bounded queue and moves on; one sender goroutine publishes each event
 without waiting for any subscriber, and a queue the datastore has let
 fill drops the event with a log line rather than delaying a reconcile
 pass. Subscriber lifecycle belongs to the stack's servers, so an
-abandoned subscription costs the daemon nothing. A dropped or lost
+abandoned subscription does not consume daemon resources. A dropped or lost
 notification loses only the event itself: the tree still carries the
 current state for any reader.
 
 A subscriber must reconnect when its connection drops, because the
 server closes an idle stream after about a minute. The embedded HTTP/2
-server rousette runs on drops a connection that carries no traffic for
-60 seconds, and rousette at its released version sends nothing to keep
-one open and offers no setting for the deadline. A recorder that sits
+server rousette runs on drops a connection that does not carry traffic for
+60 seconds, and rousette at its released version does not send messages to keep
+one open and does not offer a setting for the deadline. A recorder that sits
 through a quiet period therefore stops receiving without being told,
 and reconnecting is what closes that gap. Upstream sends a keep-alive
 every 55 seconds on its development branch, which would remove the
-need, but no released version carries that work.
+need, but released versions do not include that work.
 
 ## What must not change
 
-No data-path behavior. This piece adds a reader and nothing else.
+The data-path behavior must not change. This piece does not add anything
+except a reader.
 
 The surface listens on the management interface only, which is where the
 existing management access already terminates. It is a read-only surface, but
@@ -218,8 +219,8 @@ The served tree describes the running system accurately enough to answer the
 two operator questions above.
 
 Every value in the tree is read from the daemon's own state, not
-reconstructed from a file, and no value is served that the daemon does not
-actually hold.
+reconstructed from a file, and the daemon does not serve a value that it does not
+actually have.
 
 A subscription reports a health transition and a tier change as they happen.
 
@@ -232,5 +233,5 @@ The reader must never be able to affect the daemon it describes. A slow or
 abandoned request, a subscription that stops being read, or a malformed path
 must not stall a reconcile pass or hold a lock the data path needs.
 
-If the tree cannot be built, the daemon serves nothing and keeps running.
+If the tree cannot be built, the daemon does not serve the tree and keeps running.
 Describing the system is not a precondition for running it.

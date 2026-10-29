@@ -44,7 +44,7 @@ loader bakes in the defaults so an empty block matches documented behaviour.
 The OPNsense FRR side has its own toggle,
 `OPNsense.quagga.bgp.graceful = '1'` in the router config. Production
 operators flip it via the OPNsense GUI under Routing -> BGP -> General. The
-testbed has no GUI from the controller, so the operator drives the
+testbed does not provide GUI access from the controller. The operator drives the
 `mwan-opnsense` gRPC API to mutate the router config directly, then runs
 `configctl quagga reload bgp`. Verify with:
 
@@ -75,7 +75,7 @@ and starts a watch unit on the Proxmox host. The watch repeats the application
 checks until the operation status is committed or recovered.
 
 The deploy writes the release and the gateway configuration after the arm
-command succeeds. The running daemon reads none of those files. The deploy
+command succeeds. The running daemon does not read any of those files. The deploy
 then reboots the gateway, and the reboot starts every unit from the written
 files. After the gateway reports a new boot ID, `mwan deploy-gate commit`
 verifies the written files and the application checks and sets the operation
@@ -88,17 +88,17 @@ the same recovery when the application checks fail repeatedly or the
 operation deadline passes. The watchdog runs the same recovery for an
 unresolved record with no running watch.
 
-A failure before the arm command succeeds runs no recovery, because the
-gateway has no change. The deploy removes the snapshot when the Proxmox host
-has no record for the operation or a record with status disarmed. The deploy
-does not remove the snapshot of a record with any other status, because the
+A failure before the arm command succeeds does not run recovery, because the
+gateway has not changed. The deploy removes the snapshot when the Proxmox host
+does not have a record for the operation or has a record with status disarmed. The
+deploy does not remove the snapshot of a record with any other status, because the
 watchdog restores that snapshot for the record. The next arm command succeeds
 only after the record status is recovered, committed, or disarmed. The deploy
 also does not remove the snapshot when the status read fails for any reason
 other than a record for another operation.
 
-A bootstrap deploy creates no snapshot and arms no operation. A check run
-creates no snapshot, arms no operation, and ends before the reboot.
+A bootstrap deploy does not create a snapshot or arm an operation. A check run
+does not create a snapshot or arm an operation and ends before the reboot.
 
 ## Watchdog rollback design
 
@@ -129,7 +129,7 @@ Grace period:
 
 - Deploy timestamp detected: 60s grace, then the normal connectivity timeout
   (`CONNECTIVITY_TIMEOUT_SECONDS`, default 30s) begins.
-- Hash-only changes get no grace period. They should not cause reboots.
+- Hash-only changes do not get a grace period. They should not cause reboots.
 
 Hash-change recency window: a hash change is "recent" for
 `DEPLOY_WINDOW_MINUTES` (default 30). Anything older is treated as external.
@@ -140,7 +140,7 @@ Two snapshot types with different owners:
 
 - **`pre-deploy-*`** snapshots are owned by the deploy playbook. The playbook
   creates `pre-deploy-<trace id>` before it arms the deployment operation.
-  Without it, a fresh or recently changed VM may have no rollback
+  Without it, a fresh or recently changed VM may not have a rollback
   target until a `known-good-*` snapshot is created (which takes many healthy
   probe cycles).
 - **`known-good-*`** snapshots are owned by the watchdog and taken

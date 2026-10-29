@@ -1,0 +1,130 @@
+{
+  "ietf-interfaces:interfaces": {
+    "goodkind-mwan-steering:guest-type": "lxc",
+    "interface": [
+      {
+        "name": "sonic",
+        "type": "iana-if-type:other",
+        "goodkind-mwan-steering:connection-id": "sonic",
+        "goodkind-mwan-steering:owner": "mwan",
+        "goodkind-mwan-steering:link": {
+          "match": { "hardware-address": "02:57:50:04:01:00" }
+        },
+        "ietf-ip:ipv4": {
+          "forwarding": true,
+          "goodkind-mwan-steering:dhcp": true,
+          "goodkind-mwan-steering:route-metric": 10,
+          "goodkind-mwan-steering:translation": { "mode": "ietf-nat:napt44" }
+        },
+        "ietf-ip:ipv6": {
+          "forwarding": true,
+          "goodkind-mwan-steering:dhcp": true,
+          "goodkind-mwan-steering:accept-ra": true,
+          "goodkind-mwan-steering:route-metric": 10,
+          "goodkind-mwan-steering:delegation": {
+            "hint": "::/56",
+            "duid-type": "vendor",
+            "duid": "00:02:00:00:ab:11:25:f7:83:0c:f9:8f:ef:35",
+            "iaid": 1346249195,
+            "without-ra": "solicit",
+            "use-delegated-prefix": false
+          },
+          "goodkind-mwan-steering:translation": {
+            "mode": "ietf-nat:nptv6",
+            "nptv6": {
+              "internal-prefix": "3d06:bad:b01:300::/56",
+              "external-source": "delegated"
+            }
+          }
+        },
+        "goodkind-mwan-steering:wan": {
+          "name": "sonic",
+          "table-id": 700,
+          "fw-mark": 5,
+          "fw-mark-prio": 500,
+          "from-prio": 59,
+          "health": {
+            "enabled": true,
+            "ping-count": 3,
+            "success-threshold": 2,
+            "failure-threshold": 2,
+            "recovery-threshold": 2,
+            "check-interval": 10,
+            "targets-v4": ["1.1.1.1", "8.8.8.8"],
+            "targets-v6": ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+          }
+        },
+        "goodkind-mwan-steering:steering": { "tier": 0, "weight": 1 }
+      },
+      {
+        "name": "etheric",
+        "type": "iana-if-type:other",
+        "goodkind-mwan-steering:connection-id": "etheric",
+        "goodkind-mwan-steering:owner": "mwan",
+        "goodkind-mwan-steering:link": {
+          "match": { "hardware-address": "02:57:50:04:02:00" }
+        },
+        "ietf-ip:ipv4": {
+          "forwarding": true,
+          "goodkind-mwan-steering:dhcp": true,
+          "goodkind-mwan-steering:route-metric": 20,
+          "goodkind-mwan-steering:translation": { "mode": "ietf-nat:napt44" }
+        },
+        "goodkind-mwan-steering:wan": {
+          "name": "etheric",
+          "table-id": 800,
+          "fw-mark": 6,
+          "fw-mark-prio": 600,
+          "from-prio": 60,
+          "health": {
+            "enabled": true,
+            "ping-count": 3,
+            "success-threshold": 2,
+            "failure-threshold": 2,
+            "recovery-threshold": 2,
+            "check-interval": 10,
+            "targets-v4": ["1.1.1.1", "8.8.8.8"],
+            "targets-v6": []
+          }
+        },
+        "goodkind-mwan-steering:steering": { "tier": 0, "weight": 1 }
+      },
+      {
+        "name": "transit",
+        "type": "iana-if-type:other",
+        "goodkind-mwan-steering:connection-id": "transit",
+        "goodkind-mwan-steering:owner": "mwan",
+        "goodkind-mwan-steering:link": {
+          "match": { "hardware-address": "02:57:50:04:01:01" }
+        },
+        "ietf-ip:ipv4": {
+          "forwarding": true,
+          "address": [{ "ip": "10.230.230.1", "prefix-length": 29 }]
+        },
+        "ietf-ip:ipv6": {
+          "forwarding": true,
+          "address": [{ "ip": "fd06:fab::1", "prefix-length": 64 }],
+          "goodkind-mwan-steering:accept-ra": false
+        }
+      }
+    ],
+    "goodkind-mwan-steering:steering-group": {
+      "hash-mode": "random",
+      "reserved-tables": [400, 500],
+      "translation": {
+        "internal-prefix": "3d06:bad:b01:300::/56",
+        "opnsense-edge-v6": "fd06:fab::2",
+        "mwanbr-edge-v6": "fd06:fab::1"
+      },
+      "routes": {
+        "internal-iface": "transit",
+        "internal-net-v4": "10.230.0.0/16"
+      },
+      "firewall": {
+        "pinned-set-v4-name": "etheric_pinned_v4",
+        "pinned-set-v6-name": "etheric_pinned_v6"
+      },
+      "health": { "probe-timeout": 2000 }
+    }
+  }
+}

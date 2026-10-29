@@ -22,6 +22,7 @@
 - name: Select the Tack deploy targets
   hosts: tack_all
   gather_facts: false
+  tags: [always]
   tasks:
     # A ledger bootstrap run skips node-prepare and node-wait on the data
     # guests, which removes the rolling wait that keeps quorum on a running
@@ -72,6 +73,35 @@
           is only for the QA ledger.
         quiet: true
       run_once: true
+      delegate_to: localhost
+
+    # OpenSearch fails to start a member with a value other than "" or a
+    # whole number of 1 or more. This check refuses such a value before
+    # any task changes a guest.
+    - name: Refuse an invalid tack_search_max_open_pit_context value
+      ansible.builtin.assert:
+        that:
+          - >-
+            (tack_search_max_open_pit_context | string) == ''
+            or (tack_search_max_open_pit_context | string) is match('^[1-9][0-9]*$')
+        fail_msg: >-
+          tack_search_max_open_pit_context has the value
+          "{{ tack_search_max_open_pit_context }}". Use "" or a whole number
+          of 1 or more. The value "" keeps the OpenSearch default of 300.
+        quiet: true
+      delegate_to: localhost
+
+    # This check accepts only a whole number of 1 or more followed by s or m.
+    # Tack checks the value against the absolute timeout at app startup.
+    - name: Refuse an invalid tack_search_session_idle_timeout value
+      ansible.builtin.assert:
+        that:
+          - (tack_search_session_idle_timeout | string) is match('^[1-9][0-9]*[sm]$')
+        fail_msg: >-
+          tack_search_session_idle_timeout has the value
+          "{{ tack_search_session_idle_timeout }}". Use a whole number of 1 or
+          more followed by s or m, such as 90s or 2m.
+        quiet: true
       delegate_to: localhost
 
     - name: Check the operator identity
@@ -389,49 +419,36 @@
         - Restart the Tack app for a new search authority
         - Restart the OpenSearch member
 
-    # -------------------------------------------------------------------------
-    # Application database login (TACK-180). The app connects as tack_app, a
-    # non-superuser that holds the three auth tables and nothing on the
-    # ledger. Its password is generated once per host, like the signing key,
-    # and read back into the rendered env, where seed-roles sets it on the
-    # login and the app's DATABASE_URL carries it. Nothing in the vault and
-    # nothing shared between environments. Every host runs this, not only the
-    # owner: the env template renders on the data guests too, and the compose
-    # file they load requires the variable even though no app runs there.
-    # -------------------------------------------------------------------------
-    - name: Generate the application database password if not present
-      ansible.builtin.shell:
-        cmd: >
-          set -o pipefail &&
-          openssl rand -hex 32 > {{ tack_app_password_path }}
-        creates: "{{ tack_app_password_path }}"
-        executable: /bin/bash
-      when: not tack_app_guest | bool
+    - name: Provision isolated service credential files
+      ansible.builtin.include_tasks:
+        file: tasks/tack-service-secrets.yml
+        apply:
+          tags: [tack-credentials]
+      when: tack_provision_owner | bool or tack_app_guest | bool or tack_cluster_role in ['data', 'search']
+      tags: [tack-credentials]
 
-    - name: Ensure the application database password has restricted permissions
-      ansible.builtin.file:
-        path: "{{ tack_app_password_path }}"
-        owner: root
-        group: root
-        mode: "0600"
-      when: not tack_app_guest | bool
+    - name: Run the OpenSearch member
+      ansible.builtin.include_tasks: tasks/tack-search-node.yml
+      when: tack_cluster_role == 'search'
+      tags: [tack-credentials]
 
-    # An application-only guest logs in with the owner guest's password,
-    # because `ops audit seed-roles` on the owner sets that password on the
-    # tack_app login (TACK-544). The guest reads the owner's file and renders
-    # that value into its own .env. The deploy reads no password file on the
-    # application-only guest.
-    - name: Read the application database password
-      ansible.builtin.slurp:
-        src: "{{ tack_app_password_path }}"
-      delegate_to: "{{ tack_app_password_source if tack_app_guest | bool else inventory_hostname }}"
-      register: tack_app_password_file
+    - name: Verify the new runtime identity before replacing client settings
+      ansible.builtin.uri:
+        url: "{{ tack_search_endpoint }}/_cluster/health"
+        url_username: "{{ tack_search_runtime_username }}"
+        url_password: "{{ (tack_service_credentials.results | selectattr('item', 'eq', 'OPENSEARCH_PASSWORD') | first).content | b64decode | trim }}"
+        force_basic_auth: true
+        ca_path: "{{ tack_search_ca_path }}"
+        status_code: 200
+      register: tack_search_runtime_identity
+      until: tack_search_runtime_identity.status == 200
+      retries: "{{ tack_search_runtime_identity_retries }}"
+      delay: "{{ tack_search_runtime_identity_delay_seconds }}"
+      when:
+        - tack_provision_owner | bool or tack_app_guest | bool
+        - tack_search_enabled | bool
       no_log: true
-
-    - name: Set the application database password fact
-      ansible.builtin.set_fact:
-        tack_app_password: "{{ (tack_app_password_file.content | b64decode) | trim }}"
-      no_log: true
+      tags: [tack-credentials]
 
     # Ledger transport encryption (TACK-460). Issues this environment's
     # certificate authority and one certificate per ledger node, and places
@@ -695,6 +712,11 @@
           no_log: true
           notify: Restart Tack
 
+        - name: Install the database secret readers on the owner guest
+          ansible.builtin.include_tasks: tasks/tack-database-secret-runtime.yml
+          vars:
+            tack_database_secret_restart_handler: Restart Tack
+
         - name: Deploy Tack environment file
           ansible.builtin.template:
             src: "{{ repo_root }}/tack/tack.env.j2"
@@ -769,6 +791,13 @@
         # that wait, and provision then failed with connection refused on a
         # recreated QA. fdb starts without a wait because a fresh fdb is not
         # healthy until provision configures it.
+        #
+        # The owner guest starts fdb only while it runs the legacy store node.
+        # Compose starts a service named on the command line even when the
+        # override parks it in the retired profile. On 2026-10-22 this task
+        # started fdb on the QA owner guest, and that process joined the QA
+        # cluster at a Docker bridge address that the application-only guest
+        # cannot dial (TACK-604).
         - name: Start fdb (first pass; tolerant of an unconfigured fdb on first boot)
           ansible.builtin.command:
             cmd: docker compose up -d fdb
@@ -776,13 +805,14 @@
           register: tack_compose_up_fdb
           changed_when: true
           failed_when: false
+          when: tack_store_legacy_node_present | bool
 
         - name: Start the other stores and wait until they are healthy
           ansible.builtin.command:
             cmd: >-
               docker compose up -d --wait --wait-timeout 300
               {{ 'yugabyte' if tack_ledger_legacy_node_present else '' }}
-              kafka clickhouse
+              kafka
             chdir: "{{ tack_install_dir }}"
           register: tack_compose_up_first
           changed_when: true
@@ -877,6 +907,11 @@
             force: true
           no_log: true
           notify: Restart Tack ledger node
+
+        - name: Install the database secret readers on the ledger guest
+          ansible.builtin.include_tasks: tasks/tack-database-secret-runtime.yml
+          vars:
+            tack_database_secret_restart_handler: Restart Tack ledger node
 
         - name: Deploy Tack environment file (ledger node)
           ansible.builtin.template:
@@ -1227,6 +1262,12 @@
             - tack_backup_enabled | bool
             - tack_ledger_consumers_repointed | bool
 
+        - name: Install the backup retention timer
+          ansible.builtin.include_tasks: tasks/tack-backup-retention.yml
+          when:
+            - tack_backup_enabled | bool
+            - tack_ledger_consumers_repointed | bool
+
         # Backup staleness alarm, owner copy (TACK-363). The yb1 data guest
         # runs the same pair; the comment on that copy explains why there are
         # two. Gated on the live ledger topology like the export timer above.
@@ -1339,10 +1380,6 @@
           changed_when: true
       when: tack_app_guest | bool
 
-    # The search guests run one OpenSearch member each (TACK-539).
-    - name: Run the OpenSearch member
-      ansible.builtin.include_tasks: tasks/tack-search-node.yml
-      when: tack_cluster_role == 'search'
 
   handlers:
     - name: Restrict audit signing key permissions

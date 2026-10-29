@@ -15,3 +15,9 @@ testbed_routing_checks:
   recovery_retries: 24
   restore_retries: 3
   retry_delay_seconds: 5
+  # The restart window covers the daemon stop, the daemon start, and the first
+  # IPv6 path verdict before the gateway connects to its peers.
+  restart_window_seconds: 90
+  restart_baseline_seconds: 5
+  restart_sample_interval_seconds: 0.5
+  restart_ping_interval_seconds: 0.2

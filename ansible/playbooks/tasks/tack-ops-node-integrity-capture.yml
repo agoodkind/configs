@@ -1,0 +1,44 @@
+---
+# The including task passes the registered run result and destination path.
+# Dry run and execute always sections include this file even after failure.
+# Capture tasks write stdout to that path and stderr to that path plus .stderr.
+# The tasks set both files to 0600 on the operator machine, even in check mode.
+# Capture tasks hide arguments and diff, then read and print the stdout file's
+# byte count and SHA-256 digest with the run exit status.
+- name: Write the node integrity dry run or execute stdout to the operator output file
+  ansible.builtin.copy:
+    content: "{{ tack_node_integrity_capture_run.stdout }}"
+    dest: "{{ tack_node_integrity_capture_path }}"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  diff: false
+  no_log: true
+
+- name: Write the node integrity dry run or execute stderr to the operator stderr file
+  ansible.builtin.copy:
+    content: "{{ tack_node_integrity_capture_run.stderr }}"
+    dest: "{{ tack_node_integrity_capture_path }}.stderr"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  diff: false
+  no_log: true
+
+- name: Read the output file size and SHA-256 digest
+  ansible.builtin.stat:
+    path: "{{ tack_node_integrity_capture_path }}"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  register: tack_node_integrity_capture
+
+- name: Show the output file size and SHA-256 digest
+  ansible.builtin.debug:
+    msg: >-
+      The output file {{ tack_node_integrity_capture_path }} contains
+      {{ tack_node_integrity_capture.stat.size }} bytes with SHA-256
+      {{ tack_node_integrity_capture.stat.checksum }}.
+      The run exited with status {{ tack_node_integrity_capture_run.rc }}.

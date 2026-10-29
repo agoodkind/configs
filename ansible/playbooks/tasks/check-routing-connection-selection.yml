@@ -1,0 +1,15 @@
+---
+# checked lists the connections that the MWAN check and the fault check stamp
+# with a forced DSCP for IPv6. ipv4 lists the underlay connections that the
+# ordinary IPv4 check stamps.
+- name: Collect the connections that the checks stamp
+  ansible.builtin.set_fact:
+    routing_connection_selection:
+      checked: >-
+        {{ ((routing_selection_scenario.tunnels | map(attribute='id') | list) + routing_selection_scenario.connections)
+        | reject('in', routing_selection_scenario.unchecked_connections | map(attribute='id') | list) | list }}
+      ipv4: >-
+        {{ routing_selection_scenario.connections
+        | reject('in', routing_selection_scenario.unchecked_ipv4_connections | map(attribute='id') | list) | list }}
+  vars:
+    routing_selection_scenario: "{{ testbed_routing_scenarios[routing_scenario_name] }}"

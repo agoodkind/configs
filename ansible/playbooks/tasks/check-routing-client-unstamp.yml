@@ -5,4 +5,4 @@
     routing_restore_commands:
       - >-
         pct exec {{ service_mapping[testbed_routing_checks.downstream_client].vmid }}
-        -- nft destroy table ip6 {{ testbed_routing_stamp_table }}
+        -- nft destroy table {{ routing_stamp_family }} {{ testbed_routing_stamp_table }}

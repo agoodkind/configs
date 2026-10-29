@@ -1,0 +1,198 @@
+---
+# The gateway keeps the BGP routes of a session with graceful restart in both
+# directions across a daemon restart. The upstream routers keep the home prefix,
+# and the gateway keeps its BGP default routes.
+- name: Check the gateway daemon restart
+  when: routing_recovery.gateway_sessions != []
+  block:
+    - name: Create a sampler directory on the Proxmox host
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: -routing-ifmgr-restart
+      register: routing_ifmgr_restart_directory
+
+    - name: Copy the route sampler to the Proxmox host
+      ansible.builtin.copy:
+        src: files/routing-ifmgr-restart-sampler.sh
+        dest: "{{ routing_ifmgr_restart_directory.path }}/routing-ifmgr-restart-sampler.sh"
+        mode: "0755"
+
+    - name: Start the echo request captures on both clients
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ item.vmid }}"
+          - --
+          - timeout
+          - "{{ routing_ifmgr_restart_window }}"
+          - tcpdump
+          - -tt
+          - -n
+          - -l
+          - -i
+          - any
+          - icmp6 and ip6[40] == 128 and src host {{ item.source }} and dst host {{ item.destination }}
+      loop: "{{ routing_ifmgr_restart_directions }}"
+      loop_control:
+        label: "{{ item.direction }}"
+      async: "{{ routing_ifmgr_restart_window * 2 }}"
+      poll: 0
+      register: routing_ifmgr_restart_capture_jobs
+      changed_when: false
+
+    - name: Wait for the captures to open their interfaces
+      ansible.builtin.pause:
+        seconds: "{{ testbed_routing_checks.ping_timeout_seconds }}"
+
+    - name: Send echo requests in both directions
+      ansible.builtin.command:
+        argv:
+          - pct
+          - exec
+          - "{{ item.sender }}"
+          - --
+          - ping
+          - "-6"
+          - -D
+          - -O
+          - -i
+          - "{{ testbed_routing_checks.restart_ping_interval_seconds }}"
+          - -w
+          - "{{ routing_ifmgr_restart_window - testbed_routing_checks.ping_timeout_seconds }}"
+          - -I
+          - "{{ item.source }}"
+          - "{{ item.destination }}"
+      loop: "{{ routing_ifmgr_restart_directions }}"
+      loop_control:
+        label: "{{ item.direction }}"
+      async: "{{ routing_ifmgr_restart_window * 2 }}"
+      poll: 0
+      register: routing_ifmgr_restart_ping_jobs
+      changed_when: false
+
+    - name: Start the route sampler
+      ansible.builtin.command:
+        argv: >-
+          {{ [routing_ifmgr_restart_directory.path ~ '/routing-ifmgr-restart-sampler.sh',
+          routing_ifmgr_restart_window | string, testbed_routing_checks.restart_sample_interval_seconds | string,
+          routing_recovery.scenario.home_prefixes[0], routing_recovery.gateway_vmid | string]
+          + (routing_recovery.upstream_nodes | map('extract', routing_node_vmids) | map('string') | list) }}
+      async: "{{ routing_ifmgr_restart_window * 2 }}"
+      poll: 0
+      register: routing_ifmgr_restart_sampler_job
+      changed_when: false
+
+    - name: Record the routes before the restart
+      ansible.builtin.pause:
+        seconds: "{{ testbed_routing_checks.restart_baseline_seconds }}"
+
+    - name: Read the clock before the restart
+      ansible.builtin.command:
+        argv: [date, +%s.%N]
+      register: routing_ifmgr_restart_before
+      changed_when: false
+
+    - name: Restart the gateway daemon
+      ansible.builtin.command:
+        argv: [qm, guest, exec, "{{ routing_recovery.gateway_vmid | string }}", --, systemctl, restart, mwan-ifmgr@wan]
+      register: routing_ifmgr_restart_command
+      changed_when: true
+
+    - name: Read the clock after the restart
+      ansible.builtin.command:
+        argv: [date, +%s.%N]
+      register: routing_ifmgr_restart_after
+      changed_when: false
+
+    # qm guest exec exits 0 when the guest command fails.
+    - name: Require the restart to succeed in the guest
+      ansible.builtin.assert:
+        that:
+          - (routing_ifmgr_restart_command.stdout | from_json).exitcode is defined
+          - (routing_ifmgr_restart_command.stdout | from_json).exitcode == 0
+        fail_msg: "Routing scenario {{ routing_recovery.name }}: the gateway restart returned {{ routing_ifmgr_restart_command.stdout }}"
+
+    - name: Wait for the route sampler
+      ansible.builtin.async_status:
+        jid: "{{ routing_ifmgr_restart_sampler_job.ansible_job_id }}"
+      register: routing_ifmgr_restart_samples
+      until: routing_ifmgr_restart_samples.finished
+      retries: "{{ routing_ifmgr_restart_window }}"
+      delay: 2
+
+    - name: Wait for each echo request capture
+      ansible.builtin.async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ routing_ifmgr_restart_capture_jobs.results }}"
+      loop_control:
+        label: "{{ item.item.direction }}"
+      register: routing_ifmgr_restart_captures
+      until: routing_ifmgr_restart_captures.finished
+      retries: "{{ routing_ifmgr_restart_window }}"
+      delay: 2
+      failed_when: false
+
+    - name: Wait for each ping
+      ansible.builtin.async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ routing_ifmgr_restart_ping_jobs.results }}"
+      loop_control:
+        label: "{{ item.item.direction }}"
+      register: routing_ifmgr_restart_pings
+      until: routing_ifmgr_restart_pings.finished
+      retries: "{{ routing_ifmgr_restart_window }}"
+      delay: 2
+      failed_when: false
+
+    - name: Measure and require the routes during the restart
+      ansible.builtin.import_tasks: check-routing-recovery-ifmgr-restart-report.yml
+  always:
+    - name: Remove the sampler directory on the Proxmox host
+      ansible.builtin.file:
+        path: "{{ routing_ifmgr_restart_directory.path }}"
+        state: absent
+      when: routing_ifmgr_restart_directory.path is defined
+  vars:
+    routing_ifmgr_restart_window: "{{ testbed_routing_checks.restart_window_seconds }}"
+    routing_ifmgr_restart_downstream_vmid: "{{ routing_recovery.downstream.vmid | string }}"
+    routing_ifmgr_restart_remote_vmid: "{{ routing_node_vmids[routing_recovery.remote_client_node] | string }}"
+    # Outbound requests arrive at the remote client. Inbound requests arrive at
+    # the downstream client.
+    routing_ifmgr_restart_directions:
+      - direction: outbound
+        sender: "{{ routing_ifmgr_restart_downstream_vmid }}"
+        vmid: "{{ routing_ifmgr_restart_remote_vmid }}"
+        source: "{{ routing_recovery.downstream.ipv6 }}"
+        destination: "{{ routing_recovery.remote_client_address }}"
+      - direction: inbound
+        sender: "{{ routing_ifmgr_restart_remote_vmid }}"
+        vmid: "{{ routing_ifmgr_restart_downstream_vmid }}"
+        source: "{{ routing_recovery.remote_client_address }}"
+        destination: "{{ routing_recovery.downstream.ipv6 }}"
+
+# The recovery probe runs after every restart window ends.
+- name: Wait until packets routed by the scenario pass after the restart
+  ansible.builtin.command:
+    argv: "{{ routing_recovery_probe }}"
+  register: routing_ifmgr_restart_recovery_probe
+  changed_when: false
+  until: routing_ifmgr_restart_recovery_probe.rc == 0
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+  when: routing_recovery.gateway_sessions != []
+
+- name: Record the gateway restart check
+  ansible.builtin.set_fact:
+    routing_recovery_results: >-
+      {{ routing_recovery_results + [{
+        'fault': 'gateway ifmgr restart',
+        'restart_command_seconds':
+          ((routing_ifmgr_restart_after.stdout | float) - (routing_ifmgr_restart_before.stdout | float)) | round(3),
+        'largest_outbound_request_gap_seconds': routing_ifmgr_restart_report.gaps.outbound,
+        'largest_inbound_request_gap_seconds': routing_ifmgr_restart_report.gaps.inbound,
+        'gateway_bgp_default_routes_before': routing_ifmgr_restart_report.gateway_baseline,
+        'route_absence_seconds': dict(routing_ifmgr_restart_report.absences.keys()
+          | zip(routing_ifmgr_restart_report.absences.values() | map(attribute='seconds')))
+      }] }}
+  when: routing_recovery.gateway_sessions != []

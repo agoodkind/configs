@@ -13,12 +13,27 @@
         state: directory
         mode: "0700"
       changed_when: false
+      check_mode: false
 
     - name: Stage the simulator files
       ansible.builtin.import_tasks: deploy-routing-simulator-stage.yml
 
     - name: Read the staged and installed checksums
       ansible.builtin.import_tasks: deploy-routing-simulator-checksums.yml
+
+    # These tasks read the staged content before the always block removes the
+    # temp directory. The firewall and FRR configuration checks in
+    # deploy-routing-simulator-services.yml use the content later.
+    - name: Read the staged firewall configuration
+      ansible.builtin.slurp:
+        src: "{{ rsim_temp_dir }}/nftables.conf"
+      register: rsim_nftables_staged
+
+    - name: Read the staged FRR configuration
+      ansible.builtin.slurp:
+        src: "{{ rsim_temp_dir }}/frr.conf"
+      register: rsim_frr_staged
+      when: rsim.bgp | bool
 
     - name: Push each changed simulator file
       ansible.builtin.import_tasks: deploy-routing-simulator-push.yml
@@ -28,6 +43,7 @@
         path: "{{ rsim_temp_dir }}"
         state: absent
       changed_when: false
+      check_mode: false
 
 - name: Read the simulator network units in the guest
   ansible.builtin.command:
@@ -44,6 +60,7 @@
       - "%f\n"
   register: rsim_installed_units
   changed_when: false
+  check_mode: false
 
 # Every service group is pending after the removal deletes the applied record.
 - name: Remove each network unit that the inventory no longer declares

@@ -1,13 +1,23 @@
 ---
-# Ansible renders this file from tack/opensearch-internal-users.yml.j2. A
-# member reads it into the security index on its first start. After the file
-# changes, the deploy writes its entries into the security index of the
-# running member. The user has no backend role because the role mapping file
-# maps it to the tack_search role by user name.
+# The service identities use separate generated password hashes.
 _meta:
   type: internalusers
   config_version: 2
+{{ tack_search_runtime_username }}:
+  hash: "{{ tack_search_runtime_password_hash }}"
+  reserved: true
+  description: The Tack application uses this identity.
+{{ tack_search_maintenance_username }}:
+  hash: "{{ tack_search_maintenance_password_hash }}"
+  reserved: true
+  description: Maintenance commands use this identity.
+{{ tack_search_health_username }}:
+  hash: "{{ tack_search_health_password_hash }}"
+  reserved: true
+  description: The search proxy uses this identity for readiness.
+{% if tack_search_keep_legacy_user | bool %}
 {{ tack_search_username }}:
   hash: "{{ tack_search_password_hash }}"
   reserved: true
-  description: The Tack application and the Tack operator commands use this user.
+  description: Existing services use this identity during the transition.
+{% endif %}

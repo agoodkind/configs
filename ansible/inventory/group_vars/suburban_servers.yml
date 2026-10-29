@@ -165,8 +165,9 @@ tack_search_proxy_members: "{{ tack_search_qa_members }}"
 tack_search_proxy_callers:
   - tack_qa_suburban
   - tack_app2_suburban
-tack_search_proxy_username: "{{ vault_tack_qa_search_username }}"
-tack_search_proxy_password: "{{ vault_tack_qa_search_password }}"
+tack_search_proxy_secret_source: "{{ service_mapping.tack_qa_suburban.hostname }}"
+tack_search_proxy_username: tack_health
+tack_search_proxy_password: "{{ tack_search_proxy_password_file.content | b64decode | trim }}"
 tack_search_proxy_ca: "{{ vault_tack_qa_search_ca }}"
 tack_search_proxy_certificate: "{{ vault_tack_qa_search_proxy_certificate }}"
 tack_search_proxy_private_key: "{{ vault_tack_qa_search_proxy_private_key }}"
@@ -231,11 +232,18 @@ testbed_isp_protocol_defaults:
   dhcp4_valid_lifetime_seconds: 4000
   dhcp4_renew_seconds: omit
   dhcp4_rebind_seconds: omit
+  # kea-dhcp4 and kea-dhcp6 can start before eth0 comes up after pct start.
+  # Kea retries the failed socket open at the wait interval, up to the maximum
+  # number of retries.
+  dhcp4_socket_max_retries: 60
+  dhcp4_socket_retry_wait_ms: 1000
   dhcp6_preferred_lifetime_seconds: 3000
   dhcp6_valid_lifetime_seconds: 4000
   dhcp6_renew_seconds: omit
   dhcp6_rebind_seconds: omit
   dhcp6_dns_servers: []
+  dhcp6_socket_max_retries: 60
+  dhcp6_socket_retry_wait_ms: 5000
   ra_min_interval_seconds: 30
   ra_max_interval_seconds: 100
   ra_dns_servers: []

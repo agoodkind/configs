@@ -1,0 +1,9 @@
+[Match]
+Name=lan
+
+[Network]
+Address=10.230.5.1/24
+Address=3d06:bad:b01:305::1/64
+IPv6AcceptRA=no
+IPv6SendRA=no
+LinkLocalAddressing=ipv6

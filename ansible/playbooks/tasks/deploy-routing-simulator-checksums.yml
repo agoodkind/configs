@@ -18,3 +18,22 @@
   register: rsim_installed
   changed_when: false
   failed_when: rsim_installed.rc not in [0, 1]
+  check_mode: false
+
+# A missing staged file has no stat.checksum and fails this task.
+- name: Collect the files with a changed checksum
+  ansible.builtin.set_fact:
+    rsim_changed_files: >-
+      {%- set changed = [] -%}
+      {%- for file, staged, installed in rsim_files | zip(rsim_staged.results, rsim_installed.results) -%}
+      {%- if not installed.stdout.startswith(staged.stat.checksum) -%}
+      {%- set _ = changed.append(file[1]) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ changed }}
+
+- name: Report each file that a deploy pushes
+  ansible.builtin.debug:
+    msg: "Check mode skips the push of {{ item }}, which differs from the staged file"
+  loop: "{{ rsim_changed_files }}"
+  when: ansible_check_mode

@@ -30,13 +30,53 @@
     tack_search_outage_health_request_timeout_seconds: 5
     tack_search_outage_healthy_statuses: [green, yellow]
     tack_search_outage_container: tack-opensearch-1
-    tack_search_outage_exit_retries: 30
     tack_search_outage_exit_delay_seconds: 2
+    tack_search_outage_kill_exit_margin_seconds: 60
+    tack_search_outage_stop_timeout: >-
+      {{ (tack_search_outage_container_config.stdout | from_json)[0].Config.get('StopTimeout') }}
+    tack_search_outage_exit_retries: >-
+      {{ ((tack_search_outage_stop_timeout | int + tack_search_outage_kill_exit_margin_seconds)
+          / tack_search_outage_exit_delay_seconds) | round(0, 'ceil') | int }}
+    tack_search_outage_kill_exit_retries: 30
     tack_search_outage_kill_exit_code: 137
     tack_search_outage_exit_code: "{{ (tack_search_outage_container_state.stdout | from_json)[0].State.ExitCode }}"
     tack_search_outage_block_failed: false
     tack_search_outage_failed_task: ""
   tasks:
+    - name: Read the recovery health credential before stopping the member
+      ansible.builtin.slurp:
+        src: "{{ tack_secrets_dir }}/OPENSEARCH_HEALTH_PASSWORD"
+      delegate_to: "{{ tack_service_secret_source }}"
+      register: tack_search_outage_password
+      when: not ansible_check_mode
+      no_log: true
+
+    # The exit wait below lasts the container stop timeout plus a margin because Docker can keep
+    # stopping the container after docker compose stop fails. Starting the member before the
+    # container exits leaves it stopped.
+    - name: Read the OpenSearch container stop timeout before stopping the member
+      ansible.builtin.command:
+        argv:
+          - docker
+          - container
+          - inspect
+          - "{{ tack_search_outage_container }}"
+      register: tack_search_outage_container_config
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Refuse an outage when the OpenSearch container has no stop timeout
+      ansible.builtin.assert:
+        that:
+          - tack_search_outage_stop_timeout | string is match('[0-9]+\Z')
+        fail_msg: >-
+          The playbook refuses the outage because container {{ tack_search_outage_container }}
+          on {{ inventory_hostname }} does not have a whole-number stop timeout in seconds.
+          It read Config.StopTimeout={{ tack_search_outage_stop_timeout }}.
+          The Tack opensearch service must set stop_grace_period.
+        quiet: true
+      when: not ansible_check_mode
+
     - name: Run the OpenSearch outage
       block:
         - name: Stop the OpenSearch member
@@ -90,6 +130,37 @@
           delay: "{{ tack_search_outage_exit_delay_seconds }}"
           when: not ansible_check_mode
 
+        - name: Kill the OpenSearch container if it still runs after the exit wait
+          ansible.builtin.command:
+            argv:
+              - docker
+              - container
+              - kill
+              - "{{ tack_search_outage_container }}"
+          changed_when: true
+          when:
+            - not ansible_check_mode
+            - tack_search_outage_container_state is failed
+            - tack_search_outage_container_state.rc == 0
+
+        - name: Wait for the OpenSearch container to exit after the first exit wait failed
+          ansible.builtin.command:
+            argv:
+              - docker
+              - container
+              - inspect
+              - "{{ tack_search_outage_container }}"
+          register: tack_search_outage_killed_state
+          changed_when: false
+          until:
+            - tack_search_outage_killed_state.rc == 0
+            - not (tack_search_outage_killed_state.stdout | from_json)[0].State.Running
+          retries: "{{ tack_search_outage_kill_exit_retries }}"
+          delay: "{{ tack_search_outage_exit_delay_seconds }}"
+          when:
+            - not ansible_check_mode
+            - tack_search_outage_container_state is failed
+
         - name: "Print the stopped container exit code"
           ansible.builtin.debug:
             msg: >-
@@ -116,8 +187,8 @@
           ansible.builtin.uri:
             url: "{{ tack_search_member_url }}/_cluster/health"
             method: GET
-            url_username: "{{ tack_search_username }}"
-            url_password: "{{ tack_search_password }}"
+            url_username: "{{ tack_search_health_username }}"
+            url_password: "{{ tack_search_outage_password.content | b64decode | trim }}"
             force_basic_auth: true
             ca_path: "{{ tack_search_ca_path }}"
             timeout: "{{ tack_search_outage_health_request_timeout_seconds }}"
@@ -127,6 +198,7 @@
           retries: "{{ tack_search_outage_health_retries }}"
           delay: "{{ tack_search_outage_health_delay_seconds }}"
           no_log: true
+          when: not ansible_check_mode
       always:
         - name: Read the guest clock after the health check
           ansible.builtin.command:
@@ -153,8 +225,9 @@
           ansible.builtin.fail:
             msg: >-
               The state read for container {{ tack_search_outage_container }} on {{ inventory_hostname }} failed
-              or the container still ran after retries. The play started the OpenSearch member and waited for
-              cluster health before reporting the exit wait failure.
+              or the container still ran after the extended exit wait. When the container still ran after that wait,
+              the play killed it. The play confirmed its exit before it started the OpenSearch member and waited for
+              cluster health. The play now reports the first exit wait failure.
           when: tack_search_outage_container_state is failed
 
         - name: "Fail after recovery if Docker sent signal 9"

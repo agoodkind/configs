@@ -102,6 +102,14 @@ tack_ledger_node_addresses:
 # environment dials verify-full against the authority from then on.
 tack_ledger_tls_enabled: true
 tack_ledger_ca_host: "{{ service_mapping.tack.hostname }}"
+# ./configsctl deploy deploy-tack reads this value without Jinja templating
+# and locks this host. Use a literal inventory host name.
+tack_service_secret_source: tack.home.goodkind.io
+# ./configsctl deploy tack-ops reads this value without Jinja templating and
+# locks this host. Use a literal inventory host name. Production does not run
+# an application-only guest. The value is the owner guest, the only guest
+# that a production tack-ops run targets.
+tack_ops_lock_app_guest: tack.home.goodkind.io
 tack_store_seed_cluster_file: true
 tack_store_legacy_node_present: false
 tack_store_redundancy_mode: double

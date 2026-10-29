@@ -124,17 +124,17 @@ Observed, monotonic microseconds:
 `@3.470s` after `systemd-remount-fs.service`. The gateway reports `running`
 with 0 failed units.
 
-The daemon rewrote nothing at that boot. Its log line reads:
+The daemon did not rewrite anything at that boot. Its log line reads:
 
 ```
 msg="ifmgr: networkd unit files written" dir=/etc/systemd/network changed=null
 ```
 
 The four rendered files already matched what the renderer produces. The daemon
-therefore issued no networkd reload. Those files carry mtime 09:54, written by
+therefore did not issue a networkd reload. Those files carry mtime 09:54, written by
 the daemon restart the deploy triggered, before the reboot. This boot proves
-the ordering and proves that a second pass over unchanged content rewrites
-nothing. It leaves one property unproven: that a fresh write finishes before
+the ordering and proves that a second pass over unchanged content does not rewrite
+anything. It leaves one property unproven: that a fresh write finishes before
 the udev trigger reads a `.link` file. A boot with that directory empty would
 prove it.
 
@@ -205,9 +205,9 @@ lookup monkeybrains`.
 Suburban, 10:54:50: both links set up again. The gateway returned all three
 providers to healthy, and its 15 policy rules matched the pre-drill capture in
 both families with 0 changed lines. The four rendered files kept their 09:54
-mtimes throughout, so a health transition rewrites no unit file.
+mtimes throughout, so a health transition does not rewrite unit files.
 
-A `curl` from the gateway itself proves nothing about this drill and returned
+A `curl` from the gateway itself does not prove anything about this drill and returned
 `000` in both families during it. The rule the drill moves selects traffic
 arriving on the internal bridge, and the gateway's own sockets use the main
 table instead. Observe LAN fallback from a LAN host, as the 2026-09-18 drill

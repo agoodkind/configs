@@ -86,9 +86,9 @@ hash recorded at the last apply.
 
 ### 6. Guest module
 
-One shared module declares the base state of one guest. The guest workspace
-creates one module instance for each enrolled guest from the Ansible service
-mapping. A guest joins through an explicit enrolled set.
+One shared module declares the base state of one guest. Each application root
+creates one module instance for each existing enrolled guest from the Ansible
+service mapping. A guest joins through an explicit enrolled set.
 
 | `prep-guests` item | Declaration |
 | --- | --- |
@@ -120,9 +120,9 @@ missing or blocked.
 The marker file is removed. OpenTofu records each declared resource in state.
 The readiness gate requires a plan with zero changes.
 
-`configsctl deploy` runs a plan of the `guest` workspace for the target guest
-before a service deploy and refuses to deploy when the plan reports a change
-or an error.
+`configsctl deploy` plans the selected guest module in its owning application
+root before a service deploy. It refuses deployment when that plan reports a
+change or an error.
 
 During migration an enrolled guest declares the marker as an ordinary file
 that depends on every other item in the module. The Ansible check passes for
@@ -135,42 +135,16 @@ Read fails for a stopped container and for a VM without a running guest agent.
 The error message includes the guest. `-exclude` on that guest module instance
 allows a plan for the others.
 
-### 10. Workspaces
+### 10. Application dependencies
 
-A workspace is one directory of OpenTofu files with its own state file, as in
-HCP Terraform. A plan in one workspace reads and contacts only the systems
-that workspace declares.
+The [workspace separation design](../specs/2026-10-23-workspace-separation-design.md)
+defines workspace ownership, deployment checks, host prerequisites, encryption,
+and the coordinated state transfer.
 
-`configsctl.yml` specifies the workspace directory. Each child directory with a
-`backend` block defines a workspace. `configsctl tofu <workspace> <arguments>`
-runs OpenTofu in that directory. configsctl does not maintain a separate
-workspace-name list.
+The PowerEdge routing root orders its guest operations after its host
+prerequisite read.
 
-Each workspace sets its own state key in its `backend` block. Every state file
-is in the same R2 bucket and uses the same encryption passphrase. The secret
-rules apply per workspace: configsctl exports a vault key to a workspace only
-when that workspace declares a variable with the same name.
-
-Guest base state is the workspace `guest`. DNS and hypervisor plans do not
-open guest sessions. A stopped guest affects the guest workspace plan.
-
-Each workspace reads the Ansible service mapping. It does not read another
-workspace's state.
-
-The existing OpenTofu files become one workspace without a state change.
-
-### 11. Host and guest dependencies
-
-A guest that needs a host capability declares that capability as a dependency
-of its guest module. OpenTofu applies the host side first.
-
-OpenTofu applies these dependencies in order for the PowerEdge MWAN gateway
-container (vmid 313, `mwan-poweredge`) and LAN container (vmid 314,
-`lan-poweredge`).
-
-1. `pveguest_host_kernel_modules` declares the 18 poweredge host kernel
-   modules. The resource uses the overlay methods
-   `GET /nodes/{node}/kernel-modules` and `PUT /nodes/{node}/kernel-modules`.
+1. The read-only host module data source checks the required loaded modules.
 2. The containers declare `bpfdelegate`, nesting, and `hostnicN` for WAN port
    `nic2` and inter-container virtual functions `nic1v0` and `nic1v1`.
 3. OpenTofu installs the mwan binary and package bundle.
@@ -264,16 +238,14 @@ each remaining item. A genuine decision requires options and a recommendation.
   the MWAN deploy owner. The guest agent is unavailable for about 30 seconds
   after a gateway reboot or a snapshot restore, and Read fails during that
   time.
-- A plan of the `guest` workspace requires the overlay guest methods and an API
-  token on each hypervisor with an enrolled guest.
-- A split of the existing workspace into DNS and one workspace per hypervisor
-  is separate work. Each split moves resources between state files.
+- An application root that declares guest base state requires the overlay
+  guest methods and an API token on its own hypervisor.
 - Guests marked `inventory: false` are enrolled like any other guest. The
   transport does not require an inventory address.
 
 ## Acceptance criteria
 
-- AC1: A plan after an apply on `clyde_suburban` reports no changes.
+- AC1: A plan after an apply on `clyde_suburban` does not report changes.
 - AC2: After a declared package is removed in the guest by hand, a plan
   proposes to install it.
 - AC3: After a declared file is edited in the guest by hand, a plan proposes
@@ -388,8 +360,8 @@ below are recorded for reconsideration. None of them is selected or scheduled.
 
 | Option | Current constraint | Tradeoff | Reconsider when |
 | --- | --- | --- | --- |
-| Root SSH to the hypervisor with `pct exec` and `qm guest exec` | The owner rejects root SSH as a design. | The option requires no overlay and works on stock Proxmox. It grants root on every hypervisor to the machine that runs OpenTofu. | The owner changes the root SSH rule. |
-| SSH into each guest | A guest with broken SSH requires a second repair path. | The option requires no hypervisor privilege. Each guest needs sshd and an authorized key before OpenTofu manages it. | The overlay guest methods stop applying to a Proxmox release and a patch is not feasible. |
+| Root SSH to the hypervisor with `pct exec` and `qm guest exec` | The owner rejects root SSH as a design. | The option does not require an overlay and works on stock Proxmox. It grants root on every hypervisor to the machine that runs OpenTofu. | The owner changes the root SSH rule. |
+| SSH into each guest | A guest with broken SSH requires a second repair path. | The option does not require hypervisor privileges. Each guest needs sshd and an authorized key before OpenTofu manages it. | The overlay guest methods stop applying to a Proxmox release and a patch is not feasible. |
 | Upstream the guest methods to Proxmox | The overlay patches each Proxmox release. | Upstream methods remove the overlay maintenance. Acceptance and timing depend on the Proxmox maintainers. | The overlay methods run on all three hypervisors without a change for one Proxmox minor release. |
 | A Debian package for the overlay | `pve-overlay` installs Perl modules and AppArmor profiles from patch files. | A package can install binaries and units and uses dpkg triggers. It needs a build pipeline and a package source. | The overlay needs a compiled helper, or it installs more than ten host files. |
 | An overlay privilege for VM command execution | The stock `agent/exec` method requires `VM.GuestAgent.Unrestricted`. | A narrow privilege limits a VM token to command execution. It adds one more overlay method. | The first VM guest is enrolled (AC11). |

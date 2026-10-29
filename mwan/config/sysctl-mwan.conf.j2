@@ -12,10 +12,6 @@ net.ipv6.conf.default.forwarding = 1
 net.ipv6.conf.all.accept_ra = 0
 net.ipv6.conf.default.accept_ra = 0
 
-# Disable SLAAC on Webpass interface (prevents unwanted autoconf addresses)
-net.ipv6.conf.{{ mwan_webpass_iface }}.accept_ra = 0
-net.ipv6.conf.{{ mwan_webpass_iface }}.autoconf = 0
-
 # Enable router advertisements on internal interface (to OPNsense)
 net.ipv6.conf.{{ mwan_internal_iface }}.accept_ra = 2
 

@@ -2,9 +2,9 @@
 - name: Check upstream loss and recovery
   when: routing_recovery.upstream_nodes != []
   block:
-    - name: Read the clock before the upstream loss
+    - name: Read the UTC clock before the upstream loss
       ansible.builtin.command:
-        argv: [date, +%s]
+        argv: [date, -u, "+{{ routing_upstream_clock_format }}"]
       register: routing_upstream_loss_start
       changed_when: false
 
@@ -29,6 +29,16 @@
         that:
           - routing_upstream_loss_probe.rc != 0
         fail_msg: "Routing scenario {{ routing_recovery.name }}: packets still pass after the upstream loss"
+
+    - name: Wait until each VPS has no default route and advertises none to the gateway
+      ansible.builtin.import_tasks: check-routing-recovery-vps-default.yml
+      vars:
+        routing_vps_default_present: false
+
+    - name: Wait until the gateway has no default route through each VPS session
+      ansible.builtin.import_tasks: check-routing-recovery-gateway-default.yml
+      vars:
+        routing_gateway_default_present: false
   always:
     - name: Start FRR on each upstream router and require active FRR
       ansible.builtin.import_tasks: run-routing-restore-commands.yml
@@ -51,9 +61,32 @@
   delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
   when: routing_recovery.upstream_nodes != []
 
-- name: Read the clock after the upstream recovery
+- name: Wait until each VPS learns and advertises the default route again
+  ansible.builtin.import_tasks: check-routing-recovery-vps-default.yml
+  vars:
+    routing_vps_default_present: true
+  when: routing_recovery.upstream_nodes != []
+
+- name: Wait until each upstream router has a BGP route to the home prefix again
   ansible.builtin.command:
-    argv: [date, +%s]
+    argv: [pct, exec, "{{ routing_node_vmids[item.0] }}", --, ip, -j, "-6", route, show, exact, "{{ item.1 }}", proto, bgp]
+  loop: "{{ routing_recovery.upstream_nodes | product(routing_recovery.scenario.home_prefixes) | list }}"
+  register: routing_upstream_home_restored
+  changed_when: false
+  until: routing_upstream_home_restored.stdout | from_json != []
+  retries: "{{ routing_recovery.wait_retries }}"
+  delay: "{{ testbed_routing_checks.retry_delay_seconds }}"
+  when: routing_recovery.upstream_nodes != []
+
+- name: Wait until the gateway has a default route through each VPS session again
+  ansible.builtin.import_tasks: check-routing-recovery-gateway-default.yml
+  vars:
+    routing_gateway_default_present: true
+  when: routing_recovery.upstream_nodes != []
+
+- name: Read the UTC clock after the upstream recovery
+  ansible.builtin.command:
+    argv: [date, -u, "+{{ routing_upstream_clock_format }}"]
   register: routing_upstream_loss_end
   changed_when: false
   when: routing_recovery.upstream_nodes != []
@@ -64,6 +97,11 @@
       {{ routing_recovery_results + [{
         'fault': 'upstream loss',
         'seconds_from_fault_to_recovery':
-          routing_upstream_loss_end.stdout | int - routing_upstream_loss_start.stdout | int
+          ((routing_upstream_loss_end.stdout | to_datetime(routing_upstream_clock_format))
+          - (routing_upstream_loss_start.stdout | to_datetime(routing_upstream_clock_format))).total_seconds() | int,
+        'vps_gateway_sessions': routing_recovery.vps_gateway_sessions | map(attribute='id') | list,
+        'started_utc': routing_upstream_loss_start.stdout,
+        'recovered_utc': routing_upstream_loss_end.stdout,
+        'result': 'passed'
       }] }}
   when: routing_recovery.upstream_nodes != []

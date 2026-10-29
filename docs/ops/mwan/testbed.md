@@ -12,8 +12,8 @@ Each bridge carries one role:
 - The VM management bridge is the uplink behind suburban: the ISP sims default
   through it, so replies to tunnel and testbed sources drain to suburban, and
   their internet traffic masquerades onward to Comcast.
-- The MWAN internal bridge is the OPNsense transit link. Suburban holds no
-  address on it, matching vault, so it reaches the guests through the router
+- The MWAN internal bridge is the OPNsense transit link. Suburban does not have an
+  address on it, matching vault. Suburban accesses the guests through the router
   rather than across the bridge.
 - The VLAN-aware trunk carries VMNET, the guest segment every testbed guest
   and the router share, plus the tagged VLANs mirroring production.
@@ -22,11 +22,12 @@ Each bridge carries one role:
 
 ## Guests
 
-OpenTofu provisions every suburban guest, and Ansible configures what runs
-inside it.
+OpenTofu provisions every suburban guest. It also writes the ISP simulator
+firewall, sysctl, router advertisement, and return-route files. Ansible writes
+the Kea configuration and configures the rest of each guest.
 
 A guest that mirrors a production service takes its counterpart's VMID plus 100,
-and the simulated ISPs, which have no production counterpart, sit in the 9xx
+and the simulated ISPs, which do not have a production counterpart, sit in the 9xx
 range. No id is shared between the two hypervisors.
 
 That separation is what makes a misdirected command safe. The hypervisors are
@@ -54,17 +55,17 @@ static block that the MWAN VM translates one-to-one to its internal services;
 the testbed cannot reproduce 802.1X or the VLAN, so that link is a plain NIC.
 Webpass offers a static link that sits inside its own static block, as
 production Webpass does, so the MWAN VM holds its mapped addresses on that
-link and the sim routes no block. Astound offers a dynamic DHCPv4 link pinned
-stable by a MAC reservation and carries no IPv6 at all: no delegated prefix,
-no routed static block, and no SLAAC address, matching the real Astound
-circuit. It proves that a plain IPv4-only link can be added this way, nothing
+link and the sim does not route a block. Astound offers a dynamic DHCPv4 link
+pinned stable by a MAC reservation and does not support IPv6 at all: it does not
+provide a delegated prefix, a routed static block, or a SLAAC address, matching the
+real Astound circuit. It proves that a plain IPv4-only link can be added this way, nothing
 more. The gateway does not yet steer traffic through it: the link comes up so
 a provider can be added, re-tiered, and removed against real hardware.
 
 Prefix delegation sizes match production, and NPT translates the first `/60`
 of each delegation. The delegated prefixes deliberately avoid the `02xx` space
-that management, LAN, internal, and SLAAC already use. Astound delegates no
-prefix, so NPT has nothing to translate for it.
+that management, LAN, internal, and SLAAC already use. Astound does not delegate a
+prefix, and NPT does not translate a prefix for it.
 
 ## Production vs testbed
 
@@ -104,8 +105,8 @@ unknown.
   VMs (`lifecycle.ignore_changes = [kvm_arguments]`), or a plan tries to null the
   field and the apply fails with `VM is locked`. See
   [OPNsense operations](../opnsense/operations.md) Rule 8.
-- **Management return path.** The MWAN VM's management interface has no policy
-  route, mirroring prod, so on-link replies to peers on the shared guest
+- **Management return path.** The MWAN VM's management interface does not have a
+  policy route, mirroring prod. On-link replies to peers on the shared guest
   segment return directly. A management policy table carrying only a default
   route shadows the connected route and triangles on-link replies through the
   gateway, which breaks reachability.

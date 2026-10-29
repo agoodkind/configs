@@ -4,8 +4,8 @@ These pages are for running and recovering the homelab.
 
 Production hosts serve live traffic for people who cannot recover from a bad
 change on their own. Read the live host before you trust repo templates. State a
-hypothesis, test the smallest reversible change, verify no regression, and only
-then codify the change in git. Do not bulk-change MWAN, OPNsense, or the vault
+hypothesis, test the smallest reversible change, verify that it does not cause a
+regression, and only then codify the change in git. Do not bulk-change MWAN, OPNsense, or the vault
 hypervisor, and do not restart networking services without a rollback path.
 
 Run OpenTofu and Ansible through configsctl from the repository root. The
@@ -61,5 +61,7 @@ auto-approved `apply` or `destroy` write to a file.
 
 - [MWAN](mwan/layout.md)
 - [OPNsense](opnsense/operations.md)
+- [Deploy and restore Kea configuration](opnsense/kea.md)
 - [Ansible](ansible/quality.md)
 - [Infrastructure](infra/access.md)
+- [Configure PowerEdge NIC firmware](infra/firmware.md)

@@ -1,30 +1,51 @@
 ---
-- name: Check the scenario with stamped client packets
-  block:
-    - name: Stamp the downstream client's packets for the scenario
-      ansible.builtin.import_tasks: check-routing-client-stamp.yml
+- name: Report each declared connection that the scenario does not check
+  ansible.builtin.debug:
+    msg: >-
+      Routing scenario {{ routing_check.name }} does not check connection
+      {{ item.id }}: {{ item.reason }}
+  loop: "{{ routing_check.unchecked_connections }}"
+  loop_control:
+    label: "{{ item.id }}"
 
-    - name: Collect the packet captures and require the tools
-      ansible.builtin.import_tasks: check-routing-mwan-captures.yml
+- name: Report each underlay connection that the ordinary IPv4 check does not use
+  ansible.builtin.debug:
+    msg: >-
+      Routing scenario {{ routing_check.name }} does not send ordinary IPv4
+      packets through connection {{ item.id }}: {{ item.reason }}
+  loop: "{{ routing_check.unchecked_ipv4_connections }}"
+  loop_control:
+    label: "{{ item.id }}"
 
-    - name: Send ordinary IPv4 packets before the IPv6 checks
-      ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
-      vars:
-        routing_ordinary_phase: before
+- name: Send ordinary IPv4 packets through each underlay connection before the IPv6 checks
+  ansible.builtin.include_tasks:
+    file: check-routing-ordinary-ipv4.yml
+  vars:
+    routing_ordinary_phase: before
+  loop: "{{ routing_check.ipv4_connections }}"
+  loop_control:
+    loop_var: routing_ipv4_connection_id
+    label: "{{ routing_ipv4_connection_id }} dscp {{ testbed_routing_forced_dscp[routing_ipv4_connection_id] }}"
 
-    - name: Capture and send packets at the gateway
-      ansible.builtin.import_tasks: check-routing-mwan-packets.yml
+- name: Check each connection of the scenario with its forced DSCP
+  ansible.builtin.include_tasks:
+    file: check-routing-mwan-connection.yml
+  loop: "{{ routing_check.checked_connections }}"
+  loop_control:
+    loop_var: routing_connection_id
+    label: "{{ routing_connection_id }} dscp {{ testbed_routing_forced_dscp[routing_connection_id] }}"
 
-    - name: Transfer TCP data and check the packet size
-      ansible.builtin.import_tasks: check-routing-mwan-transfer.yml
+- name: Check the home route on the upstream routers
+  ansible.builtin.include_tasks:
+    file: check-routing-mwan-home-route.yml
+  when: routing_check.scenario.sessions != []
 
-    - name: Check the gateway sessions and routes
-      ansible.builtin.import_tasks: check-routing-mwan-sessions.yml
-
-    - name: Send ordinary IPv4 packets after the IPv6 checks
-      ansible.builtin.import_tasks: check-routing-ordinary-ipv4.yml
-      vars:
-        routing_ordinary_phase: after
-  always:
-    - name: Remove the client stamp
-      ansible.builtin.import_tasks: check-routing-client-unstamp.yml
+- name: Send ordinary IPv4 packets through each underlay connection after the IPv6 checks
+  ansible.builtin.include_tasks:
+    file: check-routing-ordinary-ipv4.yml
+  vars:
+    routing_ordinary_phase: after
+  loop: "{{ routing_check.ipv4_connections }}"
+  loop_control:
+    loop_var: routing_ipv4_connection_id
+    label: "{{ routing_ipv4_connection_id }} dscp {{ testbed_routing_forced_dscp[routing_ipv4_connection_id] }}"

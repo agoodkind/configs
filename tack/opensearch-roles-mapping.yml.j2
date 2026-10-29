@@ -1,13 +1,24 @@
 ---
-# Ansible renders this file from tack/opensearch-roles-mapping.yml.j2. A
-# member reads it into the security index on its first start. After the file
-# changes, the deploy writes its entries into the security index of the
-# running member. It maps the Tack search user to the tack_search role and
-# maps no other user or backend role.
+# The maintenance identity also receives the required runtime operations.
 _meta:
   type: rolesmapping
   config_version: 2
-tack_search:
+tack_runtime:
   reserved: true
   users:
+    - {{ tack_search_runtime_username }}
+    - {{ tack_search_maintenance_username }}
+{% if tack_search_keep_legacy_user | bool %}
     - {{ tack_search_username }}
+{% endif %}
+tack_maintenance:
+  reserved: true
+  users:
+    - {{ tack_search_maintenance_username }}
+{% if tack_search_keep_legacy_user | bool %}
+    - {{ tack_search_username }}
+{% endif %}
+tack_health:
+  reserved: true
+  users:
+    - {{ tack_search_health_username }}

@@ -1,0 +1,11 @@
+[Unit]
+Description=MWAN failover DHCPv6 address client
+After=networking.service
+
+[Service]
+ExecStart=/sbin/dhclient -6 -d -pf /run/mwan-failover-dhcp6.pid -lf /var/lib/dhcp/mwan-failover-dhcp6.leases eth0
+ExecStop=/sbin/dhclient -6 -r -pf /run/mwan-failover-dhcp6.pid -lf /var/lib/dhcp/mwan-failover-dhcp6.leases eth0
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
