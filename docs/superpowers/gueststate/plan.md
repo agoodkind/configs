@@ -35,14 +35,14 @@
 
 Each workstream has one accountable role and its own task details:
 
-| Workstream | Owner | Plan | Existing issues |
+| Workstream | Owner | Plan | Workstream issue |
 | --- | --- | --- | --- |
-| Shared provider capabilities, guest enrollment, and controller dependencies | Generic provider maintainer | [Shared implementation](../plans/2026-10-29-shared-deployment-migration.md) | [LAB-89](https://tack.home.goodkind.io/browse/LAB-89), LAB-90 through LAB-93, LAB-95 |
-| Tack service resources and adoption | Tack provider maintainer | [Tack implementation](../plans/2026-10-29-tack-deployment-migration.md) | [TACK-567](https://tack.home.goodkind.io/browse/TACK-567), TACK-568 through TACK-570, TACK-572, TACK-573 |
-| MWAN service resources, hosts, OPNsense, and simulators | MWAN provider maintainer | [MWAN implementation](../plans/2026-10-29-mwan-deployment-migration.md) | [MWAN-585](https://tack.home.goodkind.io/browse/MWAN-585), MWAN-586 through MWAN-588, LAB-94 |
+| Shared provider capabilities, guest enrollment, and controller dependencies | Generic provider maintainer | [Shared implementation](../plans/2026-10-29-shared-deployment-migration.md) | [LAB-89](https://tack.home.goodkind.io/browse/LAB-89) |
+| Tack service resources and adoption | Tack provider maintainer | [Tack implementation](../plans/2026-10-29-tack-deployment-migration.md) | [TACK-567](https://tack.home.goodkind.io/browse/TACK-567) |
+| MWAN service resources, hosts, OPNsense, and simulators | MWAN provider maintainer | [MWAN implementation](../plans/2026-10-29-mwan-deployment-migration.md) | [MWAN-585](https://tack.home.goodkind.io/browse/MWAN-585) |
 | Ordered CI deployment | Deployment workflow maintainer | [Existing queued deployment plan](https://github.com/agoodkind/tofu-workflows/blob/6c5e5e807881cbf7275ed54fe3562a318b9da77d/docs/superpowers/plans/2026-10-22-queued-deployment.md) | [LAB-141](https://tack.home.goodkind.io/browse/LAB-141) |
 
-The deployment coordinator assigns an actual engineer to each role before starting that role's task. Reuse these issues; create a new issue only when the capability review establishes an independent gap. Do not reopen completed package or Docker transport work. Issue status changes require current implementation and acceptance evidence.
+The detailed plans map individual tasks to their existing issues. The deployment coordinator assigns an actual engineer to each role before starting that role's task. Reuse these issues; create a new issue only when the capability review establishes an independent gap. Do not reopen completed package or Docker transport work. Issue status changes require current implementation and acceptance evidence.
 
 ## Sequence reviewable changes
 

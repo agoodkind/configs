@@ -169,16 +169,11 @@ stay disabled until a separate user instruction.
 
 ### 11. Approaches
 
-The adopted approach combines existing general providers in Configs and extends
-them only for demonstrated gaps. Tack and MWAN providers implement their own
-application rules. This preserves shared package, file, service, container, and
-database behavior while allowing each service to migrate independently.
-
-A single custom service provider would duplicate general resources and require
-separate maintenance for the same operation. The reuse requirement excludes that
-approach. Wrapping an Ansible playbook in a command resource would retain Ansible
-and would not make each managed object's live state visible in a plan. The
-read and planning requirements exclude that approach too.
+The adopted composition uses a larger resource graph in exchange for shared
+lifecycle implementations. A monolithic service provider would require separate
+maintenance for general operations. An Ansible wrapper would preserve procedural
+execution without exposing each object's state. Section 12 defines the selected
+composition's requirements.
 
 ### 12. Tack and MWAN migration
 
@@ -195,12 +190,8 @@ select its provider. The service that first needs an operation does not
 determine its implementation owner. A shared configuration module combines
 resources without duplicating their implementation.
 
-Docker management must have a tested bootstrap and recovery path that does
-not require a connection to the guest's IP address or a working Docker
-network endpoint. Use the existing Proxmox guest API for prerequisite setup
-and repair. Verify the provider's actual configuration and refresh behavior
-before selecting its connection method. Reuse generic Docker resources and
-implement only a verified generic capability gap.
+AC16 defines Docker connection acceptance. Verify the provider's actual
+configuration and refresh behavior before selecting its connection method.
 
 The [approved Tack design](https://github.com/agoodkind/tack/blob/main/docs/superpowers/specs/2026-10-10-tack-provider.md)
 governs Tack deployment. Application-specific resources implement rules such
@@ -336,8 +327,10 @@ implementation. Local service migration does not wait for unrelated CI tasks.
 - AC16: Tack and MWAN reuse generic provider resources and the shared guest
   module. Applicable AC1 through AC8 pass. Every custom resource has the
   section 12 justification. A shared capability passes acceptance for each
-  consumer that requires it. Docker acceptance includes fresh-guest bootstrap
-  and repair when guest management networking is unavailable.
+  consumer that requires it. Docker acceptance proves fresh-guest bootstrap
+  before Docker exists and repair when guest management networking is
+  unavailable. Both use the existing Proxmox guest API for prerequisites and
+  repair without requiring a guest IP connection or Docker network endpoint.
 - AC17: Tack passes its approved deployment acceptance requirements on QA
   and production without invoking Ansible. Adoption preserves identities and
   data volumes. Planning does not change deployed state. Drift repair and
