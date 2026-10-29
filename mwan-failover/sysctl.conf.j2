@@ -1,8 +1,10 @@
 # Forwarding is enabled because this container can announce backup default routes.
 net.ipv6.conf.all.forwarding=1
 {% if mwan_failover_networkd_uplink %}
+# systemd-networkd processes router advertisements instead of the kernel.
 net.ipv6.conf.eth0.accept_ra=0
 {% else %}
+# Linux requires accept_ra=2 to accept router advertisements while forwarding.
 net.ipv6.conf.eth0.accept_ra=2
 {% endif %}
 net.ipv4.ip_forward=1
