@@ -211,8 +211,6 @@ tofu:
       module_hosts:
         module.vault: vault
     opentofu/vault/mwan:
-      guest_hosts:
-        vault/116: mwan-failover.home.goodkind.io
       module_hosts:
         module.vault: vault
       node_hosts:
