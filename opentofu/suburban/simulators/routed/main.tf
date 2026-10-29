@@ -64,6 +64,15 @@ module "base" {
   scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
 }
 
+module "ispsim" {
+  source = "../../../modules/suburban/simulators/ispsim"
+
+  node            = local.guests["isp_routed_suburban"].node
+  vmid            = local.guests["isp_routed_suburban"].vmid
+  repository_root = local.repository_root
+  name            = "routed"
+}
+
 module "suburban" {
   source = "../../../modules/suburban/simulators/routed"
 

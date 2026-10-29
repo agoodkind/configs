@@ -249,20 +249,6 @@
       notify: Note OPNsense VM args reboot required
       tags: ["args"]
 
-    # Kea installs default /etc/kea/*.conf files. A prior deploy may leave a
-    # rendered file at that path. --force-confold prevents an interactive prompt
-    # that would block unattended installation.
-    - name: Install packages on ISP LXCs
-      ansible.builtin.command:
-        cmd: >-
-          pct exec {{ item.id }} -- sh -c
-          'which nft >/dev/null 2>&1 ||
-          (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
-          -o Dpkg::Options::=--force-confold nftables)'
-      loop: "{{ testbed_isp_lxcs }}"
-      changed_when: false
-      tags: ["isp-lxcs"]
-
     - name: Read the ISP acceptance HTTP client version
       ansible.builtin.command:
         argv: [pct, exec, "{{ item.id }}", --, curl, --version]
@@ -444,30 +430,6 @@
                 rstrip=false) | hash('sha256'))
             fail_msg: "{{ item.item.provider }}: mapped endpoint status or body differs"
           loop: "{{ isp_mapping_responses.results }}"
-
-    - name: Install DHCPv6 and RA packages on ISP LXCs
-      ansible.builtin.command:
-        cmd: >-
-          pct exec {{ item.id }} -- sh -c
-          'which kea-dhcp6 >/dev/null 2>&1 ||
-          (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
-          -o Dpkg::Options::=--force-confold kea-dhcp6-server radvd)'
-      loop: "{{ testbed_isp_lxcs }}"
-      when: item.ipv6_enabled | bool
-      changed_when: false
-      tags: ["isp-lxcs"]
-
-    - name: Install kea-dhcp4 on dynamic-v4 ISP LXCs
-      ansible.builtin.command:
-        cmd: >-
-          pct exec {{ item.id }} -- sh -c
-          'which kea-dhcp4 >/dev/null 2>&1 ||
-          (apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
-          -o Dpkg::Options::=--force-confold kea-dhcp4-server)'
-      loop: "{{ testbed_isp_lxcs }}"
-      when: item.dynamic_v4 | bool
-      changed_when: false
-      tags: ["isp-lxcs"]
 
     - name: Render and push ISP LXC configs
       ansible.builtin.include_tasks:
