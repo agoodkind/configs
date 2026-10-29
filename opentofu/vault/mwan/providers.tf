@@ -5,14 +5,7 @@ provider "proxmox" {
 }
 
 provider "pveguest" {
-  nodes = {
-    vault = {
-      endpoint  = var.proxmox_endpoint
-      api_token = "${local.proxmox_token_principal}=${var.vault_proxmox_token_secret}"
-      insecure  = true
-      node_name = "vault"
-    }
-  }
+  nodes = local.nodes
 }
 
 terraform {

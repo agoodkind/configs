@@ -17,6 +17,7 @@ module "guest_inputs" {
   shared_vars     = local.shared_vars
   service_mapping = local.service_mapping
   proxy_vars      = module.contracts.proxy_vars
+  timezone        = "America/Los_Angeles"
 }
 
 module "github_keys" {
