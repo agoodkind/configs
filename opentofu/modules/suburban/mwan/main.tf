@@ -5,7 +5,11 @@ resource "proxmox_virtual_environment_container" "mwan_failover_suburban" {
 
   initialization {
     hostname = local.service_mapping.mwan_failover_suburban.hostname
-    ip_config {}
+    ip_config {
+      ipv4 {
+        address = "dhcp"
+      }
+    }
     ip_config {
       ipv4 {
         address = "${local.service_mapping.mwan_failover_suburban.ipv4_transit}/29"

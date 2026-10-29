@@ -43,13 +43,6 @@
   vars:
     repo_root: "{{ playbook_dir | dirname | dirname }}"
 
-  pre_tasks:
-    - name: Require a supported failover uplink mode
-      ansible.builtin.assert:
-        that:
-          - mwan_failover_uplink_mode in ['ifupdown', 'networkd']
-        fail_msg: "Set mwan_failover_uplink_mode to ifupdown or networkd."
-
   tasks:
     - name: Ensure /etc/mwan exists
       ansible.builtin.file:
@@ -122,8 +115,8 @@
         - Restart mwan-ifmgr
 
     - name: Deploy failover sysctl config
-      ansible.builtin.template:
-        src: "{{ repo_root }}/mwan-failover/sysctl.conf.j2"
+      ansible.builtin.copy:
+        src: "{{ repo_root }}/mwan-failover/sysctl.conf"
         dest: /etc/sysctl.d/99-mwan-failover.conf
         mode: "0644"
       notify:
@@ -137,25 +130,6 @@
         src: "{{ repo_root }}/mwan-failover/interfaces.j2"
         dest: /etc/network/interfaces
         mode: "0644"
-
-    - name: Configure the networkd uplink
-      when: mwan_failover_uplink_mode == 'networkd'
-      block:
-        - name: Deploy the uplink network
-          ansible.builtin.copy:
-            src: "{{ repo_root }}/mwan-failover/10-uplink.network"
-            dest: /etc/systemd/network/10-uplink.network
-            mode: "0644"
-
-        - name: Enable systemd-networkd
-          ansible.builtin.systemd:
-            name: systemd-networkd
-            enabled: true
-
-        - name: Disable systemd-networkd wait online
-          ansible.builtin.systemd:
-            name: systemd-networkd-wait-online
-            enabled: false
 
     - name: Deploy nftables ruleset
       ansible.builtin.copy:

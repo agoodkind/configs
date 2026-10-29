@@ -22,19 +22,6 @@
     - "{{ service_mapping.isp_astound_suburban.vmid }}"
     - "{{ service_mapping[testbed_routing_checks.downstream_client].vmid }}"
 
-- name: Install the ISP packet capture tool
-  ansible.builtin.include_tasks:
-    file: deploy-routing-simulator-packages.yml
-    apply:
-      tags: ["routing-simulators"]
-  vars:
-    rsim_package_vmid: "{{ item }}"
-    rsim_package_names: [tcpdump]
-  loop:
-    - "{{ service_mapping.isp_mbrains_suburban.vmid }}"
-    - "{{ service_mapping.isp_att_suburban.vmid }}"
-    - "{{ service_mapping.isp_webpass_suburban.vmid }}"
-
 - name: Configure each routing simulator guest
   ansible.builtin.include_tasks:
     file: deploy-routing-simulator-node.yml
