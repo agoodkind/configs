@@ -3,13 +3,23 @@ name: CI
 on:
   push:
     branches: ['**']
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_dispatch:
+    inputs:
+      workspace:
+        description: Exact workspace selector of the host artifact target, such as suburban/mwan
+        required: true
+        type: string
+      revision:
+        description: Full commit SHA to build, which must equal the commit of the dispatched main branch
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+env:
+  TOFU_VERSION: 1.13.2
+  TARGETS_MODULE: opentofu/modules/host-artifact-targets
 
 jobs:
   # The deploy command runs this same gate over a playbook's files and refuses
@@ -20,6 +30,12 @@ jobs:
   configs-lint:
     name: configs lint
     runs-on: ubuntu-latest
+    # The group includes the event name. A manual dispatch runs this job in a
+    # different group from a push to the same branch and does not cancel the lint
+    # job of that push.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v7
       # The configsctl script runs the tool with `go run`, so the job needs a
@@ -37,3 +53,184 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y python3-jinja2
       - name: Lint Ansible inputs
         run: ./configsctl lint
+
+  # On every push, the job runs select-targets.sh to select host artifact
+  # targets. On a branch other than main, selection compares the head with
+  # its merge base with main. On main, selection compares the head with
+  # the preceding main commit. The job builds only targets that depend on
+  # a changed path, without vault values. It runs the helper with a PATH
+  # containing only the uv environment and the OpenTofu directory. It
+  # compares each copied application file with the file at the verified
+  # application commit. The job fails a target when its build fails or
+  # when the push changes its pin file and its pinned manifest differs
+  # from the new build.
+  host-artifact-check:
+    name: host artifact check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - uses: astral-sh/setup-uv@v10.3.3
+      - name: Install the host artifact helper
+        run: uv sync --frozen --project hostartifact
+      - name: Check the host artifact helper
+        run: make -C hostartifact check
+      - name: Build and compare the selected host artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/hostartifact"
+          mkdir -p "$work"
+
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}"; then
+            pin_base="$(hostartifact/scripts/merge-base.sh pin "$GITHUB_WORKSPACE" origin/main "$GITHUB_SHA")"
+          else
+            pin_base="$BEFORE"
+          fi
+          echo "The pin check compares changes with commit $pin_base"
+
+          tofu -chdir="$TARGETS_MODULE" console -var "repository_root=$GITHUB_WORKSPACE" -var workspace= <<< 'jsonencode(local.workspaces)' > "$work/catalog.json"
+          jq --raw-output0 'fromjson | .[]' "$work/catalog.json" > "$work/workspaces.bin"
+          mapfile -d '' -t workspaces < "$work/workspaces.bin"
+          if [ "${#workspaces[@]}" -eq 0 ]; then
+            echo "::error::the repository does not contain any host artifact target descriptor"
+            exit 1
+          fi
+          PATH="$GITHUB_WORKSPACE/hostartifact/.venv/bin:$PATH" \
+            hostartifact/scripts/select-targets.sh "$GITHUB_WORKSPACE" "$GITHUB_REF" origin/main \
+            "$BEFORE" "$GITHUB_SHA" "$work/selection" "${workspaces[@]}" > "$work/affected.json"
+          jq --raw-output0 '.[]' "$work/affected.json" > "$work/affected.bin"
+          mapfile -d '' -t affected < "$work/affected.bin"
+          if [ "${#affected[@]}" -eq 0 ]; then
+            echo "This push does not change an input of any host artifact target."
+            exit 0
+          fi
+          echo "Host artifact targets with changed inputs: $(jq -c . "$work/affected.json")"
+          failed=()
+          index=0
+          for workspace in "${affected[@]}"; do
+            echo "::group::$workspace"
+            index=$((index + 1))
+            if ! hostartifact/scripts/check-target.sh "$GITHUB_WORKSPACE" "$workspace" "$work/target-$index" "$pin_base" "$GITHUB_SHA"; then
+              failed+=("$workspace")
+              echo "::error::the host artifact check failed for $workspace"
+            fi
+            echo "::endgroup::"
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            exit 1
+          fi
+
+  # This job runs only for a manual dispatch on main. It builds the selected
+  # workspace, attests the archive, publishes the archive and the attestation
+  # bundle as the only assets of a new release, and writes the pin JSON to the
+  # job summary.
+  host-artifact:
+    name: host artifact
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    concurrency:
+      group: host-artifact-${{ inputs.workspace }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      WORKSPACE: ${{ inputs.workspace }}
+      REVISION: ${{ inputs.revision }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require the requested revision
+        run: |
+          set -euo pipefail
+          if [ "$REVISION" != "$GITHUB_SHA" ]; then
+            echo "::error::the requested revision differs from the workflow commit: $REVISION $GITHUB_SHA"
+            exit 1
+          fi
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - uses: astral-sh/setup-uv@v10.3.3
+      - name: Install the host artifact helper
+        run: uv sync --frozen --project hostartifact
+      - name: Build the host artifact
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/hostartifact"
+          hostartifact/scripts/build-target.sh "$GITHUB_WORKSPACE" "$WORKSPACE" "$work" "$GITHUB_SHA"
+          {
+            echo "archive=$(jq -er .archive "$work/result.json")"
+            echo "asset=$(jq -er .asset "$work/result.json")"
+            echo "sha256=$(jq -er .sha256 "$work/result.json")"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/attest@v4.2.2
+        id: attest
+        with:
+          subject-path: ${{ steps.build.outputs.archive }}
+      - name: Publish the host artifact release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.build.outputs.archive }}
+          ASSET: ${{ steps.build.outputs.asset }}
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          bundle="$(dirname "$ARCHIVE")/$ASSET.sigstore.json"
+          cp "$BUNDLE_PATH" "$bundle"
+          identifier="${ASSET#hostconfig_}"
+          identifier="${identifier%.tar.gz}"
+          tag="hostconfig-$identifier-$(date -u +%Y%m%d%H%M)-$GITHUB_RUN_NUMBER-${GITHUB_SHA:0:7}"
+          gh release create "$tag" --target "$GITHUB_SHA" --latest=false "$ARCHIVE" "$bundle"
+          {
+            echo "tag=$tag"
+            echo "bundle_asset=$(basename "$bundle")"
+            echo "bundle_sha256=$(sha256sum "$bundle" | cut -d ' ' -f 1)"
+          } >> "$GITHUB_OUTPUT"
+      - name: Write the host artifact pin
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          ASSET: ${{ steps.build.outputs.asset }}
+          SHA256: ${{ steps.build.outputs.sha256 }}
+          BUNDLE_ASSET: ${{ steps.release.outputs.bundle_asset }}
+          BUNDLE_SHA256: ${{ steps.release.outputs.bundle_sha256 }}
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg release_tag "$RELEASE_TAG" \
+            --arg asset "$ASSET" \
+            --arg sha256 "$SHA256" \
+            --arg bundle_asset "$BUNDLE_ASSET" \
+            --arg bundle_sha256 "$BUNDLE_SHA256" \
+            --arg source_revision "$GITHUB_SHA" \
+            '{release_tag: $release_tag, asset: $asset, sha256: $sha256, bundle_asset: $bundle_asset, bundle_sha256: $bundle_sha256, source_revision: $source_revision}' > "$RUNNER_TEMP/pin.json"
+          {
+            echo '```json'
+            cat "$RUNNER_TEMP/pin.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
