@@ -17,21 +17,10 @@ from pydantic import JsonValue
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RENDER_ROOT = "opentofu/render/host-artifact"
-COPIED_PATHS = (
-    RENDER_ROOT,
-    "opentofu/modules/host-artifact-targets",
-    "ansible/inventory/group_vars",
-    "mwan/config",
-    "opnsense",
-    "proxmox/services",
-)
+PRODUCER_PATHS = (RENDER_ROOT, "opentofu/modules/host-artifact-targets")
 SUBURBAN = "suburban/mwan"
 VAULT = "vault/mwan"
 DESCRIPTOR_NAME = "host-artifact-target.json"
-COPIED_FILES = (
-    f"opentofu/{SUBURBAN}/{DESCRIPTOR_NAME}",
-    f"opentofu/{VAULT}/{DESCRIPTOR_NAME}",
-)
 IGNORED_COPIES = (".terraform", "*.tfplan", "*.tfstate")
 EXTRA_SELECTORS = (
     "suburban_mwan",
@@ -90,7 +79,57 @@ ZERO_COMMIT = "0" * 40
 MAIN_REF = "refs/heads/main"
 FEATURE_BRANCH = "feature"
 FEATURE_REF = "refs/heads/feature"
-VAULT_EMAIL_LINE = 'mwan_email_from: "mwan@goodkind.io"\n'
+VAULT_EMAIL_LINE = 'mwan_email_from: "mwan@example.invalid"\n'
+SERVICE_MAPPING_FILE = "ansible/inventory/group_vars/all/service_mapping.yml"
+SHARED_GROUP_FILE = "ansible/inventory/group_vars/all/vars.yml"
+WATCHDOG_TEMPLATE = "proxmox/services/mwan-watchdog.service.j2"
+FIXTURE_FILES = {
+    SERVICE_MAPPING_FILE: "service_mapping:\n  hypervisor:\n    vmid: 100\n",
+    SHARED_GROUP_FILE: (
+        'mwan_email_recipient: "alerts@example.invalid"\n'
+        "mwan_host_config_embeds_secrets: true\n"
+        'mwan_watchdog_description: "MWAN watchdog fixture"\n'
+    ),
+    SUBURBAN_GROUP_FILE: (
+        'mwan_proxmox_node: "hypervisor"\n'
+        'mwan_environment: "testbed"\n'
+        'mwan_email_from: "mwan-testbed@example.invalid"\n'
+    ),
+    VAULT_GROUP_FILE: (
+        f'mwan_proxmox_node: "vault"\nmwan_environment: "prod"\n{VAULT_EMAIL_LINE}'
+    ),
+    HOST_TEMPLATE: (
+        "{# fixture #}\n"
+        "[email]\n"
+        "{% if mwan_host_config_embeds_secrets %}\n"
+        'smtp2go_api_key = "{{ vault_smtp2go_api_key }}"\n'
+        "{% endif %}\n"
+        'alert_email = "{{ mwan_email_recipient }}"\n'
+        'from = "{{ mwan_email_from }}"\n'
+        "\n"
+        "[pve]\n"
+        'node = "{{ mwan_proxmox_node }}"\n'
+        "\n"
+        '{% include "_ifmgr_common.toml.j2" %}\n'
+    ),
+    INCLUDE_TEMPLATE: '[ifmgr]\nrole = "oob"\n',
+    OPNSENSE_TEMPLATE: (
+        "[email]\n"
+        "{% if mwan_host_config_embeds_secrets %}\n"
+        'smtp2go_api_key = "{{ vault_smtp2go_api_key }}"\n'
+        "{% endif %}\n"
+        'from = "{{ mwan_email_from }}"\n'
+    ),
+    WATCHDOG_TEMPLATE: (
+        "[Unit]\n"
+        "Description={{ mwan_watchdog_description }}\n"
+        "\n"
+        "[Service]\n"
+        "ExecStart=/usr/local/bin/mwan watchdog\n"
+    ),
+    OOB_DROP_IN: "[Service]\nEnvironment=MWAN_OOB=1\n",
+    SUBURBAN_DROP_IN: "[Service]\nEnvironment=MWAN_HOST_IPV6=1\n",
+}
 OPNSENSE_CONFIG = "/etc/opnsensectl/config.toml"
 OOB_DROP_IN_DESTINATION = "/etc/systemd/system/mwan-ifmgr.service.d/oob-dhcpv4.conf"
 UNNORMALIZED_TEMPLATE_TEXT = (
@@ -136,16 +175,94 @@ def as_text(value: JsonValue) -> str:
     return value
 
 
-def copy_repository(destination: Path) -> Path:
-    for relative in COPIED_PATHS:
+def fixture_file(destination: str, source: str, mode: str) -> JsonObject:
+    return {
+        "destination": destination,
+        "source": source,
+        "mode": mode,
+        "owner": "root",
+        "group": "root",
+    }
+
+
+def fixture_descriptor(
+    node: str, environment: str, host_group_file: str, extra_files: list[JsonValue]
+) -> JsonObject:
+    files: list[JsonValue] = [
+        fixture_file(MWAN_CONFIG, f"template:{HOST_TEMPLATE}", "0600"),
+        fixture_file(OPNSENSE_CONFIG, f"template:{OPNSENSE_TEMPLATE}", "0600"),
+        fixture_file(
+            "/etc/systemd/system/mwan-ifmgr.service",
+            "asset:agoodkind/mwan:gateway/internal/installspec/mwan-ifmgr.service",
+            "0644",
+        ),
+        fixture_file(
+            OOB_DROP_IN_DESTINATION, f"asset:{CONFIGS_REPOSITORY}:{OOB_DROP_IN}", "0644"
+        ),
+        fixture_file(
+            DRAIN_UNIT,
+            "asset:agoodkind/opnsensectl:cmd/opnsensectl/mwan-opnsense-drain.service",
+            "0644",
+        ),
+        *extra_files,
+    ]
+    directories: list[JsonValue] = [
+        {"path": "/etc/mwan", "mode": "0755", "owner": "root", "group": "root"},
+        {"path": "/etc/opnsensectl", "mode": "0755", "owner": "root", "group": "root"},
+    ]
+    group_vars: list[JsonValue] = [
+        SERVICE_MAPPING_FILE,
+        SHARED_GROUP_FILE,
+        host_group_file,
+    ]
+    return {
+        "node": node,
+        "environment": environment,
+        "group_vars": group_vars,
+        "directories": directories,
+        "files": files,
+        "secret_fields": [],
+    }
+
+
+def fixture_descriptors() -> dict[str, JsonObject]:
+    suburban_files: list[JsonValue] = [
+        fixture_file(WATCHDOG_UNIT, f"template:{WATCHDOG_TEMPLATE}", "0644"),
+        fixture_file(
+            "/etc/systemd/system/mwan-ifmgr.service.d/suburban-host-ipv6-policy.conf",
+            f"asset:{CONFIGS_REPOSITORY}:{SUBURBAN_DROP_IN}",
+            "0644",
+        ),
+    ]
+    vault_files: list[JsonValue] = [
+        fixture_file(
+            "/etc/systemd/system/mwan-watchdog.service",
+            f"template:{WATCHDOG_TEMPLATE}",
+            "0644",
+        )
+    ]
+    return {
+        SUBURBAN: fixture_descriptor(
+            "hypervisor", "testbed", SUBURBAN_GROUP_FILE, suburban_files
+        ),
+        VAULT: fixture_descriptor("vault", "prod", VAULT_GROUP_FILE, vault_files),
+    }
+
+
+def fixture_repository(destination: Path) -> Path:
+    for relative in PRODUCER_PATHS:
         shutil.copytree(
             REPOSITORY_ROOT / relative,
             destination / relative,
             ignore=shutil.ignore_patterns(*IGNORED_COPIES),
         )
-    for relative in COPIED_FILES:
+    for relative, text in FIXTURE_FILES.items():
         (destination / relative).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(REPOSITORY_ROOT / relative, destination / relative)
+        (destination / relative).write_text(text, encoding="utf-8")
+    for workspace, descriptor in fixture_descriptors().items():
+        path = descriptor_file(destination, workspace)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(descriptor, indent=2) + "\n", encoding="utf-8")
     return destination
 
 
@@ -367,7 +484,7 @@ def expected_content(repository: Path, source: str) -> bytes | None:
 
 @pytest.fixture(scope="module")
 def suburban_repository(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    return copy_repository(tmp_path_factory.mktemp("repository"))
+    return fixture_repository(tmp_path_factory.mktemp("repository"))
 
 
 @pytest.fixture(scope="module")
@@ -376,7 +493,7 @@ def suburban_projection(suburban_repository: Path) -> JsonObject:
 
 
 def test_build_succeeds_while_another_target_is_broken(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     (repository / VAULT_GROUP_FILE).unlink()
     descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
     projection = project(repository, SUBURBAN)
@@ -684,7 +801,7 @@ def test_build_rejects_each_invalid_input(
     mutation: Mutation,
     expected_text: str,
 ) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     projection = copy.deepcopy(suburban_projection)
     mutation(projection, repository)
 
@@ -698,7 +815,7 @@ def test_build_rejects_each_invalid_input(
 
 
 def test_nested_and_underscore_selectors_keep_their_identity(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     source_descriptor = descriptor_file(repository, SUBURBAN)
     for selector in EXTRA_SELECTORS:
         target_descriptor = descriptor_file(repository, selector)
@@ -765,7 +882,7 @@ def test_affected_selects_targets_by_dependency(
 
 
 def test_affected_ignores_a_broken_unrelated_target(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
 
     selected = run_affected(
@@ -800,7 +917,7 @@ def build_projection_of(directory: Path, repository: Path, workspace: str) -> st
 
 
 def test_deleted_template_selects_targets_and_fails_their_build(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     base_revision = commit_repository(repository)
     (repository / OPNSENSE_TEMPLATE).unlink()
     changed_file = git_changed_list(tmp_path, repository, base_revision)
@@ -816,7 +933,7 @@ def test_deleted_template_selects_targets_and_fails_their_build(tmp_path: Path) 
 
 
 def test_deleted_include_selects_targets_and_fails_their_build(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     base_revision = commit_repository(repository)
     (repository / INCLUDE_TEMPLATE).unlink()
     changed_file = git_changed_list(tmp_path, repository, base_revision)
@@ -833,7 +950,7 @@ def test_deleted_include_selects_targets_and_fails_their_build(tmp_path: Path) -
 def test_include_of_a_deleted_template_comes_from_the_base_revision(
     tmp_path: Path,
 ) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     base_revision = commit_repository(repository)
     (repository / HOST_TEMPLATE).unlink()
     changed_file = write_changed_list(tmp_path, [INCLUDE_TEMPLATE])
@@ -848,7 +965,7 @@ def test_include_of_a_deleted_template_comes_from_the_base_revision(
 
 
 def test_renamed_input_selects_only_its_target(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     base_revision = commit_repository(repository)
     run_git(repository, "mv", VAULT_GROUP_FILE, RENAMED_VAULT_GROUP_FILE)
     changed_file = git_changed_list(tmp_path, repository, base_revision)
@@ -864,7 +981,7 @@ def test_renamed_input_selects_only_its_target(tmp_path: Path) -> None:
 def test_deletion_selects_its_target_while_another_target_is_broken(
     tmp_path: Path,
 ) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
     base_revision = commit_repository(repository)
     (repository / SUBURBAN_DROP_IN).unlink()
@@ -879,7 +996,7 @@ def test_deletion_selects_its_target_while_another_target_is_broken(
 
 
 def test_unnormalized_group_file_fails_the_plan(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     replace_in_file(
         descriptor_file(repository, SUBURBAN),
         SUBURBAN_GROUP_FILE,
@@ -922,7 +1039,7 @@ def test_unnormalized_group_file_fails_the_plan(tmp_path: Path) -> None:
 def test_affected_compares_normalized_dependency_paths(
     tmp_path: Path, declared: str, unnormalized: str, changed: str, expected: list[str]
 ) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     replace_in_file(descriptor_file(repository, SUBURBAN), declared, unnormalized)
     base_revision = commit_repository(repository)
     path = repository / changed
@@ -938,7 +1055,7 @@ def test_affected_compares_normalized_dependency_paths(
 def test_branch_selection_keeps_a_failed_target_after_a_documentation_push(
     tmp_path: Path,
 ) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     commit_repository(repository)
     run_git(repository, "checkout", "--quiet", "-b", FEATURE_BRANCH)
     replace_in_file(repository / VAULT_GROUP_FILE, VAULT_EMAIL_LINE, "")
@@ -960,7 +1077,7 @@ def test_branch_selection_keeps_a_failed_target_after_a_documentation_push(
 
 
 def test_main_selection_compares_with_the_preceding_main_commit(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     first = commit_repository(repository)
     path = repository / SUBURBAN_DROP_IN
     path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
@@ -981,7 +1098,7 @@ def test_main_selection_compares_with_the_preceding_main_commit(tmp_path: Path) 
 
 
 def test_invalid_target_in_the_base_does_not_affect_another_build(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
+    repository = fixture_repository(tmp_path / "repository")
     descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
     commit_repository(repository)
     run_git(repository, "checkout", "--quiet", "-b", FEATURE_BRANCH)
