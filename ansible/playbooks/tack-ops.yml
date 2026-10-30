@@ -223,41 +223,6 @@
       check_mode: false
       when: tack_ops_command == 'ops verify strict-validation'
 
-    # ops search provision and ops search reindex read node types and
-    # property definitions through the metadata name index (TACK-542). The
-    # dry run of the backfill counts the records without an index entry and
-    # writes nothing. The guard that follows refuses both commands unless the
-    # dry run reports zero missing entries of both kinds. A Tack image without
-    # the backfill fails this read and stops the run.
-    - name: Read whether the metadata name index is complete
-      ansible.builtin.command:
-        cmd: >-
-          docker compose run --rm -e LOG_DISABLE_STDOUT=true app
-          ops backfill once-metadata-name-index --output json
-          {{ tack_ops_identity_flags }}
-        chdir: "{{ tack_install_dir }}"
-      register: tack_metadata_name_index_read
-      changed_when: false
-      check_mode: false
-      when: &tack_ops_index_build tack_ops_command in ['ops search provision', 'ops search reindex']
-
-    - name: Record whether search may build an index on this guest
-      ansible.builtin.set_fact:
-        tack_metadata_name_index_ready: >-
-          {{ counts.dry_run | bool
-             and counts.result.node_types.missing == 0
-             and counts.result.property_definitions.missing == 0 }}
-      # A dry run prints two operator lines before the JSON envelope, and the
-      # envelope spans several lines.
-      vars:
-        output: "{{ tack_metadata_name_index_read.stdout }}"
-        counts: "{{ (output[output.index('{'):] | from_json).result }}"
-      when: *tack_ops_index_build
-
-    - name: Refuse a search index build without a complete metadata name index
-      ansible.builtin.include_tasks: tasks/tack-search-metadata-name-index.yml
-      when: *tack_ops_index_build
-
     # The projection command override mounts the reviewed manifest for
     # ops backfill once-search-projections at
     # /etc/tack/search-projections.json. Only production has a reviewed
