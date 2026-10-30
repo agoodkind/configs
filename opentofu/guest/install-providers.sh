@@ -14,12 +14,25 @@ readonly SHA256_PATTERN='^[0-9a-f]{64}$'
 readonly PINNED_ARGUMENT_COUNT=3
 
 WORK_DIR=""
+RUN_STAGING_DIR=""
+CANDIDATE_PATH=""
 
 usage() {
     echo "usage: $0 [<pin_file> <mirror_dir> <archive_dir>]"
 }
 
+remove_candidate() {
+    if [[ -n "${CANDIDATE_PATH}" ]]; then
+        rm -f "${CANDIDATE_PATH}"
+        CANDIDATE_PATH=""
+    fi
+}
+
 cleanup() {
+    remove_candidate
+    if [[ -n "${RUN_STAGING_DIR}" ]]; then
+        rm -rf "${RUN_STAGING_DIR}"
+    fi
     if [[ -n "${WORK_DIR}" ]]; then
         rm -rf "${WORK_DIR}"
     fi
@@ -53,6 +66,64 @@ file_sha256() {
     local digest_line
     digest_line="$(shasum -a 256 "${path}")"
     printf '%s\n' "${digest_line%% *}"
+}
+
+# Create a hard link only when the target path does not exist.
+# Linux uses GNU ln -T to treat the target as a file, even if it is a directory.
+# Darwin uses /bin/ln to select BSD ln from the base system, not GNU ln from PATH.
+# BSD ln does not support -T, so install_provider rejects a directory target first.
+link_no_replace() {
+    local os="$1"
+    local candidate_path="$2"
+    local target_path="$3"
+    case "${os}" in
+        linux) ln -T "${candidate_path}" "${target_path}" ;;
+        darwin) /bin/ln "${candidate_path}" "${target_path}" ;;
+        *)
+            echo "Cannot create a provider link on the host operating system os=${os}" >&2
+            return 1
+            ;;
+    esac
+}
+
+# Linux checks /proc/<pid>, and Darwin runs /bin/ps -p <pid>.
+# Both checks detect processes owned by other users, while kill -0 can fail for them.
+process_is_running() {
+    local os="$1"
+    local pid="$2"
+    case "${os}" in
+        linux) [[ -d "/proc/${pid}" ]] ;;
+        darwin) /bin/ps -p "${pid}" > /dev/null ;;
+        *)
+            echo "Cannot check process status on the host operating system os=${os}" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Delete run.<pid>.* directories when the process has exited. Keep directories for
+# running processes and entries that do not match run.<digits>.*.
+# SIGKILL, an out-of-memory kill, or power loss can prevent EXIT trap cleanup.
+remove_stale_staging() {
+    local os="$1"
+    local staging_root="$2"
+    local run_dir run_name run_pid
+    for run_dir in "${staging_root}"/run.*; do
+        if [[ ! -d "${run_dir}" ]]; then
+            continue
+        fi
+        run_name="${run_dir##*/}"
+        run_pid="${run_name#run.}"
+        run_pid="${run_pid%%.*}"
+        if [[ ! "${run_pid}" =~ ^[0-9]+$ ]]; then
+            continue
+        fi
+        if process_is_running "${os}" "${run_pid}"; then
+            continue
+        fi
+        rm -rf "${run_dir}"
+        echo "Removed staging directory for an exited process run_dir=${run_dir} run_pid=${run_pid}"
+    done
 }
 
 install_provider() {
@@ -89,13 +160,52 @@ install_provider() {
 
     mkdir -p "${unpack_dir}" "${target_dir}"
     tar -xzf "${archive_path}" -C "${unpack_dir}" "${binary_name}"
-    install -m 0755 "${unpack_dir}/${binary_name}" "${target_path}"
+
+    if [[ -d "${target_path}" ]]; then
+        echo "Cannot publish the binary because the target path is a directory target_path=${target_path}" >&2
+        return 1
+    fi
+
+    # OpenTofu includes every file in a package directory in its lockfile checksum.
+    # Extra entries, including leftovers from older installers, cause checksum errors.
+    local package_entries
+    package_entries="$(find "${target_dir}" -mindepth 1 ! -path "${target_path}")"
+    if [[ -n "${package_entries}" ]]; then
+        echo "The package directory contains extra entries. Delete the listed entries and run the installer again target_dir=${target_dir}" >&2
+        echo "${package_entries}" >&2
+        return 1
+    fi
+
+    # OpenTofu links initialized roots to the mirror. Replacing an existing binary
+    # changes the executable those roots run and breaks their lockfile checksums.
+    # Copy the candidate into this run's staging directory. The hard link fails if
+    # the target already exists, preventing replacement.
+    CANDIDATE_PATH="$(mktemp "${RUN_STAGING_DIR}/${binary_name}_v${version}.XXXXXX")"
+    cp "${unpack_dir}/${binary_name}" "${CANDIDATE_PATH}"
+    chmod 0755 "${CANDIDATE_PATH}"
+
+    local install_action link_error
+    if link_error="$(link_no_replace "${platform%%_*}" "${CANDIDATE_PATH}" "${target_path}" 2>&1)"; then
+        install_action="installed"
+    elif [[ -e "${target_path}" ]]; then
+        if ! cmp -s "${CANDIDATE_PATH}" "${target_path}"; then
+            remove_candidate
+            echo "A different binary exists at the target. If providers.pin assigns a different release archive to an installed mirror version, give the release a new mirror version in providers.pin. If the target file is damaged or partial, delete it and run the installer again source_address=${source_address} version=${version} platform=${platform} tag=${tag} target_path=${target_path}" >&2
+            return 1
+        fi
+        install_action="reused"
+    else
+        remove_candidate
+        echo "The link command failed and the target file does not exist target_path=${target_path} link_error=${link_error}" >&2
+        return 1
+    fi
+    remove_candidate
 
     if [[ ! -x "${target_path}" ]] || ! cmp -s "${unpack_dir}/${binary_name}" "${target_path}"; then
         echo "Binary is not executable or mismatches archive member target_path=${target_path}" >&2
         return 1
     fi
-    echo "Script installed one provider source_address=${source_address} tag=${tag} target_path=${target_path}"
+    echo "Script ${install_action} one provider source_address=${source_address} tag=${tag} target_path=${target_path}"
 }
 
 main() {
@@ -117,6 +227,17 @@ main() {
     platform="$(host_platform)"
     WORK_DIR="$(mktemp -d)"
     trap cleanup EXIT
+
+    # Place the staging root beside the mirror in its parent directory. OpenTofu
+    # does not read it, so temporary files do not change package checksums.
+    local os="${platform%%_*}"
+    local mirror_parent mirror_name staging_root
+    mirror_parent="$(dirname "${mirror_dir}")"
+    mirror_name="$(basename "${mirror_dir}")"
+    staging_root="${mirror_parent}/.${mirror_name}.staging"
+    mkdir -p "${staging_root}"
+    remove_stale_staging "${os}" "${staging_root}"
+    RUN_STAGING_DIR="$(mktemp -d "${staging_root}/run.$$.XXXXXX")"
 
     local line_number=0
     local seen_sources=""

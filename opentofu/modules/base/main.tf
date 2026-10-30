@@ -2,7 +2,7 @@ terraform {
   required_providers {
     pveguest = {
       source  = "tofu.home.arpa/agoodkind/pveguest"
-      version = "0.1.1"
+      version = ">= 0.1.1"
     }
   }
 }
