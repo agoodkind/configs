@@ -27,6 +27,11 @@ COPIED_PATHS = (
 )
 IGNORED_COPIES = (".terraform", "*.tfplan", "*.tfstate")
 SUBURBAN = "suburban/mwan"
+NESTED_SELECTORS = (
+    "suburban/simulators-astound",
+    "suburban/simulators/astound",
+    "suburban-simulators/astound",
+)
 VAULT_GROUP_FILE = "ansible/inventory/group_vars/vault_servers.yml"
 OPNSENSE_TEMPLATE = "opnsense/config.toml.j2"
 SOURCE_REVISION = "0123456789abcdef0123456789abcdef01234567"
@@ -307,6 +312,33 @@ def test_build_rejects_invalid_projection(
     assert expected_text in built.stderr
     assert SYNTHETIC_SECRET not in built.stderr
     assert not (tmp_path / "output").exists()
+
+
+def test_nested_selectors_keep_their_identity(
+    tmp_path: Path, suburban_repository: Path, suburban_projection: JsonObject
+) -> None:
+    assets: dict[str, str] = {}
+    for index, selector in enumerate(NESTED_SELECTORS):
+        projection = copy.deepcopy(suburban_projection)
+        projection["workspace"] = selector
+        directory = tmp_path / str(index)
+        directory.mkdir()
+
+        built = run_build(directory, suburban_repository, projection)
+
+        assert built.returncode == 0, built.stderr
+        result = as_object(json.loads(built.stdout))
+        with tarfile.open(as_text(result["archive"]), mode="r:gz") as archive:
+            extracted = archive.extractfile(MANIFEST_MEMBER)
+            assert extracted is not None
+            manifest = as_object(json.loads(extracted.read()))
+        assert manifest["workspace"] == selector
+        assets[selector] = as_text(result["asset"])
+    assert assets == {
+        "suburban/simulators-astound": "hostconfig_suburban_simulators-astound.tar.gz",
+        "suburban/simulators/astound": "hostconfig_suburban_simulators_astound.tar.gz",
+        "suburban-simulators/astound": "hostconfig_suburban-simulators_astound.tar.gz",
+    }
 
 
 def test_build_rejects_rendered_secret_key(tmp_path: Path) -> None:
