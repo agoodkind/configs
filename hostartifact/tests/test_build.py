@@ -84,22 +84,62 @@ SERVICE_MAPPING_FILE = "ansible/inventory/group_vars/all/service_mapping.yml"
 SHARED_GROUP_FILE = "ansible/inventory/group_vars/all/vars.yml"
 WATCHDOG_TEMPLATE = "proxmox/services/mwan-watchdog.service.j2"
 FIXTURE_FILES = {
-    SERVICE_MAPPING_FILE: "service_mapping:\n  hypervisor:\n    vmid: 100\n",
+    SERVICE_MAPPING_FILE: (
+        "service_mapping:\n"
+        "  hypervisor:\n"
+        "    vmid: 100\n"
+        "  mwan:\n"
+        "    vmid: 113\n"
+        '    address: "3d06:bad:b01::113"\n'
+        "  testbed_mwan:\n"
+        "    vmid: 213\n"
+        '    address: "3d06:bad:b01:210::213"\n'
+    ),
     SHARED_GROUP_FILE: (
         'mwan_email_recipient: "alerts@example.invalid"\n'
         "mwan_host_config_embeds_secrets: true\n"
         'mwan_watchdog_description: "MWAN watchdog fixture"\n'
+        "mwan_watchdog_enabled: true\n"
+        'mwan_bgp_enabled: "no"\n'
+        'mwan_ra_solicit: "yes"\n'
+        'mwan_config_hostname: "mwan-{{ mwan_vmid }}"\n'
+        "mwan_ping_targets:\n"
+        '  - "2606:4700:4700::1111"\n'
+        '  - "2001:4860:4860::8888"\n'
+        "mwan_interfaces:\n"
+        '  - name: "vmbr0"\n'
+        "    accept_ra: 2\n"
+        '    autoconf: "yes"\n'
+        '  - name: "vmbr1"\n'
+        "    accept_ra: 0\n"
+        "    autoconf: false\n"
     ),
     SUBURBAN_GROUP_FILE: (
         'mwan_proxmox_node: "hypervisor"\n'
         'mwan_environment: "testbed"\n'
         'mwan_email_from: "mwan-testbed@example.invalid"\n'
+        'mwan_is_primary: "no"\n'
+        'mwan_vmid: "{{ service_mapping.testbed_mwan.vmid }}"\n'
+        'mwan_agent_addr: "[{{ service_mapping.testbed_mwan.address }}]:50052"\n'
     ),
     VAULT_GROUP_FILE: (
-        f'mwan_proxmox_node: "vault"\nmwan_environment: "prod"\n{VAULT_EMAIL_LINE}'
+        'mwan_proxmox_node: "vault"\n'
+        'mwan_environment: "prod"\n'
+        f"{VAULT_EMAIL_LINE}"
+        'mwan_is_primary: "yes"\n'
+        'mwan_vmid: "{{ service_mapping.mwan.vmid }}"\n'
+        'mwan_agent_addr: "[{{ service_mapping.mwan.address }}]:50052"\n'
     ),
     HOST_TEMPLATE: (
         "{# fixture #}\n"
+        "vmid = {{ mwan_vmid }}\n"
+        'hostname = "{{ mwan_config_hostname }}"\n'
+        'agent_addr = "{{ mwan_agent_addr }}"\n'
+        "role = \"{{ mwan_is_primary | bool | ternary('primary', 'standby') }}\"\n"
+        "watchdog_mode = \"{{ mwan_watchdog_enabled | bool | ternary('active', "
+        "'passive') }}\"\n"
+        "ping_targets = {{ mwan_ping_targets | to_json }}\n"
+        "\n"
         "[email]\n"
         "{% if mwan_host_config_embeds_secrets %}\n"
         'smtp2go_api_key = "{{ vault_smtp2go_api_key }}"\n'
@@ -110,9 +150,30 @@ FIXTURE_FILES = {
         "[pve]\n"
         'node = "{{ mwan_proxmox_node }}"\n'
         "\n"
+        "{% if mwan_watchdog_enabled %}\n"
+        "[watchdog]\n"
+        'service = "mwan-watchdog"\n'
+        "\n"
+        "{% endif %}\n"
+        "{% if mwan_bgp_enabled | bool %}\n"
+        "[bgp]\n"
+        "enabled = true\n"
+        "\n"
+        "{% endif %}\n"
         '{% include "_ifmgr_common.toml.j2" %}\n'
     ),
-    INCLUDE_TEMPLATE: '[ifmgr]\nrole = "oob"\n',
+    INCLUDE_TEMPLATE: (
+        "[ifmgr]\n"
+        'role = "oob"\n'
+        "ra_solicit = {{ mwan_ra_solicit | bool | to_json }}\n"
+        "{% for interface in mwan_interfaces %}\n"
+        "\n"
+        "[[ifmgr.interface]]\n"
+        'name = "{{ interface.name }}"\n'
+        "accept_ra = {{ interface.accept_ra }}\n"
+        "autoconf = {{ interface.autoconf | bool | to_json }}\n"
+        "{% endfor %}\n"
+    ),
     OPNSENSE_TEMPLATE: (
         "[email]\n"
         "{% if mwan_host_config_embeds_secrets %}\n"
@@ -130,6 +191,60 @@ FIXTURE_FILES = {
     OOB_DROP_IN: "[Service]\nEnvironment=MWAN_OOB=1\n",
     SUBURBAN_DROP_IN: "[Service]\nEnvironment=MWAN_HOST_IPV6=1\n",
 }
+EXPECTED_SUBURBAN_MWAN_CONFIG: JsonValue = {
+    "vmid": 213,
+    "hostname": "mwan-213",
+    "agent_addr": "[3d06:bad:b01:210::213]:50052",
+    "role": "standby",
+    "watchdog_mode": "active",
+    "ping_targets": ["2606:4700:4700::1111", "2001:4860:4860::8888"],
+    "email": {
+        "alert_email": "alerts@example.invalid",
+        "from": "mwan-testbed@example.invalid",
+    },
+    "pve": {"node": "hypervisor"},
+    "watchdog": {"service": "mwan-watchdog"},
+    "ifmgr": {
+        "role": "oob",
+        "ra_solicit": True,
+        "interface": [
+            {"name": "vmbr0", "accept_ra": 2, "autoconf": True},
+            {"name": "vmbr1", "accept_ra": 0, "autoconf": False},
+        ],
+    },
+}
+EXPECTED_SUBURBAN_MWAN_TEXT = (
+    "vmid = 213\n"
+    'hostname = "mwan-213"\n'
+    'agent_addr = "[3d06:bad:b01:210::213]:50052"\n'
+    'role = "standby"\n'
+    'watchdog_mode = "active"\n'
+    'ping_targets = ["2606:4700:4700::1111", "2001:4860:4860::8888"]\n'
+    "\n"
+    "[email]\n"
+    'alert_email = "alerts@example.invalid"\n'
+    'from = "mwan-testbed@example.invalid"\n'
+    "\n"
+    "[pve]\n"
+    'node = "hypervisor"\n'
+    "\n"
+    "[watchdog]\n"
+    'service = "mwan-watchdog"\n'
+    "\n"
+    "[ifmgr]\n"
+    'role = "oob"\n'
+    "ra_solicit = true\n"
+    "\n"
+    "[[ifmgr.interface]]\n"
+    'name = "vmbr0"\n'
+    "accept_ra = 2\n"
+    "autoconf = true\n"
+    "\n"
+    "[[ifmgr.interface]]\n"
+    'name = "vmbr1"\n'
+    "accept_ra = 0\n"
+    "autoconf = false\n"
+)
 OPNSENSE_CONFIG = "/etc/opnsensectl/config.toml"
 OOB_DROP_IN_DESTINATION = "/etc/systemd/system/mwan-ifmgr.service.d/oob-dhcpv4.conf"
 UNNORMALIZED_TEMPLATE_TEXT = (
@@ -560,10 +675,13 @@ def test_build_succeeds_while_another_target_is_broken(tmp_path: Path) -> None:
     mwan_config = tomllib.loads(contents["files/etc/mwan/config.toml"].decode())
     assert "smtp2go_api_key" not in mwan_config["email"]
     assert mwan_config["pve"] == {"node": "hypervisor"}
+    assert mwan_config == EXPECTED_SUBURBAN_MWAN_CONFIG
+    assert contents["files/etc/mwan/config.toml"].decode() == EXPECTED_SUBURBAN_MWAN_TEXT
     opnsense_config = tomllib.loads(
         contents["files/etc/opnsensectl/config.toml"].decode()
     )
     assert "smtp2go_api_key" not in opnsense_config["email"]
+    assert opnsense_config == {"email": {"from": "mwan-testbed@example.invalid"}}
 
 
 def test_unknown_workspace_fails_with_known_selectors(suburban_repository: Path) -> None:
