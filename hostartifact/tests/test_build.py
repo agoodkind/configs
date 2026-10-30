@@ -18,7 +18,6 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RENDER_ROOT = "opentofu/render/host-artifact"
 COPIED_PATHS = (
     RENDER_ROOT,
-    "opentofu/modules/contracts",
     "opentofu/modules/host-artifact-targets",
     "ansible/inventory/group_vars",
     "mwan/config",
@@ -57,6 +56,39 @@ MISSING_ASSET_SOURCE = f"asset:{CONFIGS_REPOSITORY}:proxmox/services/absent.serv
 OUTSIDE_LINK = "proxmox/services/outside-link.conf"
 RAW_TEMPLATE_SOURCE = f"asset:{CONFIGS_REPOSITORY}:mwan/config/config-host.toml.j2"
 UNRESOLVED_TEMPLATE_TEXT = "contains unresolved template markers: {{ {% {#\n"
+VAULT_REFERENCE_FILE = "proxmox/services/vault-reference.conf"
+VAULT_REFERENCE_TEXT = "contains vault references: vault_smtp2go_api_key\n"
+DELETED_TEMPLATE = "deleted.toml.j2"
+FIXTURE_DESCRIPTOR: JsonValue = {
+    "node": "hypervisor",
+    "environment": "testbed",
+    "group_vars": [],
+    "directories": [],
+    "files": [
+        {
+            "destination": "/etc/example.toml",
+            "source": f"template:{DELETED_TEMPLATE}",
+            "mode": "0644",
+            "owner": "root",
+            "group": "root",
+        }
+    ],
+    "secret_fields": [],
+}
+INCLUDE_TEMPLATE = "mwan/config/_ifmgr_common.toml.j2"
+HOST_TEMPLATE = "mwan/config/config-host.toml.j2"
+SUBURBAN_DROP_IN = "proxmox/services/mwan-ifmgr-suburban-host-ipv6-policy.conf"
+RENAMED_VAULT_GROUP_FILE = "ansible/inventory/group_vars/vault_hosts.yml"
+GIT_TEST_OPTIONS = (
+    "-c",
+    "user.name=hostartifact-test",
+    "-c",
+    "user.email=hostartifact-test@example.invalid",
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    "core.hooksPath=/dev/null",
+)
 
 type JsonObject = dict[str, JsonValue]
 type Mutation = Callable[[JsonObject, Path], None]
@@ -99,11 +131,18 @@ def target_asset(workspace: str) -> str:
     return f"hostconfig_{identifier}.tar.gz"
 
 
-def run_affected(
-    directory: Path, repository: Path, changed: list[str]
-) -> subprocess.CompletedProcess[str]:
+def write_changed_list(directory: Path, changed: list[str]) -> Path:
     changed_file = directory / "changed.bin"
-    changed_file.write_text("\0".join(changed), encoding="utf-8")
+    changed_file.write_bytes(b"".join(f"{path}\0".encode() for path in changed))
+    return changed_file
+
+
+def run_affected_command(
+    repository: Path,
+    changed_file: Path,
+    workspaces: tuple[str, ...] = (SUBURBAN, VAULT),
+    base_revision: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
         "-m",
@@ -113,12 +152,59 @@ def run_affected(
         str(repository),
         "--changed-files",
         str(changed_file),
-        "--workspace",
-        SUBURBAN,
-        "--workspace",
-        VAULT,
     ]
+    for workspace in workspaces:
+        command.extend(["--workspace", workspace])
+    if base_revision is not None:
+        command.extend(["--base-revision", base_revision])
     return subprocess.run(command, capture_output=True, text=True, check=False)
+
+
+def run_affected(
+    directory: Path, repository: Path, changed: list[str]
+) -> subprocess.CompletedProcess[str]:
+    return run_affected_command(repository, write_changed_list(directory, changed))
+
+
+def run_git(repository: Path, *arguments: str) -> str:
+    command = ["git", *GIT_TEST_OPTIONS, "-C", str(repository), *arguments]
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr
+    return completed.stdout
+
+
+def commit_repository(repository: Path) -> str:
+    run_git(repository, "init", "--quiet")
+    run_git(repository, "add", "--all")
+    run_git(repository, "commit", "--quiet", "--message", "base")
+    return run_git(repository, "rev-parse", "HEAD").strip()
+
+
+def git_changed_list(directory: Path, repository: Path, base_revision: str) -> Path:
+    run_git(repository, "add", "--all")
+    command = [
+        "git",
+        *GIT_TEST_OPTIONS,
+        "-C",
+        str(repository),
+        "diff",
+        "--cached",
+        "-z",
+        "--name-only",
+        "--no-renames",
+        base_revision,
+    ]
+    completed = subprocess.run(command, capture_output=True, check=False)
+    assert completed.returncode == 0, completed.stderr
+    changed_file = directory / "changed.bin"
+    changed_file.write_bytes(completed.stdout)
+    return changed_file
+
+
+def affected_output(selected: subprocess.CompletedProcess[str]) -> JsonValue:
+    assert selected.returncode == 0, selected.stderr
+    output: JsonValue = json.loads(selected.stdout)
+    return output
 
 
 def run_tofu(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -388,6 +474,15 @@ def copy_template_into_config_file(projection: JsonObject, repository: Path) -> 
     file_entry(projection, MWAN_CONFIG)["source"] = RAW_TEMPLATE_SOURCE
 
 
+def copy_vault_reference(projection: JsonObject, repository: Path) -> None:
+    (repository / VAULT_REFERENCE_FILE).write_text(
+        "[Service]\nEnvironment=SMTP2GO_API_KEY=vault_smtp2go_api_key\n", encoding="utf-8"
+    )
+    file_entry(projection, DRAIN_UNIT)["source"] = (
+        f"asset:{CONFIGS_REPOSITORY}:{VAULT_REFERENCE_FILE}"
+    )
+
+
 def render_invalid_toml(projection: JsonObject, repository: Path) -> None:
     del projection
     append_to_template(repository, OPNSENSE_TEMPLATE, "\nthis line = = invalid\n")
@@ -478,6 +573,11 @@ def render_secret_key(projection: JsonObject, repository: Path) -> None:
             id="unresolved-config-file",
         ),
         pytest.param(
+            copy_vault_reference,
+            f"hostartifact: {DRAIN_UNIT} {VAULT_REFERENCE_TEXT}",
+            id="vault-reference-service-file",
+        ),
+        pytest.param(
             render_invalid_toml,
             "hostartifact: /etc/opnsensectl/config.toml is not valid TOML: ",
             id="invalid-toml",
@@ -556,6 +656,14 @@ def test_nested_and_underscore_selectors_keep_their_identity(tmp_path: Path) -> 
         pytest.param(
             ["hostartifact/src/hostartifact/pack.py"], [SUBURBAN, VAULT], id="helper"
         ),
+        pytest.param(
+            ["ansible/inventory/group_vars/all/service_mapping.yml"],
+            [SUBURBAN, VAULT],
+            id="service-mapping",
+        ),
+        pytest.param(
+            ["ansible/inventory/group_vars/proxy_servers.yml"], [], id="unread-group-file"
+        ),
         pytest.param(["docs/README.md"], [], id="unrelated"),
     ],
 )
@@ -579,3 +687,104 @@ def test_affected_ignores_a_broken_unrelated_target(tmp_path: Path) -> None:
     assert selected.returncode == 0, selected.stderr
     assert json.loads(selected.stdout) == [SUBURBAN]
     assert VAULT in selected.stderr
+
+
+def test_affected_selects_the_saved_deleted_template_case(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    descriptor = descriptor_file(repository, SUBURBAN)
+    descriptor.parent.mkdir(parents=True)
+    descriptor.write_text(json.dumps(FIXTURE_DESCRIPTOR), encoding="utf-8")
+
+    selected = run_affected_command(
+        repository,
+        write_changed_list(tmp_path, [DELETED_TEMPLATE]),
+        workspaces=(SUBURBAN,),
+    )
+
+    assert affected_output(selected) == [SUBURBAN]
+
+
+def build_projection_of(directory: Path, repository: Path, workspace: str) -> str:
+    projection = project(repository, workspace)
+    built = run_build(directory, repository, projection)
+    assert built.returncode == 1, built.stdout
+    return built.stderr
+
+
+def test_deleted_template_selects_targets_and_fails_their_build(tmp_path: Path) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    base_revision = commit_repository(repository)
+    (repository / OPNSENSE_TEMPLATE).unlink()
+    changed_file = git_changed_list(tmp_path, repository, base_revision)
+
+    selected = run_affected_command(repository, changed_file, base_revision=base_revision)
+
+    assert changed_file.read_bytes() == f"{OPNSENSE_TEMPLATE}\0".encode()
+    assert affected_output(selected) == [SUBURBAN, VAULT]
+    assert (
+        f"hostartifact: {OPNSENSE_TEMPLATE} is not a regular file in the "
+        "agoodkind/configs checkout at "
+    ) in build_projection_of(tmp_path, repository, SUBURBAN)
+
+
+def test_deleted_include_selects_targets_and_fails_their_build(tmp_path: Path) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    base_revision = commit_repository(repository)
+    (repository / INCLUDE_TEMPLATE).unlink()
+    changed_file = git_changed_list(tmp_path, repository, base_revision)
+
+    selected = run_affected_command(repository, changed_file, base_revision=base_revision)
+
+    assert affected_output(selected) == [SUBURBAN, VAULT]
+    assert (
+        f"{HOST_TEMPLATE}: rendering failed: '_ifmgr_common.toml.j2' not found in "
+        "search path" in build_projection_of(tmp_path, repository, SUBURBAN)
+    )
+
+
+def test_include_of_a_deleted_template_comes_from_the_base_revision(
+    tmp_path: Path,
+) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    base_revision = commit_repository(repository)
+    (repository / HOST_TEMPLATE).unlink()
+    changed_file = write_changed_list(tmp_path, [INCLUDE_TEMPLATE])
+
+    with_base = run_affected_command(
+        repository, changed_file, base_revision=base_revision
+    )
+    without_base = run_affected_command(repository, changed_file)
+
+    assert affected_output(with_base) == [SUBURBAN, VAULT]
+    assert affected_output(without_base) == []
+
+
+def test_renamed_input_selects_only_its_target(tmp_path: Path) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    base_revision = commit_repository(repository)
+    run_git(repository, "mv", VAULT_GROUP_FILE, RENAMED_VAULT_GROUP_FILE)
+    changed_file = git_changed_list(tmp_path, repository, base_revision)
+
+    selected = run_affected_command(repository, changed_file, base_revision=base_revision)
+    planned = plan_projection(repository, VAULT)
+
+    assert affected_output(selected) == [VAULT]
+    assert planned.returncode != 0
+    assert "vault_servers.yml" in planned.stderr
+
+
+def test_deletion_selects_its_target_while_another_target_is_broken(
+    tmp_path: Path,
+) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
+    base_revision = commit_repository(repository)
+    (repository / SUBURBAN_DROP_IN).unlink()
+    changed_file = git_changed_list(tmp_path, repository, base_revision)
+
+    selected = run_affected_command(repository, changed_file, base_revision=base_revision)
+
+    assert affected_output(selected) == [SUBURBAN]
+    assert (
+        f"hostartifact: {VAULT}: cannot read the target dependencies" in selected.stderr
+    )

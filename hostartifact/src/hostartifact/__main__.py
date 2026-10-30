@@ -26,6 +26,7 @@ class Arguments(argparse.Namespace):
     output_dir: Path
     changed_files: Path
     workspace: list[str]
+    base_revision: str | None
 
 
 def parse_arguments(arguments: list[str]) -> Arguments:
@@ -41,6 +42,7 @@ def parse_arguments(arguments: list[str]) -> Arguments:
     affected.add_argument("--repository-root", type=Path, required=True)
     affected.add_argument("--changed-files", type=Path, required=True)
     affected.add_argument("--workspace", action="append", default=[])
+    affected.add_argument("--base-revision")
     return parser.parse_args(arguments, namespace=Arguments())
 
 
@@ -83,6 +85,7 @@ def run_affected(parsed: Arguments) -> str:
         repository_root=parsed.repository_root,
         workspaces=parsed.workspace,
         changed=read_changed_paths(parsed.changed_files),
+        base_revision=parsed.base_revision,
     )
     for warning in result.warnings:
         print(f"{PROGRAM_NAME}: {warning}", file=sys.stderr)

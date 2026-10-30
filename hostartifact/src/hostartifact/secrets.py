@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import tomllib
 from collections.abc import Mapping
 from datetime import date, datetime, time
@@ -13,6 +14,7 @@ EMBEDS_SECRETS_VARIABLE = "mwan_host_config_embeds_secrets"
 FORBIDDEN_KEYS = frozenset({"smtp2go_api_key", "token_secret", "token_id"})
 TOML_SUFFIX = ".toml"
 TEMPLATE_MARKERS = ("{{", "{%", "{#")
+VAULT_REFERENCE_PATTERN = re.compile(r"\bvault_[A-Za-z0-9_]+")
 
 type TomlValue = (
     str | int | float | bool | datetime | date | time | list[TomlValue] | TomlTable
@@ -57,6 +59,11 @@ def check_rendered_file(destination: str, content: bytes) -> None:
     if markers:
         raise BuildError(
             f"{destination} contains unresolved template markers: {' '.join(markers)}"
+        )
+    references = sorted(set(VAULT_REFERENCE_PATTERN.findall(text)))
+    if references:
+        raise BuildError(
+            f"{destination} contains vault references: {', '.join(references)}"
         )
     if not destination.endswith(TOML_SUFFIX):
         return

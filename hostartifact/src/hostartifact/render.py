@@ -168,15 +168,6 @@ def template_variables(environment: Environment, name: str) -> set[str]:
     return names
 
 
-def template_files(template_file: Path) -> list[Path]:
-    environment = new_environment(template_file.parent)
-    try:
-        loaded = load_template_tree(environment, template_file.name)
-    except TemplateError as error:
-        raise BuildError(f"{template_file}: cannot load template: {error}") from error
-    return [path for path, _ in loaded]
-
-
 def render_template(template_file: Path, resolver: VariableResolver) -> bytes:
     environment = new_environment(template_file.parent)
     try:

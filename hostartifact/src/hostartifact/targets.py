@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+import posixpath
+import shutil
+import subprocess
 from pathlib import Path
 
+from jinja2 import TemplateSyntaxError, meta
 from pydantic import ValidationError
 
+from hostartifact.manifest import check_revision
 from hostartifact.projection import (
     REPOSITORY,
     AssetSource,
@@ -14,25 +18,21 @@ from hostartifact.projection import (
     FileEntry,
     StrictModel,
     check_selector,
-    contained_file,
     parse_source,
 )
-from hostartifact.render import template_files
+from hostartifact.render import new_environment
 
 WORKSPACES_DIRECTORY = "opentofu"
 DESCRIPTOR_NAME = "host-artifact-target.json"
 PIN_NAME = "host-artifact.auto.tfvars.json"
 DIRECTORY_SUFFIX = "/"
-# A change to any of these paths selects every target. The list contains the
-# workflow, the helper, the render root, the target module, the contracts
-# module, and the three group variable files that the contracts module reads.
+GIT_PROGRAM = "git"
+# A change to any of these paths selects every target. The list contains
+# the workflow, the helper, the target module, and the render root.
+# Each descriptor lists every group variable file of its target.
 PRODUCER_PATHS = (
     ".github/workflows/ci.yml",
-    "ansible/inventory/group_vars/all/service_mapping.yml",
-    "ansible/inventory/group_vars/all/vars.yml",
-    "ansible/inventory/group_vars/proxy_servers.yml",
     "hostartifact/",
-    "opentofu/modules/contracts/",
     "opentofu/modules/host-artifact-targets/",
     "opentofu/render/host-artifact/",
 )
@@ -82,12 +82,75 @@ def load_descriptor(repository_root: Path, workspace: str) -> TargetDescriptor:
         raise BuildError(f"target descriptor {path} is not valid: {error}") from error
 
 
-def relative_paths(repository_root: Path, files: Iterable[Path]) -> set[str]:
-    resolved_root = repository_root.resolve()
-    return {file.resolve().relative_to(resolved_root).as_posix() for file in files}
+class SourceReader:
+    def __init__(self, repository_root: Path, base_revision: str | None) -> None:
+        self._repository_root = repository_root
+        self._base_revision = base_revision
+        self._git: str | None = None
+        if base_revision is not None:
+            check_revision(base_revision)
+            self._git = shutil.which(GIT_PROGRAM)
+            if self._git is None:
+                raise BuildError(
+                    f"--base-revision requires the {GIT_PROGRAM} program on PATH"
+                )
+
+    def read(self, relative_path: str) -> str | None:
+        path = self._repository_root / relative_path
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+        if self._base_revision is None or self._git is None:
+            return None
+        command = [
+            self._git,
+            "-C",
+            str(self._repository_root),
+            "show",
+            f"{self._base_revision}:{relative_path}",
+        ]
+        shown = subprocess.run(command, capture_output=True, check=False)
+        if shown.returncode != 0:
+            return None
+        return shown.stdout.decode("utf-8")
 
 
-def target_dependencies(repository_root: Path, workspace: str) -> set[str]:
+def template_dependencies(
+    reader: SourceReader, template_path: str, warnings: list[str]
+) -> set[str]:
+    environment = new_environment(None)
+    found: set[str] = set()
+    pending = [template_path]
+    while pending:
+        current = pending.pop()
+        if current in found:
+            continue
+        found.add(current)
+        source = reader.read(current)
+        if source is None:
+            continue
+        try:
+            tree = environment.parse(source)
+        except TemplateSyntaxError as error:
+            warnings.append(
+                f"cannot parse template {current} to find its includes: {error}"
+            )
+            continue
+        for included in meta.find_referenced_templates(tree):
+            if included is None:
+                warnings.append(
+                    f"template {current} includes a template by a computed name that "
+                    "the command cannot follow"
+                )
+                continue
+            pending.append(
+                posixpath.normpath(posixpath.join(posixpath.dirname(current), included))
+            )
+    return found
+
+
+def target_dependencies(
+    repository_root: Path, workspace: str, reader: SourceReader, warnings: list[str]
+) -> set[str]:
     descriptor = load_descriptor(repository_root, workspace)
     dependencies = {descriptor_path(workspace), pin_path(workspace)}
     dependencies.update(descriptor.group_vars)
@@ -97,10 +160,7 @@ def target_dependencies(repository_root: Path, workspace: str) -> set[str]:
             if source.repository == REPOSITORY:
                 dependencies.add(source.path)
             continue
-        template_file = contained_file(repository_root, source.path, REPOSITORY)
-        dependencies.update(
-            relative_paths(repository_root, template_files(template_file))
-        )
+        dependencies.update(template_dependencies(reader, source.path, warnings))
     return dependencies
 
 
@@ -114,17 +174,23 @@ def producer_changed(changed: set[str]) -> bool:
 
 
 def affected_targets(
-    repository_root: Path, workspaces: list[str], changed: set[str]
+    repository_root: Path,
+    workspaces: list[str],
+    changed: set[str],
+    base_revision: str | None,
 ) -> AffectedTargets:
     for workspace in workspaces:
         check_selector(workspace)
+    reader = SourceReader(repository_root, base_revision)
     if producer_changed(changed):
         return AffectedTargets(workspaces=sorted(workspaces), warnings=[])
     affected: list[str] = []
     warnings: list[str] = []
     for workspace in sorted(workspaces):
         try:
-            dependencies = target_dependencies(repository_root, workspace)
+            dependencies = target_dependencies(
+                repository_root, workspace, reader, warnings
+            )
         except BuildError as error:
             warnings.append(
                 f"{workspace}: cannot read the target dependencies: {error}; the "
