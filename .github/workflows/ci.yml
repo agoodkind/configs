@@ -328,7 +328,8 @@ jobs:
           set -euo pipefail
           bundle="$(dirname "$ARCHIVE")/$ASSET.sigstore.json"
           cp "$BUNDLE_PATH" "$bundle"
-          slug="${WORKSPACE//\//_}"
+          slug="${ASSET#hostconfig_}"
+          slug="${slug%.tar.gz}"
           tag="hostconfig-$slug-$(date -u +%Y%m%d%H%M)-$GITHUB_RUN_NUMBER-${GITHUB_SHA:0:7}"
           gh release create "$tag" --target "$GITHUB_SHA" --latest=false "$ARCHIVE" "$bundle"
           {
