@@ -22,7 +22,7 @@ selection_base() {
   local before="$4"
   local head="$5"
   if [ "$ref" != "$MAIN_BRANCH_REF" ]; then
-    git -C "$repository_root" merge-base "$main_ref" "$head"
+    "$(dirname "${BASH_SOURCE[0]}")/merge-base.sh" selection "$repository_root" "$main_ref" "$head"
     return
   fi
   if [ "$before" != "$ZERO_COMMIT" ] && git -C "$repository_root" cat-file -e "$before^{commit}"; then

@@ -108,6 +108,12 @@ the parent of the head. The script writes a NUL-terminated list of changed paths
 base to the head. It runs `python -m hostartifact affected` with `--base-revision` set
 to the base and prints the JSON array of selected workspaces on stdout.
 
+`scripts/merge-base.sh <base name> <repository root> <main ref> <head commit>` prints
+`git merge-base <main ref> <head>` on stdout. When `git merge-base` fails, the script
+prints an error on stderr with the base name, main ref, head commit, and git exit code.
+The script exits with the git exit code. `select-targets.sh` uses the base name
+`selection`, and the CI check job uses `pin`.
+
 The CI check job selects targets with `select-targets.sh` using `origin/main` as the
 main ref. The pin check uses the before commit of the push when that commit exists.
 Otherwise, the pin check uses the merge base with `origin/main`.

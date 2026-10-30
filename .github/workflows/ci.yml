@@ -97,7 +97,7 @@ jobs:
           mkdir -p "$work"
 
           if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}"; then
-            pin_base="$(git merge-base origin/main "$GITHUB_SHA")"
+            pin_base="$(hostartifact/scripts/merge-base.sh pin "$GITHUB_WORKSPACE" origin/main "$GITHUB_SHA")"
           else
             pin_base="$BEFORE"
           fi

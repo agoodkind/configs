@@ -84,6 +84,8 @@ SUBURBAN_GROUP_FILE = "ansible/inventory/group_vars/suburban_servers.yml"
 OOB_DROP_IN = "proxmox/services/mwan-ifmgr-oob-dhcpv4.conf"
 SELECT_SCRIPT = REPOSITORY_ROOT / "hostartifact/scripts/select-targets.sh"
 MAIN_BRANCH = "main"
+ORIGIN_MAIN = "origin/main"
+SHALLOW_FILE = "notes.txt"
 ZERO_COMMIT = "0" * 40
 MAIN_REF = "refs/heads/main"
 FEATURE_BRANCH = "feature"
@@ -210,14 +212,19 @@ def commit_repository(repository: Path) -> str:
 
 
 def run_select(
-    repository: Path, ref: str, before: str, head: str, work: Path
+    repository: Path,
+    ref: str,
+    before: str,
+    head: str,
+    work: Path,
+    main_ref: str = MAIN_BRANCH,
 ) -> subprocess.CompletedProcess[str]:
     search_path = f"{Path(sys.executable).parent}{os.pathsep}{os.environ['PATH']}"
     command = [
         str(SELECT_SCRIPT),
         str(repository),
         ref,
-        MAIN_BRANCH,
+        main_ref,
         before,
         head,
         str(work),
@@ -991,3 +998,46 @@ def test_invalid_target_in_the_base_does_not_affect_another_build(tmp_path: Path
         f"hostartifact: {VAULT}: cannot read the target dependencies" in selected.stderr
     )
     assert built.returncode == 0, built.stderr
+
+
+def test_selection_in_a_shallow_clone_reports_the_missing_merge_base(
+    tmp_path: Path,
+) -> None:
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    (origin / SHALLOW_FILE).write_text("base\n", encoding="utf-8")
+    commit_repository(origin)
+    run_git(origin, "checkout", "--quiet", "-b", FEATURE_BRANCH)
+    (origin / SHALLOW_FILE).write_text("feature\n", encoding="utf-8")
+    feature_head = commit_all(origin, "feature change")
+    run_git(origin, "checkout", "--quiet", MAIN_BRANCH)
+    (origin / SHALLOW_FILE).write_text("main\n", encoding="utf-8")
+    commit_all(origin, "main change")
+    clone = tmp_path / "clone"
+    run_git(
+        tmp_path,
+        "clone",
+        "--quiet",
+        "--depth",
+        "1",
+        "--no-single-branch",
+        origin.as_uri(),
+        str(clone),
+    )
+
+    selected = run_select(
+        clone,
+        FEATURE_REF,
+        feature_head,
+        feature_head,
+        tmp_path / "selection",
+        main_ref=ORIGIN_MAIN,
+    )
+
+    assert run_git(clone, "rev-parse", "--is-shallow-repository").strip() == "true"
+    assert selected.returncode == 1
+    assert selected.stdout == ""
+    assert (
+        "::error::cannot compute the selection base: git merge-base "
+        f"{ORIGIN_MAIN} {feature_head} failed with exit_code=1\n"
+    ) in selected.stderr
