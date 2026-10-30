@@ -1,0 +1,87 @@
+{
+  "node": "hypervisor",
+  "environment_group_vars": "ansible/inventory/group_vars/suburban_servers.yml",
+  "group_vars": [
+    "ansible/inventory/group_vars/all/vars.yml",
+    "ansible/inventory/group_vars/mwan_testbed_all.yml",
+    "ansible/inventory/group_vars/proxmox_servers.yml",
+    "ansible/inventory/group_vars/suburban_servers.yml"
+  ],
+  "directories": [
+    { "path": "/etc/mwan", "mode": "0755", "owner": "root", "group": "root" },
+    { "path": "/etc/opnsensectl", "mode": "0755", "owner": "root", "group": "root" },
+    { "path": "/etc/systemd/system/mwan-ifmgr.service.d", "mode": "0755", "owner": "root", "group": "root" },
+    { "path": "/var/lib/mwan", "mode": "0750", "owner": "root", "group": "root" }
+  ],
+  "files": [
+    {
+      "destination": "/etc/mwan/config.toml",
+      "source": "template:mwan/config/config-host.toml.j2",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "destination": "/etc/opnsensectl/config.toml",
+      "source": "template:opnsense/config.toml.j2",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "destination": "/etc/systemd/system/mwan-ifmgr.service",
+      "source": "asset:agoodkind/mwan:gateway/internal/installspec/mwan-ifmgr.service",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "destination": "/etc/systemd/system/mwan-ifmgr.service.d/oob-dhcpv4.conf",
+      "source": "asset:agoodkind/configs:proxmox/services/mwan-ifmgr-oob-dhcpv4.conf",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "destination": "/etc/systemd/system/mwan-opnsense-host.service",
+      "source": "asset:agoodkind/opnsensectl:cmd/opnsensectl/mwan-opnsense-host.service",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "destination": "/etc/systemd/system/mwan-opnsense-drain.service",
+      "source": "asset:agoodkind/opnsensectl:cmd/opnsensectl/mwan-opnsense-drain.service",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "destination": "/etc/systemd/system/mwan-watchdog-testbed.service",
+      "source": "template:proxmox/services/mwan-watchdog.service.j2",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "destination": "/etc/systemd/system/mwan-ifmgr.service.d/suburban-host-ipv6-policy.conf",
+      "source": "asset:agoodkind/configs:proxmox/services/mwan-ifmgr-suburban-host-ipv6-policy.conf",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    }
+  ],
+  "secret_fields": [
+    {
+      "name": "SMTP2GO_API_KEY",
+      "storage_path": "/etc/mwan/secrets.env",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "pattern": "^[A-Za-z0-9-]+$",
+      "min_length": 16,
+      "max_length": 128,
+      "consumer_units": ["mwan-ifmgr.service", "mwan-watchdog-testbed.service"]
+    }
+  ]
+}

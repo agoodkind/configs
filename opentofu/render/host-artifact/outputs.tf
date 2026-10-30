@@ -11,6 +11,6 @@ output "projection" {
 
   precondition {
     condition     = contains(module.targets.workspaces, var.workspace)
-    error_message = "the host artifact catalog does not contain this workspace. Known selectors: ${join(", ", module.targets.workspaces)}."
+    error_message = "the repository does not contain a host artifact target descriptor for this workspace. Known selectors: ${join(", ", module.targets.workspaces)}."
   }
 }

@@ -1,5 +1,3 @@
-output "workspaces" { value = sort(keys(local.catalog)) }
+output "workspaces" { value = local.workspaces }
 
-output "catalog" { value = local.catalog }
-
-output "target" { value = one(values(local.selected)) }
+output "target" { value = one(values(local.targets)) }
