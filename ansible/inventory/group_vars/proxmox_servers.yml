@@ -45,6 +45,12 @@ mwan_ifmgr_wg_error_handshake_age: "300s"
 mwan_ifmgr_wg_timeout: "10s"
 mwan_ifmgr_wg_ignore_peers: []
 mwan_watchdog_enabled: true
+# Ansible writes the SMTP2GO key into /etc/mwan/config.toml and
+# /etc/opnsensectl/config.toml while this value is true. The host artifact
+# build sets it to false and omits the key.
+# Remove this variable after removal of the last Ansible task that writes
+# those files.
+mwan_host_config_embeds_secrets: true
 mwan_watchdog_service_name: "mwan-watchdog"
 mwan_watchdog_unit_description: "MWAN Auto-Rollback Watchdog"
 # Watchdog runtime tunables (seconds unless noted).
