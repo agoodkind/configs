@@ -29,6 +29,13 @@ locals {
     workspace => jsondecode(file("${local.workspaces_dir}/${workspace}/${local.descriptor_name}"))
     if workspace == var.workspace
   }
+  unnormalized_path_pattern = "(^/|^\\.(/|$)|/\\.(/|$)|//|(^|/)\\.\\.(/|$)|/$|^$)"
+  unnormalized_group_files = flatten([
+    for descriptor in values(local.descriptors) : [
+      for group_file in descriptor.group_vars : group_file
+      if length(regexall(local.unnormalized_path_pattern, group_file)) > 0
+    ]
+  ])
   targets = {
     for workspace, descriptor in local.descriptors : workspace => merge(descriptor, {
       vars = merge([

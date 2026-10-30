@@ -38,6 +38,9 @@ The `build` command accepts these arguments:
 | `--asset-root <owner>/<repository>=<dir>` | The verified checkout of one application repository. This argument is repeatable and cannot use agoodkind/configs as the repository. |
 | `--output-dir <dir>` | The directory that receives the archive. |
 
+A template or asset source path must equal its normalized form. For example, use
+`opnsense/config.toml.j2` instead of `./opnsense/config.toml.j2`.
+
 The command prints one JSON line on stdout with `archive`, `asset`, `sha256`, and `size`.
 The asset file name is `hostconfig_<SHA-256 of the selector>.tar.gz`.
 
@@ -59,8 +62,10 @@ A target depends on its descriptor, its pin file
 `opentofu/<selector>/host-artifact.auto.tfvars.json`, each group variable file in the
 descriptor, each template in the descriptor and every template it includes, and each
 `asset:agoodkind/configs:` file. The command collects these paths from the descriptor
-before it checks whether the files exist. A deleted or renamed input selects the target.
-The build of that target reports the missing file.
+before it checks whether the files exist. The command normalizes each declared template,
+configs asset, and group file path before it compares the path with the changed paths.
+A deleted or renamed input selects the target. The build of that target reports the
+missing file.
 
 A change under `.github/workflows/ci.yml`, `hostartifact/`,
 `opentofu/modules/host-artifact-targets/`, or `opentofu/render/host-artifact/` selects
@@ -79,13 +84,32 @@ Both commands use these exit codes:
 
 ## CI scripts
 
-`scripts/build-target.sh <repository root> <workspace> <target directory> <source revision>`
-plans the render root, verifies each pinned application release, checks out the attested
-source commits, and runs `build`.
+`scripts/build-target.sh <repository root> <workspace> <target directory>
+<source revision>` plans the render root, verifies each pinned application release,
+checks out the attested source commits, and runs `build`.
 
 `scripts/check-target.sh <repository root> <workspace> <target directory> <base commit>
 <head commit>` runs `build-target.sh`, checks the archive member digests, compares copied
 files with their checkouts, and compares the manifest with the pinned release when the
 pin file changed.
 
-Both scripts need `GH_TOKEN` and `GITHUB_REPOSITORY`.
+`scripts/select-targets.sh` selects targets for a push. Run it with:
+
+```sh
+scripts/select-targets.sh <repository root> <ref> <main ref> <before commit> \
+  <head commit> <work directory> <workspace>...
+```
+
+For a ref other than `refs/heads/main`, the script uses the merge base of the main ref
+and the head as the base commit. For `refs/heads/main`, the script uses the before commit
+of the push when that commit exists and is not all zeros. Otherwise, the script uses
+the parent of the head. The script writes a NUL-terminated list of changed paths to
+`<work directory>/changed.bin` using `git diff -z --name-only --no-renames` from the
+base to the head. It runs `python -m hostartifact affected` with `--base-revision` set
+to the base and prints the JSON array of selected workspaces on stdout.
+
+The CI check job selects targets with `select-targets.sh` using `origin/main` as the
+main ref. The pin check uses the before commit of the push when that commit exists.
+Otherwise, the pin check uses the merge base with `origin/main`.
+
+The build and check scripts need `GH_TOKEN` and `GITHUB_REPOSITORY`.

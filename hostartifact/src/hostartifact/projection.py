@@ -122,6 +122,11 @@ def check_relative_path(path: str) -> None:
             f"source path {path!r} must be a relative path without a parent directory "
             "segment"
         )
+    if posixpath.normpath(path) != path:
+        raise BuildError(
+            f"source path {path!r} must equal its normalized form "
+            f"{posixpath.normpath(path)!r}"
+        )
 
 
 def check_metadata(path: str, mode: str, owner: str, group: str) -> None:

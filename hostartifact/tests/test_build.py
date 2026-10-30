@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -79,6 +80,30 @@ INCLUDE_TEMPLATE = "mwan/config/_ifmgr_common.toml.j2"
 HOST_TEMPLATE = "mwan/config/config-host.toml.j2"
 SUBURBAN_DROP_IN = "proxmox/services/mwan-ifmgr-suburban-host-ipv6-policy.conf"
 RENAMED_VAULT_GROUP_FILE = "ansible/inventory/group_vars/vault_hosts.yml"
+SUBURBAN_GROUP_FILE = "ansible/inventory/group_vars/suburban_servers.yml"
+OOB_DROP_IN = "proxmox/services/mwan-ifmgr-oob-dhcpv4.conf"
+SELECT_SCRIPT = REPOSITORY_ROOT / "hostartifact/scripts/select-targets.sh"
+MAIN_BRANCH = "main"
+ZERO_COMMIT = "0" * 40
+MAIN_REF = "refs/heads/main"
+FEATURE_BRANCH = "feature"
+FEATURE_REF = "refs/heads/feature"
+VAULT_EMAIL_LINE = 'mwan_email_from: "mwan@goodkind.io"\n'
+OPNSENSE_CONFIG = "/etc/opnsensectl/config.toml"
+OOB_DROP_IN_DESTINATION = "/etc/systemd/system/mwan-ifmgr.service.d/oob-dhcpv4.conf"
+UNNORMALIZED_TEMPLATE_TEXT = (
+    "source path './opnsense/config.toml.j2' must equal its normalized form "
+    "'opnsense/config.toml.j2'\n"
+)
+UNNORMALIZED_ASSET_TEXT = (
+    "source path 'proxmox/services/./mwan-ifmgr-oob-dhcpv4.conf' must equal its "
+    "normalized form 'proxmox/services/mwan-ifmgr-oob-dhcpv4.conf'\n"
+)
+UNNORMALIZED_GROUP_FILE = "ansible/inventory/group_vars//suburban_servers.yml"
+UNNORMALIZED_GROUP_TEXT = (
+    "each group variable path in the descriptor must equal its normalized form: "
+    f"{UNNORMALIZED_GROUP_FILE}"
+)
 GIT_TEST_OPTIONS = (
     "-c",
     "user.name=hostartifact-test",
@@ -173,11 +198,45 @@ def run_git(repository: Path, *arguments: str) -> str:
     return completed.stdout
 
 
-def commit_repository(repository: Path) -> str:
-    run_git(repository, "init", "--quiet")
+def commit_all(repository: Path, message: str) -> str:
     run_git(repository, "add", "--all")
-    run_git(repository, "commit", "--quiet", "--message", "base")
+    run_git(repository, "commit", "--quiet", "--message", message)
     return run_git(repository, "rev-parse", "HEAD").strip()
+
+
+def commit_repository(repository: Path) -> str:
+    run_git(repository, "init", "--quiet", f"--initial-branch={MAIN_BRANCH}")
+    return commit_all(repository, "base")
+
+
+def run_select(
+    repository: Path, ref: str, before: str, head: str, work: Path
+) -> subprocess.CompletedProcess[str]:
+    search_path = f"{Path(sys.executable).parent}{os.pathsep}{os.environ['PATH']}"
+    command = [
+        str(SELECT_SCRIPT),
+        str(repository),
+        ref,
+        MAIN_BRANCH,
+        before,
+        head,
+        str(work),
+        SUBURBAN,
+        VAULT,
+    ]
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": search_path},
+    )
+
+
+def replace_in_file(path: Path, old: str, new: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    assert old in text
+    path.write_text(text.replace(old, new), encoding="utf-8")
 
 
 def git_changed_list(directory: Path, repository: Path, base_revision: str) -> Path:
@@ -483,6 +542,18 @@ def copy_vault_reference(projection: JsonObject, repository: Path) -> None:
     )
 
 
+def use_unnormalized_template_source(projection: JsonObject, repository: Path) -> None:
+    del repository
+    file_entry(projection, OPNSENSE_CONFIG)["source"] = f"template:./{OPNSENSE_TEMPLATE}"
+
+
+def use_unnormalized_asset_source(projection: JsonObject, repository: Path) -> None:
+    del repository
+    file_entry(projection, OOB_DROP_IN_DESTINATION)["source"] = (
+        f"asset:{CONFIGS_REPOSITORY}:proxmox/services/./mwan-ifmgr-oob-dhcpv4.conf"
+    )
+
+
 def render_invalid_toml(projection: JsonObject, repository: Path) -> None:
     del projection
     append_to_template(repository, OPNSENSE_TEMPLATE, "\nthis line = = invalid\n")
@@ -571,6 +642,16 @@ def render_secret_key(projection: JsonObject, repository: Path) -> None:
             copy_template_into_config_file,
             f"hostartifact: {MWAN_CONFIG} {UNRESOLVED_TEMPLATE_TEXT}",
             id="unresolved-config-file",
+        ),
+        pytest.param(
+            use_unnormalized_template_source,
+            f"hostartifact: {UNNORMALIZED_TEMPLATE_TEXT}",
+            id="unnormalized-template-source",
+        ),
+        pytest.param(
+            use_unnormalized_asset_source,
+            f"hostartifact: {UNNORMALIZED_ASSET_TEXT}",
+            id="unnormalized-asset-source",
         ),
         pytest.param(
             copy_vault_reference,
@@ -788,3 +869,125 @@ def test_deletion_selects_its_target_while_another_target_is_broken(
     assert (
         f"hostartifact: {VAULT}: cannot read the target dependencies" in selected.stderr
     )
+
+
+def test_unnormalized_group_file_fails_the_plan(tmp_path: Path) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    replace_in_file(
+        descriptor_file(repository, SUBURBAN),
+        SUBURBAN_GROUP_FILE,
+        UNNORMALIZED_GROUP_FILE,
+    )
+
+    planned = plan_projection(repository, SUBURBAN)
+
+    assert planned.returncode != 0
+    assert UNNORMALIZED_GROUP_TEXT in " ".join(planned.stderr.split())
+
+
+@pytest.mark.parametrize(
+    ("declared", "unnormalized", "changed", "expected"),
+    [
+        pytest.param(
+            f"template:{OPNSENSE_TEMPLATE}",
+            f"template:./{OPNSENSE_TEMPLATE}",
+            OPNSENSE_TEMPLATE,
+            [SUBURBAN, VAULT],
+            id="template-source",
+        ),
+        pytest.param(
+            f"asset:{CONFIGS_REPOSITORY}:{SUBURBAN_DROP_IN}",
+            f"asset:{CONFIGS_REPOSITORY}:proxmox/services/./"
+            "mwan-ifmgr-suburban-host-ipv6-policy.conf",
+            SUBURBAN_DROP_IN,
+            [SUBURBAN],
+            id="configs-asset",
+        ),
+        pytest.param(
+            SUBURBAN_GROUP_FILE,
+            UNNORMALIZED_GROUP_FILE,
+            SUBURBAN_GROUP_FILE,
+            [SUBURBAN],
+            id="group-file",
+        ),
+    ],
+)
+def test_affected_compares_normalized_dependency_paths(
+    tmp_path: Path, declared: str, unnormalized: str, changed: str, expected: list[str]
+) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    replace_in_file(descriptor_file(repository, SUBURBAN), declared, unnormalized)
+    base_revision = commit_repository(repository)
+    path = repository / changed
+    path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    changed_file = git_changed_list(tmp_path, repository, base_revision)
+
+    selected = run_affected_command(repository, changed_file, base_revision=base_revision)
+
+    assert changed_file.read_bytes() == f"{changed}\0".encode()
+    assert affected_output(selected) == expected
+
+
+def test_branch_selection_keeps_a_failed_target_after_a_documentation_push(
+    tmp_path: Path,
+) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    commit_repository(repository)
+    run_git(repository, "checkout", "--quiet", "-b", FEATURE_BRANCH)
+    replace_in_file(repository / VAULT_GROUP_FILE, VAULT_EMAIL_LINE, "")
+    failed_push = commit_all(repository, "break vault input")
+    (repository / "docs").mkdir()
+    (repository / "docs/README.md").write_text("documentation\n", encoding="utf-8")
+    documentation_push = commit_all(repository, "documentation only")
+
+    selected = run_select(
+        repository, FEATURE_REF, failed_push, documentation_push, tmp_path / "selection"
+    )
+    built = build_projection_of(tmp_path, repository, VAULT)
+
+    assert affected_output(selected) == [VAULT]
+    assert (
+        "config-host.toml.j2: unresolved variable: 'mwan_email_from' is undefined"
+        in built
+    )
+
+
+def test_main_selection_compares_with_the_preceding_main_commit(tmp_path: Path) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    first = commit_repository(repository)
+    path = repository / SUBURBAN_DROP_IN
+    path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    second = commit_all(repository, "change suburban input")
+    (repository / "docs").mkdir()
+    (repository / "docs/README.md").write_text("documentation\n", encoding="utf-8")
+    third = commit_all(repository, "documentation only")
+
+    input_push = run_select(repository, MAIN_REF, first, second, tmp_path / "input")
+    documentation_push = run_select(
+        repository, MAIN_REF, second, third, tmp_path / "documentation"
+    )
+    first_push = run_select(repository, MAIN_REF, ZERO_COMMIT, second, tmp_path / "zero")
+
+    assert affected_output(input_push) == [SUBURBAN]
+    assert affected_output(documentation_push) == []
+    assert affected_output(first_push) == [SUBURBAN]
+
+
+def test_invalid_target_in_the_base_does_not_affect_another_build(tmp_path: Path) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
+    commit_repository(repository)
+    run_git(repository, "checkout", "--quiet", "-b", FEATURE_BRANCH)
+    path = repository / SUBURBAN_DROP_IN
+    path.write_text(path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    head = commit_all(repository, "change suburban input")
+
+    selected = run_select(repository, FEATURE_REF, head, head, tmp_path / "selection")
+    projection = project(repository, SUBURBAN)
+    built = run_build(tmp_path, repository, projection)
+
+    assert affected_output(selected) == [SUBURBAN]
+    assert (
+        f"hostartifact: {VAULT}: cannot read the target dependencies" in selected.stderr
+    )
+    assert built.returncode == 0, built.stderr

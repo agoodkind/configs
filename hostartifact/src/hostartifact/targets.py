@@ -11,14 +11,15 @@ from pydantic import ValidationError
 
 from hostartifact.manifest import check_revision
 from hostartifact.projection import (
+    ASSET_FIELD_SEPARATOR,
+    ASSET_PREFIX,
     REPOSITORY,
-    AssetSource,
+    TEMPLATE_PREFIX,
     BuildError,
     DirectoryEntry,
     FileEntry,
     StrictModel,
     check_selector,
-    parse_source,
 )
 from hostartifact.render import new_environment
 
@@ -153,14 +154,18 @@ def target_dependencies(
 ) -> set[str]:
     descriptor = load_descriptor(repository_root, workspace)
     dependencies = {descriptor_path(workspace), pin_path(workspace)}
-    dependencies.update(descriptor.group_vars)
+    dependencies.update(posixpath.normpath(path) for path in descriptor.group_vars)
     for entry in descriptor.files:
-        source = parse_source(entry.source)
-        if isinstance(source, AssetSource):
-            if source.repository == REPOSITORY:
-                dependencies.add(source.path)
-            continue
-        dependencies.update(template_dependencies(reader, source.path, warnings))
+        source = entry.source
+        if source.startswith(TEMPLATE_PREFIX):
+            template_path = posixpath.normpath(source.removeprefix(TEMPLATE_PREFIX))
+            dependencies.update(template_dependencies(reader, template_path, warnings))
+        elif source.startswith(ASSET_PREFIX):
+            repository, _, path = source.removeprefix(ASSET_PREFIX).partition(
+                ASSET_FIELD_SEPARATOR
+            )
+            if repository == REPOSITORY:
+                dependencies.add(posixpath.normpath(path))
     return dependencies
 
 
