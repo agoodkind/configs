@@ -249,6 +249,31 @@ renaming their directory does not prove controller independence. Ordered CI
 deployment follows its own approved contracts and consumes the same controller
 implementation. Local service migration does not wait for unrelated CI tasks.
 
+### 13. Host deployment verification
+
+Host deployment accepts programs, configuration, scripts, and service files
+from trusted builds. Reuse existing GitHub artifact attestations and the
+existing release verifier rather than implementing another signing system.
+Trust checks bind the artifact to its repository, source revision, permitted
+build workflow, and intended host environment. A filename or caller-supplied
+checksum alone does not establish trust.
+
+Configs CI builds the complete nonsecret host configuration and service files
+from the reviewed revision. Each host verifies the artifact before installing
+its files at permitted paths. The host writes the exact verified bytes;
+controller-side rendering after verification cannot substitute other contents.
+Deployment does not require separate manual fingerprint approvals.
+
+Deployment supplies secrets separately through specific secret fields. The
+host validates each field and its permitted consumer before storing its value.
+This interface cannot accept an arbitrary path, environment variable, command,
+unit, or configuration fragment. Secret values remain outside published build
+artifacts, logs, plans, and state. Rotation preserves the verified nonsecret
+configuration and requires only the service action that the consumer needs.
+
+The [host verification plan](../plans/2026-10-30-host-configuration-verification.md)
+qualifies existing implementations before assigning new code.
+
 ## Boundaries
 
 - Tack and MWAN must install, configure, update, and recover without invoking
@@ -349,6 +374,13 @@ implementation. Local service migration does not wait for unrelated CI tasks.
   dependencies. Execution evidence confirms that their supported entrypoints
   do not invoke Ansible. Other service deployments retain their existing
   behavior. Existing production and dormant LAN authorization limits apply.
+
+- AC20: A host accepts the selected artifact from a trusted build and rejects
+  altered bytes, an untrusted build, a different environment, and an unapproved
+  destination before changing the installed file. Secret rotation preserves
+  the artifact digest, updates the intended consumer, and keeps secret values
+  out of published artifacts, logs, plans, and state. An invalid secret field
+  cannot change another setting or execute a command.
 
 ## Migration order
 
