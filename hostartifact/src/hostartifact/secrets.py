@@ -10,8 +10,6 @@ lazy from pydantic import JsonValue
 from hostartifact.projection import BuildError
 
 VAULT_PREFIX = "vault_"
-EMBEDS_SECRETS_VARIABLE = "mwan_host_config_embeds_secrets"
-FORBIDDEN_KEYS = frozenset({"smtp2go_api_key", "token_secret", "token_id"})
 TOML_SUFFIX = ".toml"
 TEMPLATE_MARKERS = ("{{", "{%", "{#")
 VAULT_REFERENCE_PATTERN = re.compile(r"\bvault_[A-Za-z0-9_]+")
@@ -31,26 +29,28 @@ def check_variable_names(variables: Mapping[str, JsonValue]) -> None:
         )
 
 
-def forbidden_keys(table: TomlTable) -> list[str]:
+def forbidden_keys(table: TomlTable, blocked_keys: frozenset[str]) -> list[str]:
     found: list[str] = []
     for key, value in table.items():
-        if key in FORBIDDEN_KEYS:
+        if key in blocked_keys:
             found.append(key)
-        found.extend(nested_forbidden_keys(value))
+        found.extend(nested_forbidden_keys(value, blocked_keys))
     return found
 
 
-def nested_forbidden_keys(value: TomlValue) -> list[str]:
+def nested_forbidden_keys(value: TomlValue, blocked_keys: frozenset[str]) -> list[str]:
     if isinstance(value, dict):
-        return forbidden_keys(value)
+        return forbidden_keys(value, blocked_keys)
     found: list[str] = []
     if isinstance(value, list):
         for item in value:
-            found.extend(nested_forbidden_keys(item))
+            found.extend(nested_forbidden_keys(item, blocked_keys))
     return found
 
 
-def check_rendered_file(destination: str, content: bytes) -> None:
+def check_rendered_file(
+    destination: str, content: bytes, blocked_keys: frozenset[str]
+) -> None:
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError as error:
@@ -71,6 +71,6 @@ def check_rendered_file(destination: str, content: bytes) -> None:
         document: TomlTable = tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
         raise BuildError(f"{destination} is not valid TOML: {error}") from error
-    found = sorted(set(forbidden_keys(document)))
+    found = sorted(set(forbidden_keys(document, blocked_keys)))
     if found:
         raise BuildError(f"{destination} contains secret keys: {', '.join(found)}")

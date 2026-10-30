@@ -32,7 +32,6 @@ from hostartifact.projection import (
 )
 from hostartifact.render import VariableResolver, render_template
 from hostartifact.secrets import (
-    EMBEDS_SECRETS_VARIABLE,
     check_rendered_file,
     check_variable_names,
 )
@@ -40,8 +39,6 @@ from hostartifact.secrets import (
 ASSET_NAME_PREFIX = "hostconfig_"
 ASSET_NAME_SUFFIX = ".tar.gz"
 SERVICE_MAPPING_VARIABLE = "service_mapping"
-NODE_VARIABLE = "mwan_proxmox_node"
-ENVIRONMENT_VARIABLE = "mwan_environment"
 MANIFEST_MODE = 0o644
 OCTAL_BASE = 8
 COMPRESS_LEVEL = 9
@@ -87,22 +84,22 @@ def write_archive(path: Path, members: list[ArchiveMember]) -> None:
 
 
 def build_variables(projection: Projection) -> dict[str, JsonValue]:
-    check_variable_names(projection.variables)
-    if SERVICE_MAPPING_VARIABLE in projection.variables:
+    variables: dict[str, JsonValue] = dict(projection.variables)
+    variables.update(projection.validation.variable_overrides)
+    check_variable_names(variables)
+    if SERVICE_MAPPING_VARIABLE in variables:
         raise BuildError(
             f"the projection variables must not define {SERVICE_MAPPING_VARIABLE}, "
             "because the projection supplies it as a separate field"
         )
-    variables: dict[str, JsonValue] = dict(projection.variables)
     variables[SERVICE_MAPPING_VARIABLE] = projection.service_mapping
-    variables[EMBEDS_SECRETS_VARIABLE] = False
     return variables
 
 
 def check_identity(projection: Projection, resolver: VariableResolver) -> None:
     expected = {
-        NODE_VARIABLE: projection.node,
-        ENVIRONMENT_VARIABLE: projection.environment,
+        projection.validation.identity_variables.node: projection.node,
+        projection.validation.identity_variables.environment: projection.environment,
     }
     context = resolver.context(set(expected))
     for name, value in expected.items():
@@ -150,12 +147,13 @@ def build_artifact(
     roots[REPOSITORY] = repository_root
     resolver = VariableResolver(build_variables(projection))
     check_identity(projection, resolver)
+    blocked_keys = frozenset(projection.validation.forbidden_toml_keys)
 
     members: list[ArchiveMember] = []
     manifest_files: list[ManifestFile] = []
     for entry in sorted(projection.files, key=lambda item: item.destination):
         content = file_content(entry.source, repository_root, roots, resolver)
-        check_rendered_file(entry.destination, content)
+        check_rendered_file(entry.destination, content, blocked_keys)
         member = member_name(entry.destination)
         mode = int(entry.mode, OCTAL_BASE)
         members.append(ArchiveMember(name=member, content=content, mode=mode))

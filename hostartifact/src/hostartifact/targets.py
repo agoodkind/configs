@@ -54,6 +54,7 @@ class SecretField(StrictModel):
 class TargetDescriptor(StrictModel):
     node: str
     environment: str
+    validation_file: str
     group_vars: list[str]
     directories: list[DirectoryEntry]
     files: list[FileEntry]
@@ -154,6 +155,7 @@ def target_dependencies(
 ) -> set[str]:
     descriptor = load_descriptor(repository_root, workspace)
     dependencies = {descriptor_path(workspace), pin_path(workspace)}
+    dependencies.add(posixpath.normpath(descriptor.validation_file))
     dependencies.update(posixpath.normpath(path) for path in descriptor.group_vars)
     for entry in descriptor.files:
         source = entry.source

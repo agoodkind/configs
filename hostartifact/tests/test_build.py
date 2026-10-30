@@ -49,9 +49,41 @@ UNRESOLVED_TEMPLATE_TEXT = "contains unresolved template markers: {{ {% {#\n"
 VAULT_REFERENCE_FILE = "proxmox/services/vault-reference.conf"
 VAULT_REFERENCE_TEXT = "contains vault references: vault_smtp2go_api_key\n"
 DELETED_TEMPLATE = "deleted.toml.j2"
+VALIDATION_FILE = "mwan/config/artifact-validation.json"
+TARGET_VALIDATION_FILE = "mwan/config/suburban-validation.json"
+UNNORMALIZED_VALIDATION_FILE = "mwan/config/./artifact-validation.json"
+VALIDATION_POLICY: JsonValue = {
+    "identity_variables": {
+        "node": "mwan_proxmox_node",
+        "environment": "mwan_environment",
+    },
+    "variable_overrides": {"mwan_host_config_embeds_secrets": False},
+    "forbidden_toml_keys": ["smtp2go_api_key", "token_secret", "token_id"],
+}
+CALLER_NODE_VARIABLE = "host_node"
+CALLER_ENVIRONMENT_VARIABLE = "release_environment"
+CALLER_BLOCKED_KEY = "product_credential"
+CALLER_TEMPLATE = "product/config.toml.j2"
+CALLER_DESTINATION = "/etc/product/config.toml"
+CALLER_POLICY: JsonValue = {
+    "identity_variables": {
+        "node": CALLER_NODE_VARIABLE,
+        "environment": CALLER_ENVIRONMENT_VARIABLE,
+    },
+    "variable_overrides": {"greeting": "caller override", "include_private": False},
+    "forbidden_toml_keys": [CALLER_BLOCKED_KEY],
+}
+CALLER_TEMPLATE_TEXT = (
+    'node = "{{ host_node }}"\n'
+    'environment = "{{ release_environment }}"\n'
+    'message = "{{ greeting }}"\n'
+    "include_private = {{ include_private | to_json }}\n"
+    'token_id = "public-label"\n'
+)
 FIXTURE_DESCRIPTOR: JsonValue = {
     "node": "hypervisor",
     "environment": "testbed",
+    "validation_file": VALIDATION_FILE,
     "group_vars": [],
     "directories": [],
     "files": [
@@ -84,6 +116,7 @@ SERVICE_MAPPING_FILE = "ansible/inventory/group_vars/all/service_mapping.yml"
 SHARED_GROUP_FILE = "ansible/inventory/group_vars/all/vars.yml"
 WATCHDOG_TEMPLATE = "proxmox/services/mwan-watchdog.service.j2"
 FIXTURE_FILES = {
+    VALIDATION_FILE: json.dumps(VALIDATION_POLICY),
     SERVICE_MAPPING_FILE: (
         "service_mapping:\n"
         "  hypervisor:\n"
@@ -333,6 +366,7 @@ def fixture_descriptor(
     return {
         "node": node,
         "environment": environment,
+        "validation_file": VALIDATION_FILE,
         "group_vars": group_vars,
         "directories": directories,
         "files": files,
@@ -691,6 +725,193 @@ def test_unknown_workspace_fails_with_known_selectors(suburban_repository: Path)
     assert "suburban/mwan, vault/mwan" in planned.stderr
 
 
+def caller_projection(repository: Path) -> JsonObject:
+    descriptor_path = descriptor_file(repository, SUBURBAN)
+    descriptor = as_object(json.loads(descriptor_path.read_text(encoding="utf-8")))
+    descriptor["group_vars"] = [SERVICE_MAPPING_FILE, SUBURBAN_GROUP_FILE]
+    descriptor["files"] = [
+        fixture_file(CALLER_DESTINATION, f"template:{CALLER_TEMPLATE}", "0600")
+    ]
+    descriptor_path.write_text(json.dumps(descriptor), encoding="utf-8")
+    (repository / VALIDATION_FILE).write_text(json.dumps(CALLER_POLICY), encoding="utf-8")
+    (repository / SUBURBAN_GROUP_FILE).write_text(
+        'host_node: "hypervisor"\n'
+        'release_environment: "testbed"\n'
+        'greeting: "original value"\n'
+        "include_private: true\n",
+        encoding="utf-8",
+    )
+    template = repository / CALLER_TEMPLATE
+    template.parent.mkdir(parents=True)
+    template.write_text(CALLER_TEMPLATE_TEXT, encoding="utf-8")
+    return project(repository, SUBURBAN)
+
+
+def test_build_consumes_caller_validation_without_mwan_defaults(tmp_path: Path) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    projection = caller_projection(repository)
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 0, built.stderr
+    result = as_object(json.loads(built.stdout))
+    with tarfile.open(as_text(result["archive"]), mode="r:gz") as archive:
+        extracted = archive.extractfile(FILES_PREFIX + CALLER_DESTINATION.lstrip("/"))
+        assert extracted is not None
+        document = tomllib.loads(extracted.read().decode())
+        manifest_file = archive.extractfile(MANIFEST_MEMBER)
+        assert manifest_file is not None
+        manifest = as_object(json.loads(manifest_file.read()))
+    assert document == {
+        "node": "hypervisor",
+        "environment": "testbed",
+        "message": "caller override",
+        "include_private": False,
+        "token_id": "public-label",
+    }
+    assert "validation" not in manifest
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "expected"),
+    [
+        pytest.param(CALLER_NODE_VARIABLE, "other-node", CALLER_NODE_VARIABLE, id="node"),
+        pytest.param(
+            CALLER_ENVIRONMENT_VARIABLE,
+            "other-environment",
+            CALLER_ENVIRONMENT_VARIABLE,
+            id="environment",
+        ),
+        pytest.param(
+            "vault_product_credential",
+            SYNTHETIC_SECRET,
+            "must not include vault values: vault_product_credential",
+            id="vault-override",
+        ),
+        pytest.param(
+            "service_mapping",
+            {},
+            "must not define service_mapping",
+            id="reserved-override",
+        ),
+    ],
+)
+def test_caller_validation_rejects_invalid_variables(
+    tmp_path: Path, variable: str, value: JsonValue, expected: str
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    projection = caller_projection(repository)
+    validation = as_object(projection["validation"])
+    as_object(validation["variable_overrides"])[variable] = value
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 1, built.stderr
+    assert expected in built.stderr
+    assert SYNTHETIC_SECRET not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize("table", ["", "[nested]\n", "[[nested]]\n"])
+def test_caller_validation_rejects_custom_toml_keys(tmp_path: Path, table: str) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    projection = caller_projection(repository)
+    append_to_template(
+        repository,
+        CALLER_TEMPLATE,
+        f'\n{table}{CALLER_BLOCKED_KEY} = "{SYNTHETIC_SECRET}"\n',
+    )
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 1, built.stderr
+    assert f"contains secret keys: {CALLER_BLOCKED_KEY}" in built.stderr
+    assert SYNTHETIC_SECRET not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["validation", "identity_variables", "variable_overrides", "forbidden_toml_keys"],
+)
+def test_build_requires_validation_inputs(tmp_path: Path, missing: str) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    projection = caller_projection(repository)
+    if missing == "validation":
+        del projection[missing]
+    else:
+        del as_object(projection["validation"])[missing]
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 1, built.stderr
+    assert missing in built.stderr
+    assert "Field required" in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize("identity", ["node", "environment"])
+def test_build_rejects_empty_identity_variable_names(
+    tmp_path: Path, identity: str
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    projection = caller_projection(repository)
+    validation = as_object(projection["validation"])
+    as_object(validation["identity_variables"])[identity] = ""
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 1, built.stderr
+    assert f"validation.identity_variables.{identity}" in built.stderr
+    assert "at least 1 character" in built.stderr
+
+
+@pytest.mark.parametrize("deleted", [False, True])
+def test_validation_file_changes_select_only_dependent_targets(
+    tmp_path: Path, deleted: bool
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    replace_in_file(
+        descriptor_file(repository, SUBURBAN), VALIDATION_FILE, TARGET_VALIDATION_FILE
+    )
+    policy_file = repository / TARGET_VALIDATION_FILE
+    shutil.copyfile(repository / VALIDATION_FILE, policy_file)
+    base_revision = commit_repository(repository)
+    if deleted:
+        policy_file.unlink()
+    else:
+        policy_file.write_text(json.dumps(CALLER_POLICY), encoding="utf-8")
+    changed_file = git_changed_list(tmp_path, repository, base_revision)
+
+    selected = run_affected_command(repository, changed_file, base_revision=base_revision)
+
+    assert changed_file.read_bytes() == f"{TARGET_VALIDATION_FILE}\0".encode()
+    assert affected_output(selected) == [SUBURBAN]
+    if deleted:
+        planned = plan_projection(repository, SUBURBAN)
+        assert planned.returncode != 0
+        assert TARGET_VALIDATION_FILE in planned.stderr
+
+
+@pytest.mark.parametrize("broken", ["missing", "invalid"])
+def test_build_ignores_another_targets_invalid_validation(
+    tmp_path: Path, broken: str
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    replace_in_file(
+        descriptor_file(repository, VAULT), VALIDATION_FILE, TARGET_VALIDATION_FILE
+    )
+    if broken == "invalid":
+        (repository / TARGET_VALIDATION_FILE).write_text(
+            INVALID_DESCRIPTOR, encoding="utf-8"
+        )
+
+    projection = project(repository, SUBURBAN)
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 0, built.stderr
+
+
 def file_entry(projection: JsonObject, destination: str) -> JsonObject:
     for entry in as_list(projection["files"]):
         candidate = as_object(entry)
@@ -964,6 +1185,7 @@ def test_nested_and_underscore_selectors_keep_their_identity(tmp_path: Path) -> 
 @pytest.mark.parametrize(
     ("changed", "expected"),
     [
+        pytest.param([VALIDATION_FILE], [SUBURBAN, VAULT], id="shared-validation"),
         pytest.param([VAULT_GROUP_FILE], [VAULT], id="host-group-file"),
         pytest.param(
             ["mwan/config/_ifmgr_common.toml.j2"], [SUBURBAN, VAULT], id="include"
@@ -1130,6 +1352,13 @@ def test_unnormalized_group_file_fails_the_plan(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("declared", "unnormalized", "changed", "expected"),
     [
+        pytest.param(
+            VALIDATION_FILE,
+            UNNORMALIZED_VALIDATION_FILE,
+            VALIDATION_FILE,
+            [SUBURBAN, VAULT],
+            id="validation-file",
+        ),
         pytest.param(
             f"template:{OPNSENSE_TEMPLATE}",
             f"template:./{OPNSENSE_TEMPLATE}",

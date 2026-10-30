@@ -3,6 +3,7 @@ output "projection" {
     workspace   = var.workspace
     node        = module.targets.target.node
     environment = module.targets.target.environment
+    validation  = module.targets.target.validation
     vars = {
       for name, value in module.targets.target.vars : name => value
       if name != local.service_mapping_key

@@ -1,0 +1,10 @@
+{
+  "identity_variables": {
+    "node": "mwan_proxmox_node",
+    "environment": "mwan_environment"
+  },
+  "variable_overrides": {
+    "mwan_host_config_embeds_secrets": false
+  },
+  "forbidden_toml_keys": ["smtp2go_api_key", "token_secret", "token_id"]
+}

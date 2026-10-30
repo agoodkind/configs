@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# The script builds the host artifact for one workspace selector. The script
-# plans the backendless render root to produce the projection, verifies each
+# The script plans the backendless render root to produce the projection, verifies each
 # pinned application release with its checksum pin and gh attestation verify,
 # checks out the attested source commit, and runs python -m hostartifact build
 # with a PATH that contains only the uv environment and the OpenTofu

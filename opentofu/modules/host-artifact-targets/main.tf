@@ -21,9 +21,9 @@ locals {
     ])
   ])
 
-  # The module reads the descriptor and the group variable files only for the
-  # selected workspace. An invalid descriptor or a missing group file of another
-  # target does not fail the build of the selected target.
+  # The module reads the descriptor, validation file, and group variable files only
+  # for the selected workspace. Invalid or missing inputs of another target do not
+  # fail the build of the selected target.
   descriptors = {
     for workspace in local.workspaces :
     workspace => jsondecode(file("${local.workspaces_dir}/${workspace}/${local.descriptor_name}"))
@@ -38,6 +38,7 @@ locals {
   ])
   targets = {
     for workspace, descriptor in local.descriptors : workspace => merge(descriptor, {
+      validation = jsondecode(file("${var.repository_root}/${descriptor.validation_file}"))
       vars = merge([
         for group_file in descriptor.group_vars : yamldecode(file("${var.repository_root}/${group_file}"))
       ]...)

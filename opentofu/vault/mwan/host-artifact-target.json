@@ -1,6 +1,7 @@
 {
   "node": "vault",
   "environment": "prod",
+  "validation_file": "mwan/config/artifact-validation.json",
   "group_vars": [
     "ansible/inventory/group_vars/all/service_mapping.yml",
     "ansible/inventory/group_vars/all/vars.yml",

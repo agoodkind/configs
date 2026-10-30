@@ -41,6 +41,15 @@ The `build` command accepts these arguments:
 A template or asset source path must equal its normalized form. For example, use
 `opnsense/config.toml.j2` instead of `./opnsense/config.toml.j2`.
 
+Each descriptor requires `validation_file`, a repository-relative JSON file. The
+selected target reads that file into the projection's required `validation` field.
+The validation data requires `identity_variables` with nonempty `node` and `environment`
+variable names, `variable_overrides` with caller values, and `forbidden_toml_keys` with
+the keys to reject at every depth in rendered TOML. The builder merges the overrides
+before checking variable names and adding the separately supplied `service_mapping`.
+The builder rejects `vault_` variable names and a caller-defined `service_mapping`.
+The archive manifest does not include validation data.
+
 The command prints one JSON line on stdout with `archive`, `asset`, `sha256`, and `size`.
 The asset file name is `hostconfig_<SHA-256 of the selector>.tar.gz`.
 
@@ -58,12 +67,13 @@ The `affected` command accepts these arguments:
 The command prints a JSON array of selected selectors in sorted order on stdout. The
 command prints each warning on stderr with the prefix `hostartifact: `.
 
-A target depends on its descriptor, its pin file
+A target depends on its descriptor, its declared validation file, its pin file
 `opentofu/<selector>/host-artifact.auto.tfvars.json`, each group variable file in the
 descriptor, each template in the descriptor and every template it includes, and each
 `asset:agoodkind/configs:` file. The command collects these paths from the descriptor
 before it checks whether the files exist. The command normalizes each declared template,
-configs asset, and group file path before it compares the path with the changed paths.
+configs asset, validation file, and group file path before it compares the path with
+the changed paths.
 A deleted or renamed input selects the target. The build of that target reports the
 missing file.
 

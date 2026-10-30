@@ -23,6 +23,7 @@ ACCOUNT_PATTERN = re.compile(r"^[a-z_][a-z0-9_-]*$")
 REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
 PARENT_DIRECTORY = ".."
 ROOT_PATH = "/"
+MINIMUM_VARIABLE_NAME_LENGTH = 1
 
 
 class BuildError(Exception):
@@ -48,12 +49,24 @@ class FileEntry(StrictModel):
     group: str
 
 
+class IdentityVariables(StrictModel):
+    node: str = Field(min_length=MINIMUM_VARIABLE_NAME_LENGTH)
+    environment: str = Field(min_length=MINIMUM_VARIABLE_NAME_LENGTH)
+
+
+class ValidationPolicy(StrictModel):
+    identity_variables: IdentityVariables
+    variable_overrides: dict[str, JsonValue]
+    forbidden_toml_keys: list[str]
+
+
 class Projection(StrictModel):
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
     workspace: str
     node: str
     environment: str
+    validation: ValidationPolicy
     variables: dict[str, JsonValue] = Field(alias="vars")
     service_mapping: dict[str, JsonValue]
     directories: list[DirectoryEntry]
