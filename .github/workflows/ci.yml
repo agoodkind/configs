@@ -112,10 +112,12 @@ jobs:
           for workspace in "${workspaces[@]}"; do
             workspace_arguments+=(--workspace "$workspace")
           done
-          git diff -z --name-only "$base" "$GITHUB_SHA" > "$work/changed.bin"
-          env -i PATH="$GITHUB_WORKSPACE/hostartifact/.venv/bin" python -I -m hostartifact affected \
+          git diff -z --name-only --no-renames "$base" "$GITHUB_SHA" > "$work/changed.bin"
+          git_dir="$(dirname "$(command -v git)")"
+          env -i PATH="$GITHUB_WORKSPACE/hostartifact/.venv/bin:$git_dir" python -I -m hostartifact affected \
             --repository-root "$GITHUB_WORKSPACE" \
             --changed-files "$work/changed.bin" \
+            --base-revision "$base" \
             "${workspace_arguments[@]}" > "$work/affected.json"
           jq --raw-output0 '.[]' "$work/affected.json" > "$work/affected.bin"
           mapfile -d '' -t affected < "$work/affected.bin"
