@@ -54,14 +54,16 @@ jobs:
       - name: Lint Ansible inputs
         run: ./configsctl lint
 
-  # On every push, this job runs python -m hostartifact affected with the paths
-  # that changed since the previous push, or since the merge base with main for
-  # a new branch. It builds only the targets that depend on a changed path.
-  # It builds without vault values and runs the helper with a PATH that contains
-  # only the uv environment and the OpenTofu directory. It compares each copied
-  # application file with the file at the verified application commit. It fails
-  # for a target only when the target build fails, or when the push changes the
-  # pin file of that target and the pinned manifest differs from the new build.
+  # On every push, the job runs select-targets.sh to select host artifact
+  # targets. On a branch other than main, selection compares the head with
+  # its merge base with main. On main, selection compares the head with
+  # the preceding main commit. The job builds only targets that depend on
+  # a changed path, without vault values. It runs the helper with a PATH
+  # containing only the uv environment and the OpenTofu directory. It
+  # compares each copied application file with the file at the verified
+  # application commit. The job fails a target when its build fails or
+  # when the push changes its pin file and its pinned manifest differs
+  # from the new build.
   host-artifact-check:
     name: host artifact check
     if: github.event_name == 'push'
@@ -95,11 +97,11 @@ jobs:
           mkdir -p "$work"
 
           if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}"; then
-            base="$(git merge-base origin/main "$GITHUB_SHA")"
+            pin_base="$(git merge-base origin/main "$GITHUB_SHA")"
           else
-            base="$BEFORE"
+            pin_base="$BEFORE"
           fi
-          echo "The target selection and the pin check compare changes with commit $base"
+          echo "The pin check compares changes with commit $pin_base"
 
           tofu -chdir="$TARGETS_MODULE" console -var "repository_root=$GITHUB_WORKSPACE" -var workspace= <<< 'jsonencode(local.workspaces)' > "$work/catalog.json"
           jq --raw-output0 'fromjson | .[]' "$work/catalog.json" > "$work/workspaces.bin"
@@ -108,17 +110,9 @@ jobs:
             echo "::error::the repository does not contain any host artifact target descriptor"
             exit 1
           fi
-          workspace_arguments=()
-          for workspace in "${workspaces[@]}"; do
-            workspace_arguments+=(--workspace "$workspace")
-          done
-          git diff -z --name-only --no-renames "$base" "$GITHUB_SHA" > "$work/changed.bin"
-          git_dir="$(dirname "$(command -v git)")"
-          env -i PATH="$GITHUB_WORKSPACE/hostartifact/.venv/bin:$git_dir" python -I -m hostartifact affected \
-            --repository-root "$GITHUB_WORKSPACE" \
-            --changed-files "$work/changed.bin" \
-            --base-revision "$base" \
-            "${workspace_arguments[@]}" > "$work/affected.json"
+          PATH="$GITHUB_WORKSPACE/hostartifact/.venv/bin:$PATH" \
+            hostartifact/scripts/select-targets.sh "$GITHUB_WORKSPACE" "$GITHUB_REF" origin/main \
+            "$BEFORE" "$GITHUB_SHA" "$work/selection" "${workspaces[@]}" > "$work/affected.json"
           jq --raw-output0 '.[]' "$work/affected.json" > "$work/affected.bin"
           mapfile -d '' -t affected < "$work/affected.bin"
           if [ "${#affected[@]}" -eq 0 ]; then
@@ -131,7 +125,7 @@ jobs:
           for workspace in "${affected[@]}"; do
             echo "::group::$workspace"
             index=$((index + 1))
-            if ! hostartifact/scripts/check-target.sh "$GITHUB_WORKSPACE" "$workspace" "$work/target-$index" "$base" "$GITHUB_SHA"; then
+            if ! hostartifact/scripts/check-target.sh "$GITHUB_WORKSPACE" "$workspace" "$work/target-$index" "$pin_base" "$GITHUB_SHA"; then
               failed+=("$workspace")
               echo "::error::the host artifact check failed for $workspace"
             fi
