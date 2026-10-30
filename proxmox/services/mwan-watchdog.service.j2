@@ -5,9 +5,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-# The watchdog reads its settings from /etc/mwan/config.toml and reads
-# SMTP2GO_API_KEY from the optional /etc/mwan/secrets.env file. The leading
-# dash lets systemd start the unit when that file does not exist.
+# The leading dash permits startup before the separate secret file exists.
 EnvironmentFile=-/etc/mwan/secrets.env
 ExecStart=/usr/local/bin/mwan watchdog
 Restart=always
