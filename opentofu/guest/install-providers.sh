@@ -14,12 +14,21 @@ readonly SHA256_PATTERN='^[0-9a-f]{64}$'
 readonly PINNED_ARGUMENT_COUNT=3
 
 WORK_DIR=""
+CANDIDATE_PATH=""
 
 usage() {
     echo "usage: $0 [<pin_file> <mirror_dir> <archive_dir>]"
 }
 
+remove_candidate() {
+    if [[ -n "${CANDIDATE_PATH}" ]]; then
+        rm -f "${CANDIDATE_PATH}"
+        CANDIDATE_PATH=""
+    fi
+}
+
 cleanup() {
+    remove_candidate
     if [[ -n "${WORK_DIR}" ]]; then
         rm -rf "${WORK_DIR}"
     fi
@@ -53,6 +62,24 @@ file_sha256() {
     local digest_line
     digest_line="$(shasum -a 256 "${path}")"
     printf '%s\n' "${digest_line%% *}"
+}
+
+# Create a hard link only when the target path does not exist.
+# Linux uses GNU ln -T to treat the target as a file, even if it is a directory.
+# Darwin uses /bin/ln to select BSD ln from the base system, not GNU ln from PATH.
+# BSD ln does not support -T, so install_provider rejects a directory target first.
+link_no_replace() {
+    local os="$1"
+    local candidate_path="$2"
+    local target_path="$3"
+    case "${os}" in
+        linux) ln -T "${candidate_path}" "${target_path}" ;;
+        darwin) /bin/ln "${candidate_path}" "${target_path}" ;;
+        *)
+            echo "Cannot create a provider link on the host operating system os=${os}" >&2
+            return 1
+            ;;
+    esac
 }
 
 install_provider() {
@@ -90,19 +117,36 @@ install_provider() {
     mkdir -p "${unpack_dir}" "${target_dir}"
     tar -xzf "${archive_path}" -C "${unpack_dir}" "${binary_name}"
 
-    local install_action
+    if [[ -d "${target_path}" ]]; then
+        echo "Cannot publish the binary because the target path is a directory target_path=${target_path}" >&2
+        return 1
+    fi
+
     # OpenTofu links initialized roots to the mirror. Replacing an existing binary
     # changes the executable those roots run and breaks their lockfile checksums.
-    if [[ -e "${target_path}" ]]; then
-        if ! cmp -s "${unpack_dir}/${binary_name}" "${target_path}"; then
-            echo "A different binary is already installed for this source, version, and platform. Assign the release a new mirror version in providers.pin source_address=${source_address} version=${version} platform=${platform} tag=${tag} target_path=${target_path}" >&2
+    # Copy the binary to a temporary file in the target directory, then create a hard
+    # link at the target path. The link fails if another installer created the target,
+    # so concurrent installers cannot replace an existing binary.
+    CANDIDATE_PATH="$(mktemp "${target_dir}/.${binary_name}_v${version}.XXXXXX")"
+    cp "${unpack_dir}/${binary_name}" "${CANDIDATE_PATH}"
+    chmod 0755 "${CANDIDATE_PATH}"
+
+    local install_action link_error
+    if link_error="$(link_no_replace "${platform%%_*}" "${CANDIDATE_PATH}" "${target_path}" 2>&1)"; then
+        install_action="installed"
+    elif [[ -e "${target_path}" ]]; then
+        if ! cmp -s "${CANDIDATE_PATH}" "${target_path}"; then
+            remove_candidate
+            echo "A different binary exists at the target. If providers.pin assigns a different release archive to an installed mirror version, give the release a new mirror version in providers.pin. If the target file is damaged or partial, delete it and run the installer again source_address=${source_address} version=${version} platform=${platform} tag=${tag} target_path=${target_path}" >&2
             return 1
         fi
         install_action="reused"
     else
-        install -m 0755 "${unpack_dir}/${binary_name}" "${target_path}"
-        install_action="installed"
+        remove_candidate
+        echo "The link command failed and the target file does not exist target_path=${target_path} link_error=${link_error}" >&2
+        return 1
     fi
+    remove_candidate
 
     if [[ ! -x "${target_path}" ]] || ! cmp -s "${unpack_dir}/${binary_name}" "${target_path}"; then
         echo "Binary is not executable or mismatches archive member target_path=${target_path}" >&2
