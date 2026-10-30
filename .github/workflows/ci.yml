@@ -52,12 +52,14 @@ jobs:
       - name: Lint Ansible inputs
         run: ./configsctl lint
 
-  # On every push, this job builds every cataloged target without vault values
-  # and runs the helper with a PATH that contains only the uv environment and
-  # the OpenTofu directory. It compares each copied application file with the
-  # file at the verified application commit. It fails a target only when the
-  # push changes the pin file of that target and the pinned manifest differs
-  # from the new build.
+  # On every push, this job runs python -m hostartifact affected with the paths
+  # that changed since the previous push, or since the merge base with main for
+  # a new branch. It builds only the targets that depend on a changed path.
+  # It builds without vault values and runs the helper with a PATH that contains
+  # only the uv environment and the OpenTofu directory. It compares each copied
+  # application file with the file at the verified application commit. It fails
+  # for a target only when the target build fails, or when the push changes the
+  # pin file of that target and the pinned manifest differs from the new build.
   host-artifact-check:
     name: host artifact check
     if: github.event_name == 'push'
@@ -106,7 +108,7 @@ jobs:
           else
             base="$BEFORE"
           fi
-          echo "The pin check compares changes with commit $base"
+          echo "The target selection and the pin check compare changes with commit $base"
 
           declare -A asset_roots
 
@@ -133,19 +135,36 @@ jobs:
             asset_roots["$repository"]="$destination/source"
           }
 
-          tofu -chdir="$TARGETS_MODULE" console -var "repository_root=$GITHUB_WORKSPACE" -var workspace= <<< 'jsonencode(sort(keys(local.catalog)))' > "$work/catalog.json"
-          jq -r 'fromjson | .[]' "$work/catalog.json" > "$work/workspaces.txt"
-          mapfile -t workspaces < "$work/workspaces.txt"
+          tofu -chdir="$TARGETS_MODULE" console -var "repository_root=$GITHUB_WORKSPACE" -var workspace= <<< 'jsonencode(local.workspaces)' > "$work/catalog.json"
+          jq --raw-output0 'fromjson | .[]' "$work/catalog.json" > "$work/workspaces.bin"
+          mapfile -d '' -t workspaces < "$work/workspaces.bin"
           if [ "${#workspaces[@]}" -eq 0 ]; then
-            echo "::error::the host artifact catalog does not list any workspace"
+            echo "::error::the repository does not contain any host artifact target descriptor"
             exit 1
           fi
+          workspace_arguments=()
+          for workspace in "${workspaces[@]}"; do
+            workspace_arguments+=(--workspace "$workspace")
+          done
+          git diff -z --name-only "$base" "$GITHUB_SHA" > "$work/changed.bin"
+          env -i PATH="$helper_path" python -I -m hostartifact affected \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --changed-files "$work/changed.bin" \
+            "${workspace_arguments[@]}" > "$work/affected.json"
+          jq --raw-output0 '.[]' "$work/affected.json" > "$work/affected.bin"
+          mapfile -d '' -t affected < "$work/affected.bin"
+          if [ "${#affected[@]}" -eq 0 ]; then
+            echo "This push does not change an input of any host artifact target."
+            exit 0
+          fi
+          echo "Host artifact targets with changed inputs: $(jq -c . "$work/affected.json")"
           tofu -chdir="$RENDER_ROOT" init -backend=false -input=false
 
-          for workspace in "${workspaces[@]}"; do
+          index=0
+          for workspace in "${affected[@]}"; do
             echo "::group::$workspace"
-            slug="${workspace//\//_}"
-            target="$work/$slug"
+            index=$((index + 1))
+            target="$work/target-$index"
             mkdir -p "$target"
             tofu -chdir="$RENDER_ROOT" plan -refresh=false -lock=false -input=false -out="$target/projection.tfplan" -var "workspace=$workspace" > "$target/plan.log"
             tofu -chdir="$RENDER_ROOT" show -json "$target/projection.tfplan" > "$target/show.json"
@@ -328,9 +347,9 @@ jobs:
           set -euo pipefail
           bundle="$(dirname "$ARCHIVE")/$ASSET.sigstore.json"
           cp "$BUNDLE_PATH" "$bundle"
-          slug="${ASSET#hostconfig_}"
-          slug="${slug%.tar.gz}"
-          tag="hostconfig-$slug-$(date -u +%Y%m%d%H%M)-$GITHUB_RUN_NUMBER-${GITHUB_SHA:0:7}"
+          identifier="${ASSET#hostconfig_}"
+          identifier="${identifier%.tar.gz}"
+          tag="hostconfig-$identifier-$(date -u +%Y%m%d%H%M)-$GITHUB_RUN_NUMBER-${GITHUB_SHA:0:7}"
           gh release create "$tag" --target "$GITHUB_SHA" --latest=false "$ARCHIVE" "$bundle"
           {
             echo "tag=$tag"
