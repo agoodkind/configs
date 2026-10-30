@@ -264,6 +264,14 @@ its files at permitted paths. The host writes the exact verified bytes;
 controller-side rendering after verification cannot substitute other contents.
 Deployment does not require separate manual fingerprint approvals.
 
+Use each feature's existing workspace selector and host identity for its
+artifact, installed-version record, secret inputs, apply, and recovery. Reuse
+the independent backends, selected-workspace checks, and lock selection.
+Publish and pin configuration separately for each feature on each host.
+A repository commit must not automatically update unrelated artifact pins.
+Deployment checks only the selected workspace and its explicit prerequisites;
+it does not initialize, refresh, plan, or apply unrelated workspaces.
+
 Deployment supplies secrets separately through specific secret fields. The
 host validates each field and its permitted consumer before storing its value.
 This interface cannot accept an arbitrary path, environment variable, command,
@@ -381,6 +389,15 @@ qualifies existing implementations before assigning new code.
   the artifact digest, updates the intended consumer, and keeps secret values
   out of published artifacts, logs, plans, and state. An invalid secret field
   cannot change another setting or execute a command.
+- AC21: With real isolated OpenTofu backends and the public deployment
+  interface, update one feature on one host while an unrelated feature on
+  that host has invalid configuration and that feature on another host has
+  an unavailable dependency. The selected deployment succeeds. Unrelated
+  state bytes, artifact pins, installed files, secret versions, and services
+  remain unchanged. The executor does not plan those roots or acquire their
+  state locks. An artifact or secret update for another feature or host fails
+  before installation. Actual shared host prerequisites retain their declared
+  ownership and locking.
 
 ## Migration order
 
