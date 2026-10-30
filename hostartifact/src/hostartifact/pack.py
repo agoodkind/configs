@@ -28,7 +28,7 @@ from hostartifact.projection import (
     check_entries,
     contained_file,
     parse_source,
-    selector_slug,
+    target_identifier,
 )
 from hostartifact.render import VariableResolver, render_template
 from hostartifact.secrets import (
@@ -138,7 +138,7 @@ def build_artifact(
     asset_roots: dict[str, Path],
     output_dir: Path,
 ) -> BuildResult:
-    slug = selector_slug(projection.workspace)
+    identifier = target_identifier(projection.workspace)
     check_revision(source_revision)
     check_entries(projection)
     if REPOSITORY in asset_roots:
@@ -191,7 +191,7 @@ def build_artifact(
         name=MANIFEST_MEMBER, content=manifest_bytes(manifest), mode=MANIFEST_MODE
     )
 
-    asset = f"{ASSET_NAME_PREFIX}{slug}{ASSET_NAME_SUFFIX}"
+    asset = f"{ASSET_NAME_PREFIX}{identifier}{ASSET_NAME_SUFFIX}"
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_path = output_dir / asset
     write_archive(archive_path, [manifest_member, *members])

@@ -25,13 +25,20 @@ COPIED_PATHS = (
     "opnsense",
     "proxmox/services",
 )
-IGNORED_COPIES = (".terraform", "*.tfplan", "*.tfstate")
 SUBURBAN = "suburban/mwan"
-NESTED_SELECTORS = (
-    "suburban/simulators-astound",
-    "suburban/simulators/astound",
-    "suburban-simulators/astound",
+VAULT = "vault/mwan"
+DESCRIPTOR_NAME = "host-artifact-target.json"
+COPIED_FILES = (
+    f"opentofu/{SUBURBAN}/{DESCRIPTOR_NAME}",
+    f"opentofu/{VAULT}/{DESCRIPTOR_NAME}",
 )
+IGNORED_COPIES = (".terraform", "*.tfplan", "*.tfstate")
+EXTRA_SELECTORS = (
+    "suburban_mwan",
+    "suburban/simulators/astound",
+    "suburban/simulators/astound_static",
+)
+INVALID_DESCRIPTOR = "{ this descriptor does not parse"
 VAULT_GROUP_FILE = "ansible/inventory/group_vars/vault_servers.yml"
 OPNSENSE_TEMPLATE = "opnsense/config.toml.j2"
 SOURCE_REVISION = "0123456789abcdef0123456789abcdef01234567"
@@ -70,7 +77,41 @@ def copy_repository(destination: Path) -> Path:
             destination / relative,
             ignore=shutil.ignore_patterns(*IGNORED_COPIES),
         )
+    for relative in COPIED_FILES:
+        (destination / relative).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPOSITORY_ROOT / relative, destination / relative)
     return destination
+
+
+def descriptor_file(repository: Path, workspace: str) -> Path:
+    return repository / "opentofu" / workspace / DESCRIPTOR_NAME
+
+
+def target_asset(workspace: str) -> str:
+    identifier = hashlib.sha256(workspace.encode("utf-8")).hexdigest()
+    return f"hostconfig_{identifier}.tar.gz"
+
+
+def run_affected(
+    directory: Path, repository: Path, changed: list[str]
+) -> subprocess.CompletedProcess[str]:
+    changed_file = directory / "changed.bin"
+    changed_file.write_text("\0".join(changed), encoding="utf-8")
+    command = [
+        sys.executable,
+        "-m",
+        "hostartifact",
+        "affected",
+        "--repository-root",
+        str(repository),
+        "--changed-files",
+        str(changed_file),
+        "--workspace",
+        SUBURBAN,
+        "--workspace",
+        VAULT,
+    ]
+    return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
 def run_tofu(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -175,9 +216,10 @@ def suburban_projection(suburban_repository: Path) -> JsonObject:
     return project(suburban_repository, SUBURBAN)
 
 
-def test_build_succeeds_while_another_target_lacks_a_group_file(tmp_path: Path) -> None:
+def test_build_succeeds_while_another_target_is_broken(tmp_path: Path) -> None:
     repository = copy_repository(tmp_path / "repository")
     (repository / VAULT_GROUP_FILE).unlink()
+    descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
     projection = project(repository, SUBURBAN)
 
     built = run_build(tmp_path, repository, projection)
@@ -186,7 +228,7 @@ def test_build_succeeds_while_another_target_lacks_a_group_file(tmp_path: Path) 
     result = as_object(json.loads(built.stdout))
     archive_path = Path(as_text(result["archive"]))
     archive_bytes = archive_path.read_bytes()
-    assert result["asset"] == "hostconfig_suburban_mwan.tar.gz"
+    assert result["asset"] == target_asset(SUBURBAN)
     assert result["sha256"] == hashlib.sha256(archive_bytes).hexdigest()
     assert result["size"] == len(archive_bytes)
     with tarfile.open(archive_path, mode="r:gz") as archive:
@@ -267,8 +309,12 @@ def conflict_node(projection: JsonObject) -> None:
     projection["node"] = "vault"
 
 
-def use_underscore_selector(projection: JsonObject) -> None:
-    projection["workspace"] = "suburban/mwan_extra"
+def use_unclean_selector(projection: JsonObject) -> None:
+    projection["workspace"] = "suburban/../vault/mwan"
+
+
+def use_excluded_selector(projection: JsonObject) -> None:
+    projection["workspace"] = "modules/mwan"
 
 
 def duplicate_destination(projection: JsonObject) -> None:
@@ -291,7 +337,8 @@ def point_at_missing_asset(projection: JsonObject) -> None:
         pytest.param(remove_required_variable, "mwan_email_from", id="missing-variable"),
         pytest.param(add_vault_variable, "vault_smtp2go_api_key", id="vault-variable"),
         pytest.param(conflict_node, "mwan_proxmox_node", id="conflicting-node"),
-        pytest.param(use_underscore_selector, "suburban/mwan_extra", id="underscore"),
+        pytest.param(use_unclean_selector, "suburban/../vault/mwan", id="unclean"),
+        pytest.param(use_excluded_selector, "modules/mwan", id="excluded"),
         pytest.param(duplicate_destination, "/etc/mwan/config.toml", id="duplicate"),
         pytest.param(point_at_missing_asset, "absent.service", id="missing-asset"),
     ],
@@ -314,17 +361,21 @@ def test_build_rejects_invalid_projection(
     assert not (tmp_path / "output").exists()
 
 
-def test_nested_selectors_keep_their_identity(
-    tmp_path: Path, suburban_repository: Path, suburban_projection: JsonObject
-) -> None:
-    assets: dict[str, str] = {}
-    for index, selector in enumerate(NESTED_SELECTORS):
-        projection = copy.deepcopy(suburban_projection)
-        projection["workspace"] = selector
-        directory = tmp_path / str(index)
-        directory.mkdir()
+def test_nested_and_underscore_selectors_keep_their_identity(tmp_path: Path) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    source_descriptor = descriptor_file(repository, SUBURBAN)
+    for selector in EXTRA_SELECTORS:
+        target_descriptor = descriptor_file(repository, selector)
+        target_descriptor.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_descriptor, target_descriptor)
 
-        built = run_build(directory, suburban_repository, projection)
+    assets: set[str] = set()
+    for index, selector in enumerate((SUBURBAN, *EXTRA_SELECTORS)):
+        directory = tmp_path / f"build-{index}"
+        directory.mkdir()
+        projection = project(repository, selector)
+
+        built = run_build(directory, repository, projection)
 
         assert built.returncode == 0, built.stderr
         result = as_object(json.loads(built.stdout))
@@ -332,13 +383,54 @@ def test_nested_selectors_keep_their_identity(
             extracted = archive.extractfile(MANIFEST_MEMBER)
             assert extracted is not None
             manifest = as_object(json.loads(extracted.read()))
+        assert projection["workspace"] == selector
         assert manifest["workspace"] == selector
-        assets[selector] = as_text(result["asset"])
-    assert assets == {
-        "suburban/simulators-astound": "hostconfig_suburban_simulators-astound.tar.gz",
-        "suburban/simulators/astound": "hostconfig_suburban_simulators_astound.tar.gz",
-        "suburban-simulators/astound": "hostconfig_suburban-simulators_astound.tar.gz",
-    }
+        assert result["asset"] == target_asset(selector)
+        assets.add(as_text(result["asset"]))
+    assert len(assets) == len(EXTRA_SELECTORS) + 1
+
+
+@pytest.mark.parametrize(
+    ("changed", "expected"),
+    [
+        pytest.param([VAULT_GROUP_FILE], [VAULT], id="host-group-file"),
+        pytest.param(
+            ["mwan/config/_ifmgr_common.toml.j2"], [SUBURBAN, VAULT], id="include"
+        ),
+        pytest.param(
+            ["proxmox/services/mwan-ifmgr-suburban-host-ipv6-policy.conf"],
+            [SUBURBAN],
+            id="configs-asset",
+        ),
+        pytest.param(
+            [f"opentofu/{SUBURBAN}/host-artifact.auto.tfvars.json"], [SUBURBAN], id="pin"
+        ),
+        pytest.param(
+            ["hostartifact/src/hostartifact/pack.py"], [SUBURBAN, VAULT], id="helper"
+        ),
+        pytest.param(["docs/README.md"], [], id="unrelated"),
+    ],
+)
+def test_affected_selects_targets_by_dependency(
+    tmp_path: Path, suburban_repository: Path, changed: list[str], expected: list[str]
+) -> None:
+    selected = run_affected(tmp_path, suburban_repository, changed)
+
+    assert selected.returncode == 0, selected.stderr
+    assert json.loads(selected.stdout) == expected
+
+
+def test_affected_ignores_a_broken_unrelated_target(tmp_path: Path) -> None:
+    repository = copy_repository(tmp_path / "repository")
+    descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
+
+    selected = run_affected(
+        tmp_path, repository, ["ansible/inventory/group_vars/suburban_servers.yml"]
+    )
+
+    assert selected.returncode == 0, selected.stderr
+    assert json.loads(selected.stdout) == [SUBURBAN]
+    assert VAULT in selected.stderr
 
 
 def test_build_rejects_rendered_secret_key(tmp_path: Path) -> None:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import posixpath
 import re
 from pathlib import Path, PurePosixPath
 
@@ -11,8 +13,11 @@ TEMPLATE_PREFIX = "template:"
 ASSET_PREFIX = "asset:"
 ASSET_FIELD_SEPARATOR = ":"
 SELECTOR_SEPARATOR = "/"
-SLUG_SEPARATOR = "_"
-SELECTOR_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*$")
+HIDDEN_PREFIX = "."
+CURRENT_DIRECTORY = "."
+EMPTY_SELECTOR = ""
+BACKSLASH = "\\"
+EXCLUDED_DIRECTORIES = frozenset({"terraform.d", "modules"})
 MODE_PATTERN = re.compile(r"^0[0-7]{3}$")
 ACCOUNT_PATTERN = re.compile(r"^[a-z_][a-z0-9_-]*$")
 REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
@@ -75,18 +80,28 @@ def load_projection(path: Path) -> Projection:
         raise BuildError(f"projection {path} is not valid: {error}") from error
 
 
-def selector_slug(workspace: str) -> str:
-    if SLUG_SEPARATOR in workspace:
+def excluded_directory(name: str) -> bool:
+    return name.startswith(HIDDEN_PREFIX) or name in EXCLUDED_DIRECTORIES
+
+
+def check_selector(workspace: str) -> None:
+    is_clean = posixpath.normpath(workspace) == workspace
+    is_empty = workspace in {EMPTY_SELECTOR, CURRENT_DIRECTORY}
+    is_local = not workspace.startswith(ROOT_PATH) and not is_empty
+    if not is_clean or not is_local or BACKSLASH in workspace:
         raise BuildError(
-            f"workspace selector {workspace!r} contains an underscore, and the asset "
-            "name uses an underscore in place of each slash"
+            f"workspace selector {workspace!r} must be a clean relative path inside "
+            "the workspace tree"
         )
-    if SELECTOR_PATTERN.fullmatch(workspace) is None:
+    if any(excluded_directory(part) for part in workspace.split(SELECTOR_SEPARATOR)):
         raise BuildError(
-            f"workspace selector {workspace!r} must contain only lowercase path "
-            "segments of letters, digits, and hyphens"
+            f"workspace selector {workspace!r} contains an excluded directory"
         )
-    return workspace.replace(SELECTOR_SEPARATOR, SLUG_SEPARATOR)
+
+
+def target_identifier(workspace: str) -> str:
+    check_selector(workspace)
+    return hashlib.sha256(workspace.encode("utf-8")).hexdigest()
 
 
 def check_absolute_path(path: str) -> None:

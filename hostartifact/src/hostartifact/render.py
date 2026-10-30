@@ -130,30 +130,57 @@ class VariableResolver:
         return template.render(self.context(names))
 
 
-def template_variables(environment: Environment, name: str, seen: set[str]) -> set[str]:
-    if name in seen:
-        return set()
-    seen.add(name)
+def load_template_tree(
+    environment: Environment, name: str
+) -> list[tuple[Path, nodes.Template]]:
     loader = environment.loader
     if loader is None:
         raise BuildError(
             f"cannot load template {name} because the environment does not have a "
             "template loader"
         )
-    source, _, _ = loader.get_source(environment, name)
-    tree: nodes.Template = environment.parse(source)
-    names = set(meta.find_undeclared_variables(tree))
-    for included in meta.find_referenced_templates(tree):
-        if included is None:
-            raise BuildError(f"template {name} includes a template by a computed name")
-        names |= template_variables(environment, included, seen)
+    loaded: list[tuple[Path, nodes.Template]] = []
+    pending = [name]
+    seen: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        source, filename, _ = loader.get_source(environment, current)
+        tree: nodes.Template = environment.parse(source)
+        if filename is None:
+            raise BuildError(f"template {current} does not have a file path")
+        loaded.append((Path(filename), tree))
+        for included in meta.find_referenced_templates(tree):
+            if included is None:
+                raise BuildError(
+                    f"template {current} includes a template by a computed name"
+                )
+            pending.append(included)
+    return loaded
+
+
+def template_variables(environment: Environment, name: str) -> set[str]:
+    names: set[str] = set()
+    for _, tree in load_template_tree(environment, name):
+        names |= meta.find_undeclared_variables(tree)
     return names
+
+
+def template_files(template_file: Path) -> list[Path]:
+    environment = new_environment(template_file.parent)
+    try:
+        loaded = load_template_tree(environment, template_file.name)
+    except TemplateError as error:
+        raise BuildError(f"{template_file}: cannot load template: {error}") from error
+    return [path for path, _ in loaded]
 
 
 def render_template(template_file: Path, resolver: VariableResolver) -> bytes:
     environment = new_environment(template_file.parent)
     try:
-        names = template_variables(environment, template_file.name, set())
+        names = template_variables(environment, template_file.name)
         template = environment.get_template(template_file.name)
         rendered = template.render(resolver.context(names))
     except UndefinedError as error:
