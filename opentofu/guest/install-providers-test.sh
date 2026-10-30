@@ -161,8 +161,11 @@ lock_root() {
     local platform="$3"
     mkdir -p "${root_dir}"
     cp "${LOCK_ROOT_FIXTURE}" "${root_dir}/main.tf"
-    tofu -chdir="${root_dir}" providers lock -fs-mirror="${mirror_dir}" \
-        -platform="${platform}" "${PVEGUEST_SOURCE}" > "${root_dir}/lock.log" 2>&1
+    if ! tofu -chdir="${root_dir}" providers lock -fs-mirror="${mirror_dir}" \
+        -platform="${platform}" "${PVEGUEST_SOURCE}" > "${root_dir}/lock.log" 2>&1; then
+        cat "${root_dir}/lock.log" >&2
+        fail "tofu providers lock failed root_dir=${root_dir} mirror_dir=${mirror_dir}"
+    fi
 }
 
 init_readonly_root() {
@@ -245,6 +248,10 @@ run_killed_run_case() {
 }
 
 main() {
+    if ! command -v tofu > /dev/null; then
+        fail "The test cannot find tofu on PATH. Install OpenTofu or add the directory containing tofu to PATH PATH=${PATH}"
+    fi
+
     WORK_DIR="$(mktemp -d)"
     trap cleanup EXIT
 
