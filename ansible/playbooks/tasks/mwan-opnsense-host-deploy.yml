@@ -36,7 +36,7 @@
     owner: root
     group: root
     mode: "0600"
-  # --diff would print the SMTP key.
+  # Do not print the diff: the file has secrets.
   diff: false
   become: true
   notify:
