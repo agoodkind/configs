@@ -1,10 +1,13 @@
 output "projection" {
   value = {
-    workspace       = var.workspace
-    node            = module.targets.target.node
-    environment     = module.targets.target.environment
-    vars            = module.targets.target.vars
-    service_mapping = module.contracts.service_mapping
+    workspace   = var.workspace
+    node        = module.targets.target.node
+    environment = module.targets.target.environment
+    vars = {
+      for name, value in module.targets.target.vars : name => value
+      if name != local.service_mapping_key
+    }
+    service_mapping = module.targets.target.vars[local.service_mapping_key]
     directories     = module.targets.target.directories
     files           = module.targets.target.files
   }

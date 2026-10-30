@@ -2,6 +2,7 @@
   "node": "vault",
   "environment": "prod",
   "group_vars": [
+    "ansible/inventory/group_vars/all/service_mapping.yml",
     "ansible/inventory/group_vars/all/vars.yml",
     "ansible/inventory/group_vars/mwan_prod_all.yml",
     "ansible/inventory/group_vars/proxmox_servers.yml",
