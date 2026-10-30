@@ -8,7 +8,9 @@
 # /etc/mwan/config.toml, and the upgrade verb mails its alerts with them.
 
 [email]
+{% if mwan_host_config_embeds_secrets %}
 smtp2go_api_key = "{{ vault_smtp2go_api_key }}"
+{% endif %}
 alert_email = "{{ mwan_email_recipient }}"
 from = "{{ mwan_email_from }}"
 subject_prefix = "{{ mwan_email_subject_prefix }}"
