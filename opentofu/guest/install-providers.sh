@@ -89,13 +89,26 @@ install_provider() {
 
     mkdir -p "${unpack_dir}" "${target_dir}"
     tar -xzf "${archive_path}" -C "${unpack_dir}" "${binary_name}"
-    install -m 0755 "${unpack_dir}/${binary_name}" "${target_path}"
+
+    local install_action
+    # OpenTofu links initialized roots to the mirror. Replacing an existing binary
+    # changes the executable those roots run and breaks their lockfile checksums.
+    if [[ -e "${target_path}" ]]; then
+        if ! cmp -s "${unpack_dir}/${binary_name}" "${target_path}"; then
+            echo "A different binary is already installed for this source, version, and platform. Assign the release a new mirror version in providers.pin source_address=${source_address} version=${version} platform=${platform} tag=${tag} target_path=${target_path}" >&2
+            return 1
+        fi
+        install_action="reused"
+    else
+        install -m 0755 "${unpack_dir}/${binary_name}" "${target_path}"
+        install_action="installed"
+    fi
 
     if [[ ! -x "${target_path}" ]] || ! cmp -s "${unpack_dir}/${binary_name}" "${target_path}"; then
         echo "Binary is not executable or mismatches archive member target_path=${target_path}" >&2
         return 1
     fi
-    echo "Script installed one provider source_address=${source_address} tag=${tag} target_path=${target_path}"
+    echo "Script ${install_action} one provider source_address=${source_address} tag=${tag} target_path=${target_path}"
 }
 
 main() {
