@@ -390,14 +390,17 @@ qualifies existing implementations before assigning new code.
   out of published artifacts, logs, plans, and state. An invalid secret field
   cannot change another setting or execute a command.
 - AC21: With real isolated OpenTofu backends and the public deployment
-  interface, update one feature on one host while an unrelated feature on
-  that host has invalid configuration and that feature on another host has
-  an unavailable dependency. The selected deployment succeeds. Unrelated
-  state bytes, artifact pins, installed files, secret versions, and services
-  remain unchanged. The executor does not plan those roots or acquire their
-  state locks. An artifact or secret update for another feature or host fails
-  before installation. Actual shared host prerequisites retain their declared
-  ownership and locking.
+  interface, update a selected feature on one host while an unrelated feature
+  on that host has invalid configuration and the selected feature on a second
+  host has an unavailable dependency. The selected deployment succeeds.
+  Require the same isolation during selected secret rotation and interruption
+  followed by recovery. Unrelated state bytes, artifact pins, installed-version
+  records, installed files, and secret versions remain unchanged. Observe
+  service invocation identities and workspace-operation and lock events across
+  each complete operation to detect unrelated restarts, initialization,
+  refresh, plans, applies, and state-lock acquisitions. An artifact or secret
+  update for another feature or host fails before installation. Actual shared
+  host prerequisites retain their declared ownership and locking.
 
 ## Migration order
 
