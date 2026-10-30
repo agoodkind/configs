@@ -14,6 +14,7 @@ readonly SHA256_PATTERN='^[0-9a-f]{64}$'
 readonly PINNED_ARGUMENT_COUNT=3
 
 WORK_DIR=""
+RUN_STAGING_DIR=""
 CANDIDATE_PATH=""
 
 usage() {
@@ -29,6 +30,9 @@ remove_candidate() {
 
 cleanup() {
     remove_candidate
+    if [[ -n "${RUN_STAGING_DIR}" ]]; then
+        rm -rf "${RUN_STAGING_DIR}"
+    fi
     if [[ -n "${WORK_DIR}" ]]; then
         rm -rf "${WORK_DIR}"
     fi
@@ -82,6 +86,46 @@ link_no_replace() {
     esac
 }
 
+# Linux checks /proc/<pid>, and Darwin runs /bin/ps -p <pid>.
+# Both checks detect processes owned by other users, while kill -0 can fail for them.
+process_is_running() {
+    local os="$1"
+    local pid="$2"
+    case "${os}" in
+        linux) [[ -d "/proc/${pid}" ]] ;;
+        darwin) /bin/ps -p "${pid}" > /dev/null ;;
+        *)
+            echo "Cannot check process status on the host operating system os=${os}" >&2
+            exit 1
+            ;;
+    esac
+}
+
+# Delete run.<pid>.* directories when the process has exited. Keep directories for
+# running processes and entries that do not match run.<digits>.*.
+# SIGKILL, an out-of-memory kill, or power loss can prevent EXIT trap cleanup.
+remove_stale_staging() {
+    local os="$1"
+    local staging_root="$2"
+    local run_dir run_name run_pid
+    for run_dir in "${staging_root}"/run.*; do
+        if [[ ! -d "${run_dir}" ]]; then
+            continue
+        fi
+        run_name="${run_dir##*/}"
+        run_pid="${run_name#run.}"
+        run_pid="${run_pid%%.*}"
+        if [[ ! "${run_pid}" =~ ^[0-9]+$ ]]; then
+            continue
+        fi
+        if process_is_running "${os}" "${run_pid}"; then
+            continue
+        fi
+        rm -rf "${run_dir}"
+        echo "Removed staging directory for an exited process run_dir=${run_dir} run_pid=${run_pid}"
+    done
+}
+
 install_provider() {
     local source_address="$1"
     local repository="$2"
@@ -122,12 +166,21 @@ install_provider() {
         return 1
     fi
 
+    # OpenTofu includes every file in a package directory in its lockfile checksum.
+    # Extra entries, including leftovers from older installers, cause checksum errors.
+    local package_entries
+    package_entries="$(find "${target_dir}" -mindepth 1 ! -path "${target_path}")"
+    if [[ -n "${package_entries}" ]]; then
+        echo "The package directory contains extra entries. Delete the listed entries and run the installer again target_dir=${target_dir}" >&2
+        echo "${package_entries}" >&2
+        return 1
+    fi
+
     # OpenTofu links initialized roots to the mirror. Replacing an existing binary
     # changes the executable those roots run and breaks their lockfile checksums.
-    # Copy the binary to a temporary file in the target directory, then create a hard
-    # link at the target path. The link fails if another installer created the target,
-    # so concurrent installers cannot replace an existing binary.
-    CANDIDATE_PATH="$(mktemp "${target_dir}/.${binary_name}_v${version}.XXXXXX")"
+    # Copy the candidate into this run's staging directory. The hard link fails if
+    # the target already exists, preventing replacement.
+    CANDIDATE_PATH="$(mktemp "${RUN_STAGING_DIR}/${binary_name}_v${version}.XXXXXX")"
     cp "${unpack_dir}/${binary_name}" "${CANDIDATE_PATH}"
     chmod 0755 "${CANDIDATE_PATH}"
 
@@ -174,6 +227,17 @@ main() {
     platform="$(host_platform)"
     WORK_DIR="$(mktemp -d)"
     trap cleanup EXIT
+
+    # Place the staging root beside the mirror in its parent directory. OpenTofu
+    # does not read it, so temporary files do not change package checksums.
+    local os="${platform%%_*}"
+    local mirror_parent mirror_name staging_root
+    mirror_parent="$(dirname "${mirror_dir}")"
+    mirror_name="$(basename "${mirror_dir}")"
+    staging_root="${mirror_parent}/.${mirror_name}.staging"
+    mkdir -p "${staging_root}"
+    remove_stale_staging "${os}" "${staging_root}"
+    RUN_STAGING_DIR="$(mktemp -d "${staging_root}/run.$$.XXXXXX")"
 
     local line_number=0
     local seen_sources=""

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
-# Check that repeated installs preserve mirror files and conflicting pins fail
-# without changing them. Check concurrent installs with conflicting pins.
-# Missing archives require network access and an authenticated gh session
-# for the first download.
+# Check repeat installation, conflicting pins, concurrent installation, and
+# recovery from staging leftovers with the real installer and OpenTofu.
+# The test requires tofu on PATH. The first download of missing archives
+# requires network access and an authenticated gh session.
 
 set -euo pipefail
 
@@ -13,11 +13,14 @@ readonly SCRIPT_DIR REPOSITORY_ROOT
 
 readonly INSTALLER="${SCRIPT_DIR}/install-providers.sh"
 readonly PIN_FILE="${SCRIPT_DIR}/providers.pin"
+readonly LOCK_ROOT_FIXTURE="${SCRIPT_DIR}/testdata/pveguest-lock-root/main.tf"
 readonly ARCHIVE_DIR="${REPOSITORY_ROOT}/.make/releases"
 readonly PVEGUEST_SOURCE="tofu.home.arpa/agoodkind/pveguest"
 readonly ASSIGNED_VERSION="0.1.1"
 readonly REPLACEMENT_VERSION="0.1.2"
 readonly RACE_ROUNDS=5
+readonly WATCH_INTERVAL_SECONDS=0.05
+readonly DIFFERENT_BINARY_MESSAGE="A different binary exists at the target"
 
 WORK_DIR=""
 
@@ -53,6 +56,34 @@ archive_member_path() {
     printf '%s\n' "${output_dir}/${binary_name}"
 }
 
+record_target_state() {
+    local target_path="$1"
+    local output_path="$2"
+    local inode_line digest_line
+    if ! inode_line="$(ls -i "${target_path}" 2> /dev/null)"; then
+        return 0
+    fi
+    if ! digest_line="$(shasum -a 256 "${target_path}" 2> /dev/null)"; then
+        return 0
+    fi
+    local inode
+    read -r inode _ <<< "${inode_line}"
+    echo "inode=${inode} sha256=${digest_line%% *}" >> "${output_path}"
+}
+
+# Record the target inode and SHA-256 every 0.05 seconds and once after the
+# installers exit to detect a change during the race.
+watch_target() {
+    local target_path="$1"
+    local output_path="$2"
+    local stop_path="$3"
+    while [[ ! -e "${stop_path}" ]]; do
+        record_target_state "${target_path}" "${output_path}"
+        sleep "${WATCH_INTERVAL_SECONDS}"
+    done
+    record_target_state "${target_path}" "${output_path}"
+}
+
 run_race_round() {
     local round="$1"
     local platform="$2"
@@ -62,8 +93,12 @@ run_race_round() {
     local race_mirror="${race_dir}/mirror"
     local target_dir="${race_mirror}/${PVEGUEST_SOURCE}/${ASSIGNED_VERSION}/${platform}"
     local target_path="${target_dir}/terraform-provider-pveguest_v${ASSIGNED_VERSION}"
+    local states_path="${race_dir}/target-states"
+    local stop_path="${race_dir}/stop-watch"
     mkdir -p "${race_dir}"
 
+    watch_target "${target_path}" "${states_path}" "${stop_path}" &
+    local watch_pid=$!
     "${INSTALLER}" "${assigned_pin_file}" "${race_mirror}" "${ARCHIVE_DIR}" \
         > "${race_dir}/assigned.log" 2>&1 &
     local assigned_pid=$!
@@ -75,6 +110,8 @@ run_race_round() {
     local conflict_exit_code=0
     wait "${assigned_pid}" || assigned_exit_code=$?
     wait "${conflict_pid}" || conflict_exit_code=$?
+    : > "${stop_path}"
+    wait "${watch_pid}"
 
     local winner_pin_file loser_log
     if [[ ${assigned_exit_code} -eq 0 && ${conflict_exit_code} -ne 0 ]]; then
@@ -88,9 +125,17 @@ run_race_round() {
         fail "The installers did not produce exactly one success round=${round} assigned_exit_code=${assigned_exit_code} conflict_exit_code=${conflict_exit_code}"
     fi
 
-    if ! grep -qF "target_path=${target_path}" "${loser_log}"; then
+    local distinct_states
+    distinct_states="$(sort -u "${states_path}")"
+    if [[ "${distinct_states}" == *$'\n'* ]]; then
+        echo "${distinct_states}" >&2
+        fail "The target inode or bytes changed during the race round=${round} target_path=${target_path}"
+    fi
+
+    if ! grep -qF "${DIFFERENT_BINARY_MESSAGE}" "${loser_log}" ||
+        ! grep -qF "target_path=${target_path}" "${loser_log}"; then
         cat "${loser_log}" >&2
-        fail "The failing installer did not identify the target path round=${round} target_path=${target_path}"
+        fail "The failing installer did not report the different binary error for the target round=${round} target_path=${target_path}"
     fi
 
     local winner_member
@@ -107,6 +152,95 @@ run_race_round() {
     if [[ -n "${extra_entries}" ]]; then
         echo "${extra_entries}" >&2
         fail "The target directory contains entries other than the target binary round=${round} target_dir=${target_dir}"
+    fi
+}
+
+lock_root() {
+    local root_dir="$1"
+    local mirror_dir="$2"
+    local platform="$3"
+    mkdir -p "${root_dir}"
+    cp "${LOCK_ROOT_FIXTURE}" "${root_dir}/main.tf"
+    tofu -chdir="${root_dir}" providers lock -fs-mirror="${mirror_dir}" \
+        -platform="${platform}" "${PVEGUEST_SOURCE}" > "${root_dir}/lock.log" 2>&1
+}
+
+init_readonly_root() {
+    local root_dir="$1"
+    local mirror_dir="$2"
+    local lock_file="$3"
+    mkdir -p "${root_dir}"
+    cp "${LOCK_ROOT_FIXTURE}" "${root_dir}/main.tf"
+    cp "${lock_file}" "${root_dir}/.terraform.lock.hcl"
+    tofu -chdir="${root_dir}" init -backend=false -input=false -lockfile=readonly \
+        -plugin-dir="${mirror_dir}" > "${root_dir}/init.log" 2>&1
+}
+
+# Check that staging leftovers do not change OpenTofu checksums, that cleanup
+# deletes only the exited process's run directory, and that the installer rejects
+# an old temporary file inside the package directory without changing the mirror.
+run_killed_run_case() {
+    local platform="$1"
+    local assigned_pin_file="$2"
+    local replacement_member="$3"
+    local case_dir="${WORK_DIR}/killed-run"
+    local case_mirror="${case_dir}/mirror"
+    local staging_root="${case_dir}/.mirror.staging"
+    local target_dir="${case_mirror}/${PVEGUEST_SOURCE}/${ASSIGNED_VERSION}/${platform}"
+    local reference_lock="${case_dir}/reference-root/.terraform.lock.hcl"
+
+    "${INSTALLER}" "${assigned_pin_file}" "${case_mirror}" "${ARCHIVE_DIR}"
+    lock_root "${case_dir}/reference-root" "${case_mirror}" "${platform}"
+
+    local dead_pid
+    true &
+    dead_pid=$!
+    wait "${dead_pid}"
+    local stale_run_dir="${staging_root}/run.${dead_pid}.killed"
+    local live_run_dir="${staging_root}/run.$$.live"
+    local foreign_entry="${staging_root}/operator-notes"
+    local stale_candidate="${stale_run_dir}/terraform-provider-pveguest_v${ASSIGNED_VERSION}.leftover"
+    mkdir -p "${stale_run_dir}" "${live_run_dir}" "${foreign_entry}"
+    cp "${replacement_member}" "${stale_candidate}"
+    chmod 0755 "${stale_candidate}"
+
+    if ! init_readonly_root "${case_dir}/leftover-init-root" "${case_mirror}" "${reference_lock}"; then
+        cat "${case_dir}/leftover-init-root/init.log" >&2
+        fail "tofu init failed with the reference lockfile while staging leftovers were present case_dir=${case_dir}"
+    fi
+    lock_root "${case_dir}/leftover-lock-root" "${case_mirror}" "${platform}"
+    if ! diff "${reference_lock}" "${case_dir}/leftover-lock-root/.terraform.lock.hcl" >&2; then
+        fail "The lockfile generated with staging leftovers differs from the reference lockfile case_dir=${case_dir}"
+    fi
+
+    "${INSTALLER}" "${assigned_pin_file}" "${case_mirror}" "${ARCHIVE_DIR}"
+    if [[ -e "${stale_run_dir}" ]]; then
+        fail "The installer kept the run directory of an exited process stale_run_dir=${stale_run_dir}"
+    fi
+    if [[ ! -d "${live_run_dir}" || ! -d "${foreign_entry}" ]]; then
+        fail "The installer deleted a live run directory or an unrelated entry staging_root=${staging_root}"
+    fi
+    if ! init_readonly_root "${case_dir}/rerun-init-root" "${case_mirror}" "${reference_lock}"; then
+        cat "${case_dir}/rerun-init-root/init.log" >&2
+        fail "tofu init failed with the reference lockfile after the installer ran again case_dir=${case_dir}"
+    fi
+
+    local package_leftover="${target_dir}/.terraform-provider-pveguest_v${ASSIGNED_VERSION}.Y0VvPz"
+    local package_before="${case_dir}/package-before.sha256"
+    local package_after="${case_dir}/package-after.sha256"
+    local package_stderr="${case_dir}/package-leftover.stderr"
+    cp "${replacement_member}" "${package_leftover}"
+    mirror_digests "${case_mirror}" "${package_before}"
+    if "${INSTALLER}" "${assigned_pin_file}" "${case_mirror}" "${ARCHIVE_DIR}" 2> "${package_stderr}"; then
+        fail "The installer accepted an extra file in the package directory target_dir=${target_dir}"
+    fi
+    if ! grep -qF "${package_leftover}" "${package_stderr}"; then
+        cat "${package_stderr}" >&2
+        fail "The installer error does not list the extra file package_leftover=${package_leftover}"
+    fi
+    mirror_digests "${case_mirror}" "${package_after}"
+    if ! diff "${package_before}" "${package_after}" >&2; then
+        fail "The failed installer changed mirror files or modes target_dir=${target_dir}"
     fi
 }
 
@@ -159,9 +293,8 @@ main() {
         fail "Rejected install changed mirror files mirror_dir=${mirror_dir}"
     fi
 
-    # Run five rounds with two installers assigning different pveguest archives to
-    # version 0.1.1 in a new mirror. Require one winner and check its binary, mode,
-    # error from the other installer, and removal of temporary files.
+    # Run five races between installers that assign different binaries to the same
+    # target and check that the target does not change after its creation.
     awk -v source="${PVEGUEST_SOURCE}" -v version="${ASSIGNED_VERSION}" \
         -v platform="${platform}" \
         '$1 == source && $4 == version && $5 == platform { print }' \
@@ -173,6 +306,10 @@ main() {
     for ((round = 1; round <= RACE_ROUNDS; round++)); do
         run_race_round "${round}" "${platform}" "${assigned_pin_file}" "${conflict_pin_file}"
     done
+
+    local replacement_member
+    replacement_member="$(archive_member_path "${conflict_pin_file}" "${platform}" "${WORK_DIR}/replacement")"
+    run_killed_run_case "${platform}" "${assigned_pin_file}" "${replacement_member}"
 
     echo "Provider installation checks passed platform=${platform}"
 }
