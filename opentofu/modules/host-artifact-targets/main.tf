@@ -31,7 +31,6 @@ locals {
   }
   targets = {
     for workspace, descriptor in local.descriptors : workspace => merge(descriptor, {
-      environment = yamldecode(file("${var.repository_root}/${descriptor.environment_group_vars}")).mwan_environment
       vars = merge([
         for group_file in descriptor.group_vars : yamldecode(file("${var.repository_root}/${group_file}"))
       ]...)

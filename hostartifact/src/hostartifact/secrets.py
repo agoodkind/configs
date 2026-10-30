@@ -12,6 +12,7 @@ VAULT_PREFIX = "vault_"
 EMBEDS_SECRETS_VARIABLE = "mwan_host_config_embeds_secrets"
 FORBIDDEN_KEYS = frozenset({"smtp2go_api_key", "token_secret", "token_id"})
 TOML_SUFFIX = ".toml"
+TEMPLATE_MARKERS = ("{{", "{%", "{#")
 
 type TomlValue = (
     str | int | float | bool | datetime | date | time | list[TomlValue] | TomlTable
@@ -48,11 +49,20 @@ def nested_forbidden_keys(value: TomlValue) -> list[str]:
 
 
 def check_rendered_file(destination: str, content: bytes) -> None:
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise BuildError(f"{destination} does not contain UTF-8 text: {error}") from error
+    markers = [marker for marker in TEMPLATE_MARKERS if marker in text]
+    if markers:
+        raise BuildError(
+            f"{destination} contains unresolved template markers: {' '.join(markers)}"
+        )
     if not destination.endswith(TOML_SUFFIX):
         return
     try:
-        document: TomlTable = tomllib.loads(content.decode("utf-8"))
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        document: TomlTable = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
         raise BuildError(f"{destination} is not valid TOML: {error}") from error
     found = sorted(set(forbidden_keys(document)))
     if found:

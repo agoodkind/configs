@@ -1,6 +1,6 @@
 {
   "node": "vault",
-  "environment_group_vars": "ansible/inventory/group_vars/vault_servers.yml",
+  "environment": "prod",
   "group_vars": [
     "ansible/inventory/group_vars/all/vars.yml",
     "ansible/inventory/group_vars/mwan_prod_all.yml",

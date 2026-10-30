@@ -50,9 +50,16 @@ PLAN_FILE = "projection.tfplan"
 SYNTHETIC_SECRET = "synthetic-secret-marker"
 OCTAL_BASE = 8
 PERMISSION_BITS = 0o7777
+MWAN_CONFIG = "/etc/mwan/config.toml"
+DRAIN_UNIT = "/etc/systemd/system/mwan-opnsense-drain.service"
+WATCHDOG_UNIT = "/etc/systemd/system/mwan-watchdog-testbed.service"
+MISSING_ASSET_SOURCE = f"asset:{CONFIGS_REPOSITORY}:proxmox/services/absent.service"
+OUTSIDE_LINK = "proxmox/services/outside-link.conf"
+RAW_TEMPLATE_SOURCE = f"asset:{CONFIGS_REPOSITORY}:mwan/config/config-host.toml.j2"
+UNRESOLVED_TEMPLATE_TEXT = "contains unresolved template markers: {{ {% {#\n"
 
 type JsonObject = dict[str, JsonValue]
-type Mutation = Callable[[JsonObject], None]
+type Mutation = Callable[[JsonObject, Path], None]
 
 
 def as_object(value: JsonValue) -> JsonObject:
@@ -297,66 +304,207 @@ def test_unknown_workspace_fails_with_known_selectors(suburban_repository: Path)
     assert "suburban/mwan, vault/mwan" in planned.stderr
 
 
-def remove_required_variable(projection: JsonObject) -> None:
+def file_entry(projection: JsonObject, destination: str) -> JsonObject:
+    for entry in as_list(projection["files"]):
+        candidate = as_object(entry)
+        if candidate["destination"] == destination:
+            return candidate
+    raise AssertionError(destination)
+
+
+def append_to_template(repository: Path, template: str, text: str) -> None:
+    path = repository / template
+    path.write_text(path.read_text(encoding="utf-8") + text, encoding="utf-8")
+
+
+def remove_required_variable(projection: JsonObject, repository: Path) -> None:
+    del repository
     del as_object(projection["vars"])["mwan_email_from"]
 
 
-def add_vault_variable(projection: JsonObject) -> None:
+def add_vault_variable(projection: JsonObject, repository: Path) -> None:
+    del repository
     as_object(projection["vars"])["vault_smtp2go_api_key"] = SYNTHETIC_SECRET
 
 
-def conflict_node(projection: JsonObject) -> None:
+def conflict_node(projection: JsonObject, repository: Path) -> None:
+    del repository
     projection["node"] = "vault"
 
 
-def use_unclean_selector(projection: JsonObject) -> None:
+def conflict_environment(projection: JsonObject, repository: Path) -> None:
+    del repository
+    projection["environment"] = "prod"
+
+
+def use_unclean_selector(projection: JsonObject, repository: Path) -> None:
+    del repository
     projection["workspace"] = "suburban/../vault/mwan"
 
 
-def use_excluded_selector(projection: JsonObject) -> None:
+def use_excluded_selector(projection: JsonObject, repository: Path) -> None:
+    del repository
     projection["workspace"] = "modules/mwan"
 
 
-def duplicate_destination(projection: JsonObject) -> None:
+def duplicate_destination(projection: JsonObject, repository: Path) -> None:
+    del repository
     files = as_list(projection["files"])
-    files.append(copy.deepcopy(files[0]))
+    files.append(copy.deepcopy(file_entry(projection, MWAN_CONFIG)))
 
 
-def point_at_missing_asset(projection: JsonObject) -> None:
-    for entry in as_list(projection["files"]):
-        file_entry = as_object(entry)
-        if as_text(file_entry["destination"]).endswith("mwan-opnsense-drain.service"):
-            file_entry["source"] = (
-                "asset:agoodkind/configs:proxmox/services/absent.service"
-            )
+def duplicate_directory(projection: JsonObject, repository: Path) -> None:
+    del repository
+    directories = as_list(projection["directories"])
+    directories.append(copy.deepcopy(directories[0]))
+
+
+def use_special_mode(projection: JsonObject, repository: Path) -> None:
+    del repository
+    file_entry(projection, MWAN_CONFIG)["mode"] = "4755"
+
+
+def point_at_missing_asset(projection: JsonObject, repository: Path) -> None:
+    del repository
+    file_entry(projection, DRAIN_UNIT)["source"] = MISSING_ASSET_SOURCE
+
+
+def point_at_outside_link(projection: JsonObject, repository: Path) -> None:
+    outside = repository.parent / "outside.conf"
+    outside.write_text("[Service]\n", encoding="utf-8")
+    (repository / OUTSIDE_LINK).symlink_to(outside)
+    file_entry(projection, DRAIN_UNIT)["source"] = (
+        f"asset:{CONFIGS_REPOSITORY}:{OUTSIDE_LINK}"
+    )
+
+
+def copy_template_into_service_file(projection: JsonObject, repository: Path) -> None:
+    del repository
+    file_entry(projection, WATCHDOG_UNIT)["source"] = RAW_TEMPLATE_SOURCE
+
+
+def copy_template_into_config_file(projection: JsonObject, repository: Path) -> None:
+    del repository
+    file_entry(projection, MWAN_CONFIG)["source"] = RAW_TEMPLATE_SOURCE
+
+
+def render_invalid_toml(projection: JsonObject, repository: Path) -> None:
+    del projection
+    append_to_template(repository, OPNSENSE_TEMPLATE, "\nthis line = = invalid\n")
+
+
+def render_secret_key(projection: JsonObject, repository: Path) -> None:
+    del projection
+    append_to_template(
+        repository, OPNSENSE_TEMPLATE, f'\ntoken_secret = "{SYNTHETIC_SECRET}"\n'
+    )
 
 
 @pytest.mark.parametrize(
     ("mutation", "expected_text"),
     [
-        pytest.param(remove_required_variable, "mwan_email_from", id="missing-variable"),
-        pytest.param(add_vault_variable, "vault_smtp2go_api_key", id="vault-variable"),
-        pytest.param(conflict_node, "mwan_proxmox_node", id="conflicting-node"),
-        pytest.param(use_unclean_selector, "suburban/../vault/mwan", id="unclean"),
-        pytest.param(use_excluded_selector, "modules/mwan", id="excluded"),
-        pytest.param(duplicate_destination, "/etc/mwan/config.toml", id="duplicate"),
-        pytest.param(point_at_missing_asset, "absent.service", id="missing-asset"),
+        pytest.param(
+            remove_required_variable,
+            "config-host.toml.j2: unresolved variable: 'mwan_email_from' is undefined",
+            id="missing-variable",
+        ),
+        pytest.param(
+            add_vault_variable,
+            "hostartifact: the projection variables must not include vault values: "
+            "vault_smtp2go_api_key\n",
+            id="vault-variable",
+        ),
+        pytest.param(
+            conflict_node,
+            "hostartifact: mwan_proxmox_node is 'hypervisor' in the group variables, "
+            "but the projection sets 'vault'\n",
+            id="conflicting-node",
+        ),
+        pytest.param(
+            conflict_environment,
+            "hostartifact: mwan_environment is 'testbed' in the group variables, "
+            "but the projection sets 'prod'\n",
+            id="conflicting-environment",
+        ),
+        pytest.param(
+            use_unclean_selector,
+            "hostartifact: workspace selector 'suburban/../vault/mwan' must be a clean "
+            "relative path inside the workspace tree\n",
+            id="unclean-selector",
+        ),
+        pytest.param(
+            use_excluded_selector,
+            "hostartifact: workspace selector 'modules/mwan' contains an excluded "
+            "directory\n",
+            id="excluded-selector",
+        ),
+        pytest.param(
+            duplicate_destination,
+            "hostartifact: the projection lists destination /etc/mwan/config.toml "
+            "more than once\n",
+            id="duplicate-destination",
+        ),
+        pytest.param(
+            duplicate_directory,
+            "hostartifact: the projection lists directory /etc/mwan more than once\n",
+            id="duplicate-directory",
+        ),
+        pytest.param(
+            use_special_mode,
+            "hostartifact: /etc/mwan/config.toml: mode '4755' must be four octal "
+            "digits that start with 0\n",
+            id="special-mode",
+        ),
+        pytest.param(
+            point_at_missing_asset,
+            "hostartifact: proxmox/services/absent.service is not a regular file in "
+            "the agoodkind/configs checkout at ",
+            id="missing-asset",
+        ),
+        pytest.param(
+            point_at_outside_link,
+            f"hostartifact: {OUTSIDE_LINK} is not a regular file in the "
+            "agoodkind/configs checkout at ",
+            id="link-outside-checkout",
+        ),
+        pytest.param(
+            copy_template_into_service_file,
+            f"hostartifact: {WATCHDOG_UNIT} {UNRESOLVED_TEMPLATE_TEXT}",
+            id="unresolved-service-file",
+        ),
+        pytest.param(
+            copy_template_into_config_file,
+            f"hostartifact: {MWAN_CONFIG} {UNRESOLVED_TEMPLATE_TEXT}",
+            id="unresolved-config-file",
+        ),
+        pytest.param(
+            render_invalid_toml,
+            "hostartifact: /etc/opnsensectl/config.toml is not valid TOML: ",
+            id="invalid-toml",
+        ),
+        pytest.param(
+            render_secret_key,
+            "hostartifact: /etc/opnsensectl/config.toml contains secret keys: "
+            "token_secret\n",
+            id="rendered-secret-key",
+        ),
     ],
 )
-def test_build_rejects_invalid_projection(
+def test_build_rejects_each_invalid_input(
     tmp_path: Path,
-    suburban_repository: Path,
     suburban_projection: JsonObject,
     mutation: Mutation,
     expected_text: str,
 ) -> None:
+    repository = copy_repository(tmp_path / "repository")
     projection = copy.deepcopy(suburban_projection)
-    mutation(projection)
+    mutation(projection, repository)
 
-    built = run_build(tmp_path, suburban_repository, projection)
+    built = run_build(tmp_path, repository, projection)
 
-    assert built.returncode != 0
+    assert built.returncode == 1, built.stderr
     assert expected_text in built.stderr
+    assert "Traceback" not in built.stderr
     assert SYNTHETIC_SECRET not in built.stderr
     assert not (tmp_path / "output").exists()
 
@@ -431,19 +579,3 @@ def test_affected_ignores_a_broken_unrelated_target(tmp_path: Path) -> None:
     assert selected.returncode == 0, selected.stderr
     assert json.loads(selected.stdout) == [SUBURBAN]
     assert VAULT in selected.stderr
-
-
-def test_build_rejects_rendered_secret_key(tmp_path: Path) -> None:
-    repository = copy_repository(tmp_path / "repository")
-    template = repository / OPNSENSE_TEMPLATE
-    template.write_text(
-        template.read_text(encoding="utf-8") + f'\ntoken_secret = "{SYNTHETIC_SECRET}"\n',
-        encoding="utf-8",
-    )
-    projection = project(repository, SUBURBAN)
-
-    built = run_build(tmp_path, repository, projection)
-
-    assert built.returncode != 0
-    assert "token_secret" in built.stderr
-    assert not (tmp_path / "output").exists()

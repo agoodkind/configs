@@ -1,6 +1,6 @@
 {
   "node": "hypervisor",
-  "environment_group_vars": "ansible/inventory/group_vars/suburban_servers.yml",
+  "environment": "testbed",
   "group_vars": [
     "ansible/inventory/group_vars/all/vars.yml",
     "ansible/inventory/group_vars/mwan_testbed_all.yml",
