@@ -222,7 +222,13 @@ jobs:
           identifier="${ASSET#hostconfig_}"
           identifier="${identifier%.tar.gz}"
           tag="hostconfig-$identifier-$(date -u +%Y%m%d%H%M)-$GITHUB_RUN_NUMBER-${GITHUB_SHA:0:7}"
-          gh release create "$tag" --target "$GITHUB_SHA" --latest=false "$ARCHIVE" "$bundle"
+          release_options=(--target "$GITHUB_SHA" --latest=false)
+          # Publish fixtures as prereleases because GitHub does not return them from /releases/latest.
+          # GitHub can return a stable release created with --latest=false as the fallback.
+          if [ "$FIXTURE_CASE" != "none" ]; then
+            release_options+=(--prerelease)
+          fi
+          gh release create "$tag" "${release_options[@]}" "$ARCHIVE" "$bundle"
           {
             echo "tag=$tag"
             echo "bundle_asset=$(basename "$bundle")"
