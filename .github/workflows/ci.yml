@@ -13,6 +13,11 @@ on:
         description: Full commit SHA to build, which must equal the commit of the dispatched main branch
         required: true
         type: string
+      fixture_case:
+        description: Fixture case, or none for a target build; workspace must equal the fixture selector
+        required: false
+        default: none
+        type: string
 
 permissions:
   contents: read
@@ -135,10 +140,10 @@ jobs:
             exit 1
           fi
 
-  # This job runs only for a manual dispatch on main. It builds the selected
-  # workspace, attests the archive, publishes the archive and the attestation
-  # bundle as the only assets of a new release, and writes the pin JSON to the
-  # job summary.
+  # This job runs only for a manual dispatch on main. It checks the revision,
+  # builds the selected workspace or fixture, attests the archive, and publishes
+  # the archive and attestation bundle as the only assets of a new release.
+  # It writes the pin JSON to the job summary.
   host-artifact:
     name: host artifact
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
@@ -156,6 +161,7 @@ jobs:
     env:
       WORKSPACE: ${{ inputs.workspace }}
       REVISION: ${{ inputs.revision }}
+      FIXTURE_CASE: ${{ inputs.fixture_case }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -182,7 +188,17 @@ jobs:
         run: |
           set -euo pipefail
           work="$RUNNER_TEMP/hostartifact"
-          hostartifact/scripts/build-target.sh "$GITHUB_WORKSPACE" "$WORKSPACE" "$work" "$GITHUB_SHA"
+          if [ "$FIXTURE_CASE" = "none" ]; then
+            hostartifact/scripts/build-target.sh "$GITHUB_WORKSPACE" "$WORKSPACE" "$work" "$GITHUB_SHA"
+          else
+            mkdir -p "$work"
+            uv run --frozen --project hostartifact python hostartifact/tests/build_fixture.py \
+              --case "$FIXTURE_CASE" \
+              --expected-workspace "$WORKSPACE" \
+              --source-revision "$GITHUB_SHA" \
+              --output-dir "$work/output" > "$work/result.json"
+            jq . "$work/result.json"
+          fi
           {
             echo "archive=$(jq -er .archive "$work/result.json")"
             echo "asset=$(jq -er .asset "$work/result.json")"

@@ -82,9 +82,97 @@ A change under `.github/workflows/ci.yml`, `hostartifact/`,
 every candidate target. When the command cannot read a descriptor, it prints a warning
 and selects that target only when its descriptor or pin file changed.
 
+## build_fixture.py
+
+[build_fixture.py](tests/build_fixture.py) creates fixed archives for host API acceptance.
+The command replaces an existing archive with the same generated name in the output
+directory. This repository-root invocation selects a valid case:
+
+```sh
+uv run --frozen --project hostartifact python hostartifact/tests/build_fixture.py \
+  --case valid-v1 \
+  --expected-workspace suburban/hostartifact-acceptance \
+  --source-revision '<commit>' \
+  --output-dir /tmp/fixture
+```
+
+The command requires these arguments:
+
+| Argument | Meaning |
+|---|---|
+| `--case` | One case from the cases table. |
+| `--expected-workspace` | The fixed selector for the case. Another value causes rejection and does not change the archive. |
+| `--source-revision` | A commit with 40 lowercase hexadecimal characters. The manifest records this value. |
+| `--output-dir` | The directory that receives the archive. |
+
+The command rejects an unknown case, an invalid source revision, or a mismatched expected
+workspace before it creates the output directory. Case definitions fix the payload,
+paths, and identity. Fixture construction does not run OpenTofu or read target
+descriptors, application releases, inventory, or vault values.
+
+The targets use these selectors and directories:
+
+| Target | Selector | Directory |
+|---|---|---|
+| A | `suburban/hostartifact-acceptance` | `/srv/hostartifact-acceptance` |
+| B | `suburban/hostartifact-acceptance-b` | `/srv/hostartifact-acceptance-b` |
+
+Each defect case starts from `valid-v2` and changes one item.
+
+The command accepts these cases:
+
+| Case | Purpose |
+|---|---|
+| `valid-v1` | The first valid version of the two target A files. |
+| `valid-v2` | A second valid version that replaces both target A files. |
+| `other-target` | A valid archive for target B, for a request that selects target A. |
+| `digest` | A member has content that does not match its manifest digest. |
+| `size` | A manifest size does not match its member. |
+| `symlink` | A symbolic link replaces a file member. |
+| `hardlink` | A hard link replaces a file member. |
+| `traversal` | An extra member name contains a parent directory component. |
+| `absolute` | An extra member has an absolute name. |
+| `extra` | The manifest does not list an extra member. |
+| `missing` | A manifest file does not have a member. |
+| `duplicate` | A member name appears twice. |
+| `member-mode` | A member has setuid mode bits that differ from the manifest mode. |
+| `recovery-v1` | The first version of 300 target A files for interrupted installation and recovery. |
+| `recovery-v2` | The second version of 300 target A files for interrupted installation and recovery. |
+
+The command prints one `BuildResult` JSON line with `archive`, `asset`, `sha256`, and
+`size`. The asset name uses
+`hostconfig_fixture-<case>-<SHA-256 of the selector>.tar.gz`. Repeated builds with the
+same case and revision produce identical bytes.
+
+The command returns these exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | The command wrote the archive. |
+| 1 | The command rejected the source revision or expected workspace and printed the reason on stderr with the prefix `build_fixture: `. |
+| 2 | argparse rejected the arguments, including an unknown case, and printed usage on stderr. |
+
+The `host artifact` job in [ci.yml](../.github/workflows/ci.yml) publishes a fixture
+only for a manual dispatch on `refs/heads/main` when `revision` equals the workflow
+commit. The optional `fixture_case` input defaults to `none`, which runs
+`build-target.sh` for `workspace`. A different value builds that fixture with
+`workspace` as the expected selector. The job attests the archive and publishes the
+archive and its attestation bundle as the only assets of a new release with a tag that
+starts with `hostconfig-fixture-<case>-`. Publication does not change a pin file or host
+policy.
+
+A main-branch publication request has this form:
+
+```sh
+gh workflow run ci.yml --ref main \
+  -f workspace=suburban/hostartifact-acceptance \
+  -f revision='<main commit>' \
+  -f fixture_case=valid-v1
+```
+
 ## Exit codes
 
-Both commands use these exit codes:
+The `build` and `affected` commands use these exit codes:
 
 | Code | Meaning |
 |---|---|
