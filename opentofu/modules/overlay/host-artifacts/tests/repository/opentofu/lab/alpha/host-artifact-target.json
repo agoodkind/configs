@@ -1,0 +1,41 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [
+    { "path": "/etc/alpha", "mode": "0755", "owner": "root", "group": "root" }
+  ],
+  "parent_directories": [
+    { "path": "/etc/systemd/system", "mode": "0755", "owner": "root", "group": "root" }
+  ],
+  "files": [
+    {
+      "destination": "/etc/alpha/config.toml",
+      "source": "template:alpha/config.toml.j2",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "destination": "/etc/systemd/system/alpha.service",
+      "source": "asset:agoodkind/configs:alpha/alpha.service",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    }
+  ],
+  "secret_fields": [
+    {
+      "name": "ALPHA_TOKEN",
+      "storage_path": "/etc/alpha/secrets.env",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "pattern": "^[A-Za-z0-9]+$",
+      "min_length": 16,
+      "max_length": 64,
+      "consumer_units": ["alpha.service"]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [
+    { "path": "/srv/outer", "mode": "0755", "owner": "root", "group": "root" }
+  ],
+  "files": [
+    { "destination": "/srv/outer.conf", "source": "template:outer.j2", "mode": "0644", "owner": "root", "group": "root" }
+  ]
+}
