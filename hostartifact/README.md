@@ -84,10 +84,16 @@ and selects that target only when its descriptor or pin file changed.
 
 ## build_fixture.py
 
-Run `build_fixture.py` from the repository root:
+[build_fixture.py](tests/build_fixture.py) creates fixed archives for host API acceptance.
+The command replaces an existing archive with the same generated name in the output
+directory. This repository-root invocation selects a valid case:
 
 ```sh
-uv run --project hostartifact python hostartifact/tests/build_fixture.py --case <case> --expected-workspace <selector> --source-revision <commit> --output-dir <directory>
+uv run --frozen --project hostartifact python hostartifact/tests/build_fixture.py \
+  --case valid-v1 \
+  --expected-workspace suburban/hostartifact-acceptance \
+  --source-revision '<commit>' \
+  --output-dir /tmp/fixture
 ```
 
 The command requires these arguments:
@@ -100,12 +106,9 @@ The command requires these arguments:
 | `--output-dir` | The directory that receives the archive. |
 
 The command rejects an unknown case, an invalid source revision, or a mismatched expected
-workspace before it creates the output directory. The command does not accept payload,
-destination, node, environment, repository, or manifest inputs, and it does not read
-target descriptors, OpenTofu, application releases, inventory, or vault values.
-
-Callers must supply the selector for the case. Each archive writes two files in its
-target directory, except the recovery cases.
+workspace before it creates the output directory. Case definitions fix the payload,
+paths, and identity. Fixture construction does not run OpenTofu or read target
+descriptors, application releases, inventory, or vault values.
 
 The targets use these selectors and directories:
 
@@ -158,20 +161,13 @@ archive and its attestation bundle as the only assets of a new release with a ta
 starts with `hostconfig-fixture-<case>-`. Publication does not change a pin file or host
 policy.
 
-Build `valid-v1` locally:
+A main-branch publication request has this form:
 
 ```sh
-uv run --project hostartifact python hostartifact/tests/build_fixture.py \
-  --case valid-v1 \
-  --expected-workspace suburban/hostartifact-acceptance \
-  --source-revision '<commit>' \
-  --output-dir /tmp/fixture
-```
-
-Dispatch the workflow for `valid-v1`:
-
-```sh
-gh workflow run ci.yml --ref main -f workspace=suburban/hostartifact-acceptance -f revision='<main commit>' -f fixture_case=valid-v1
+gh workflow run ci.yml --ref main \
+  -f workspace=suburban/hostartifact-acceptance \
+  -f revision='<main commit>' \
+  -f fixture_case=valid-v1
 ```
 
 ## Exit codes
