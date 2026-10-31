@@ -1,11 +1,15 @@
-# Keep VMNET at net0 and WAN at net1. OPNsense assigns these adapters
-# to vtnet0 and vtnet1.
+# This module manages the virtual hardware and boot settings of the
+# production OPNsense router on vault.
 resource "proxmox_virtual_environment_vm" "opnsense" {
   node_name = "vault"
   vm_id     = local.service_mapping.opnsense.vmid
   name      = "router.home.goodkind.io"
   tags      = ["legacyv4", "noramusage"]
 
+  # The provider recalculates guest agent addresses and interface names when
+  # power state or network devices change. The provider can write VM settings
+  # during an apply even when the plan lists only computed output changes.
+  # Compare the live VM configuration before and after applying a plan.
   machine         = "q35"
   bios            = "ovmf"
   scsi_hardware   = "virtio-scsi-single"
@@ -56,6 +60,10 @@ resource "proxmox_virtual_environment_vm" "opnsense" {
     device = "socket"
   }
 
+  # The provider assigns consecutive Proxmox slots from this list. FreeBSD
+  # numbers virtio interfaces in slot order at boot. Reordering adapters
+  # changes their interface names without updating the saved OPNsense
+  # interface assignments.
   network_device {
     bridge      = "vmbr0"
     model       = "virtio"
