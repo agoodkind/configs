@@ -84,94 +84,95 @@ and selects that target only when its descriptor or pin file changed.
 
 ## build_fixture.py
 
-`build_fixture.py` builds one fixed acceptance archive for the host artifact install
-API. The command runs from the repository root:
+Run `build_fixture.py` from the repository root:
 
 ```sh
-uv run --project hostartifact python hostartifact/tests/build_fixture.py \
-  --case <case> --expected-workspace <selector> \
-  --source-revision <commit> --output-dir <directory>
+uv run --project hostartifact python hostartifact/tests/build_fixture.py --case <case> --expected-workspace <selector> --source-revision <commit> --output-dir <directory>
 ```
 
-The command accepts these arguments:
+The command requires these arguments:
 
-| Argument | Value |
+| Argument | Meaning |
 |---|---|
-| `--case <case>` | One case identifier from the cases table. |
-| `--expected-workspace <selector>` | The fixed selector for the selected case. This value does not change the archive. |
-| `--source-revision <commit>` | A commit with 40 lowercase hexadecimal characters. The manifest uses this value for `source_revision`. |
-| `--output-dir <directory>` | The directory that receives the archive. The command creates the directory. |
+| `--case` | One case from the cases table. |
+| `--expected-workspace` | The fixed selector for the case. Another value causes rejection and does not change the archive. |
+| `--source-revision` | A commit with 40 lowercase hexadecimal characters. The manifest records this value. |
+| `--output-dir` | The directory that receives the archive. |
 
-The command rejects an unknown case, an invalid source revision, or a mismatched
-expected workspace before creating the output directory. argparse rejects abbreviated
-and unknown options. The command uses constants for every file path and byte in the
-archive. It does not accept payload, destination, node, environment, repository,
-workflow, or manifest inputs. It does not read target descriptors, OpenTofu,
-application releases, inventory, or vault values.
+The command rejects an unknown case, an invalid source revision, or a mismatched expected
+workspace before it creates the output directory. The command does not accept payload,
+destination, node, environment, repository, or manifest inputs, and it does not read
+target descriptors, OpenTofu, application releases, inventory, or vault values.
 
-Both targets use node `hypervisor`, environment `testbed`, and repository
-`agoodkind/configs`. The following table lists their fixed selectors and paths:
+Callers must supply the selector for the case. Each archive writes two files in its
+target directory, except the recovery cases.
 
-| Field | Target A | Target B |
+The targets use these selectors and directories:
+
+| Target | Selector | Directory |
 |---|---|---|
-| Selector | `suburban/hostartifact-acceptance` | `suburban/hostartifact-acceptance-b` |
-| Directory | `/srv/hostartifact-acceptance` | `/srv/hostartifact-acceptance-b` |
-| First file | `/srv/hostartifact-acceptance/a.conf` | `/srv/hostartifact-acceptance-b/a.conf` |
-| Second file | `/srv/hostartifact-acceptance/b.conf` | `/srv/hostartifact-acceptance-b/b.conf` |
+| A | `suburban/hostartifact-acceptance` | `/srv/hostartifact-acceptance` |
+| B | `suburban/hostartifact-acceptance-b` | `/srv/hostartifact-acceptance-b` |
 
-Each directory uses mode `0755`. Each `a.conf` uses mode `0644`, and each `b.conf`
-uses mode `0640`. Every directory and file uses owner `root` and group `root`. Each
-manifest lists its target directory. The archive does not contain a directory member.
-The manifest does not list the shared parent directory `/srv`.
+Each defect case starts from `valid-v2` and changes one item.
 
-Every case uses target A except `other-target`. Each defect case changes only the
-stated item from the `valid-v2` manifest and members. The cases are:
+The command accepts these cases:
 
-| Case | Archive content |
+| Case | Purpose |
 |---|---|
-| `valid-v1` | `a.conf` contains `a one\n`, and `b.conf` contains `b one\n`. The manifest sizes and digests match. |
-| `valid-v2` | `a.conf` contains `a two\n`, and `b.conf` contains `b two\n`. The manifest sizes and digests match. |
-| `other-target` | The archive uses the `valid-v1` contents for target B. |
-| `digest` | The `a.conf` member contains `a bad\n`, which has the same length as `a two\n`. |
-| `size` | The manifest records an `a.conf` size one byte larger than the member. |
-| `symlink` | The `a.conf` member is a symbolic link to `/srv/hostartifact-acceptance/b.conf`. |
-| `hardlink` | The `a.conf` member is a hard link to `files/srv/hostartifact-acceptance/b.conf`. |
-| `traversal` | The archive adds the regular member `files/../srv/hostartifact-acceptance/traversal.conf` containing `x\n`. |
-| `absolute` | The archive adds the regular member `/srv/hostartifact-acceptance/absolute.conf` containing `x\n`. |
-| `extra` | The archive adds the regular member `files/srv/hostartifact-acceptance/extra.conf` containing `x\n`. The manifest does not list it. |
-| `missing` | The archive omits the `a.conf` member. The manifest still lists both files. |
-| `duplicate` | The archive repeats the `a.conf` member after `b.conf`. |
-| `member-mode` | The `a.conf` member uses mode `04755`. The manifest retains mode `0644`. |
-| `recovery-v1` | The archive contains 300 files from `/srv/hostartifact-acceptance/recovery-000.conf` through `/srv/hostartifact-acceptance/recovery-299.conf`. Each file uses mode `0644` and contains `one <number>\n`, with a three-digit number. |
-| `recovery-v2` | The archive contains the same 300 files, each with `two <number>\n`. |
+| `valid-v1` | The first valid version of the two target A files. |
+| `valid-v2` | A second valid version that replaces both target A files. |
+| `other-target` | A valid archive for target B, for a request that selects target A. |
+| `digest` | A member has content that does not match its manifest digest. |
+| `size` | A manifest size does not match its member. |
+| `symlink` | A symbolic link replaces a file member. |
+| `hardlink` | A hard link replaces a file member. |
+| `traversal` | An extra member name contains a parent directory component. |
+| `absolute` | An extra member has an absolute name. |
+| `extra` | The manifest does not list an extra member. |
+| `missing` | A manifest file does not have a member. |
+| `duplicate` | A member name appears twice. |
+| `member-mode` | A member has setuid mode bits that differ from the manifest mode. |
+| `recovery-v1` | The first version of 300 target A files for interrupted installation and recovery. |
+| `recovery-v2` | The second version of 300 target A files for interrupted installation and recovery. |
 
-The command prints one `BuildResult` JSON line on stdout with `archive`, `asset`,
-`sha256`, and `size`. The asset name is
-`hostconfig_fixture-<case>-<SHA-256 of the selector>.tar.gz`.
+The command prints one `BuildResult` JSON line with `archive`, `asset`, `sha256`, and
+`size`. The asset name uses
+`hostconfig_fixture-<case>-<SHA-256 of the selector>.tar.gz`. Repeated builds with the
+same case and revision produce identical bytes.
 
-The archive puts `manifest.json` first. It uses USTAR format, modification time zero,
-numeric owner and group zero, and empty owner and group names. The gzip header uses
-modification time zero and an empty file name. Two runs with the same case and revision
-produce identical bytes. The `symlink` and `hardlink` cases use the standard library
-`tarfile` module directly because the production writer accepts only regular members.
-
-The command uses these exit codes:
+The command returns these exit codes:
 
 | Code | Meaning |
 |---|---|
 | 0 | The command wrote the archive. |
 | 1 | The command rejected the source revision or expected workspace and printed the reason on stderr with the prefix `build_fixture: `. |
-| 2 | argparse rejected the arguments and printed usage on stderr. |
+| 2 | argparse rejected the arguments, including an unknown case, and printed usage on stderr. |
 
-The `host artifact` job accepts the optional `fixture_case` workflow input, which
-defaults to `none`. With `none`, the job runs `build-target.sh` for `workspace`.
-Otherwise, the job builds the selected fixture and requires `workspace` to equal its
-fixed selector. The job runs only for a manual dispatch on `refs/heads/main` and
-requires `revision` to equal the workflow commit. It attests the archive, publishes the
-archive and attestation bundle as the only two assets of a new release, and writes the
-pin JSON to the job summary. A fixture release tag starts with
-`hostconfig-fixture-<case>-`. The fixture build does not change a pin file or host
+The `host artifact` job in [ci.yml](../.github/workflows/ci.yml) publishes a fixture
+only for a manual dispatch on `refs/heads/main` when `revision` equals the workflow
+commit. The optional `fixture_case` input defaults to `none`, which runs
+`build-target.sh` for `workspace`. A different value builds that fixture with
+`workspace` as the expected selector. The job attests the archive and publishes the
+archive and its attestation bundle as the only assets of a new release with a tag that
+starts with `hostconfig-fixture-<case>-`. Publication does not change a pin file or host
 policy.
+
+Build `valid-v1` locally:
+
+```sh
+uv run --project hostartifact python hostartifact/tests/build_fixture.py \
+  --case valid-v1 \
+  --expected-workspace suburban/hostartifact-acceptance \
+  --source-revision '<commit>' \
+  --output-dir /tmp/fixture
+```
+
+Dispatch the workflow for `valid-v1`:
+
+```sh
+gh workflow run ci.yml --ref main -f workspace=suburban/hostartifact-acceptance -f revision='<main commit>' -f fixture_case=valid-v1
+```
 
 ## Exit codes
 

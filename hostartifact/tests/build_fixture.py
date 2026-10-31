@@ -114,8 +114,8 @@ class FixtureArchive(StrictModel):
     members: list[FixtureMember]
 
 
-class Arguments(argparse.Namespace):
-    case: str
+class Arguments(StrictModel):
+    case: FixtureCase
     expected_workspace: str
     source_revision: str
     output_dir: Path
@@ -408,12 +408,13 @@ def parse_arguments(arguments: list[str]) -> Arguments:
     parser.add_argument("--expected-workspace", required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    return parser.parse_args(arguments, namespace=Arguments())
+    parsed = parser.parse_args(arguments)
+    return Arguments.model_validate(vars(parsed))
 
 
 def main(arguments: list[str]) -> int:
     parsed = parse_arguments(arguments)
-    case = FixtureCase(parsed.case)
+    case = parsed.case
     try:
         check_expected_workspace(case, parsed.expected_workspace)
         result = build_fixture(case, parsed.source_revision, parsed.output_dir)
