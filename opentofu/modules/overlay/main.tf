@@ -236,6 +236,17 @@ locals {
     }
   } : {}
 
+  host_artifacts_roles = local.host_artifacts_enabled ? {
+    ScopedHostArtifacts = {
+      path = "/"
+      privileges = [
+        "Sys.HostArtifacts.Audit",
+        "Sys.HostArtifacts.Modify",
+        "Sys.HostSecrets.Modify",
+      ]
+    }
+  } : {}
+
   bpfdelegate_privilege_prefixes = {
     cmds    = "VM.Config.BPFDelegate.Cmd"
     maps    = "VM.Config.BPFDelegate.Map"
@@ -273,7 +284,7 @@ locals {
     }
   } : {}
 
-  roles = merge(local.guest_api_roles, local.kernel_modules_roles, local.container_options_roles, {
+  roles = merge(local.guest_api_roles, local.kernel_modules_roles, local.host_artifacts_roles, local.container_options_roles, {
     ScopedContainerFeatures = {
       path = "/"
       privileges = [
