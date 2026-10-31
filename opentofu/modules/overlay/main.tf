@@ -155,6 +155,12 @@ variable "network_interfaces_file" {
   default     = null
 }
 
+variable "host_artifact_policies" {
+  description = "The host_artifact_policies map contains host artifact policy documents from the host-artifacts module, keyed by the exact workspace selector. The module writes each document and the trusted root over root SSH and grants ScopedHostArtifacts to the automation user. An empty map does not cause the module to write a file or grant a role. The selected overlay commit must provide the host artifact API."
+  type        = map(string)
+  default     = {}
+}
+
 variable "acme_account" {
   description = "Name of the ACME account that the automation user manages."
   type        = string
@@ -391,6 +397,14 @@ locals {
 
   allowlist_path = "/etc/pve-overlay/kernel-modules.allow"
 
+  # The installer reads only the policy of the requested target and the
+  # trusted root. It requires root ownership of each file and each directory
+  # above it. Group and other users cannot have write permission on them.
+  host_artifacts_directory         = "/etc/pve-overlay/host-artifacts"
+  host_artifacts_policy_directory  = "${local.host_artifacts_directory}/targets"
+  host_artifacts_trusted_root_path = "${local.host_artifacts_directory}/trusted_root.jsonl"
+  host_artifacts_enabled           = length(var.host_artifact_policies) > 0
+
   grub_boot_messages_path = "/etc/default/grub.d/boot-messages.cfg"
 
   network_interfaces_path = "/etc/network/interfaces"
@@ -493,6 +507,60 @@ resource "remote_file" "kernel_modules_allow" {
   permissions = "0644"
 
   depends_on = [terraform_data.allowlist_directory]
+}
+
+resource "terraform_data" "host_artifacts_directory" {
+  count = local.host_artifacts_enabled ? 1 : 0
+
+  connection {
+    type  = "ssh"
+    host  = var.ssh_host
+    user  = "root"
+    agent = true
+  }
+
+  provisioner "remote-exec" {
+    inline = [join(" ", [
+      "install -d -m 0755 -o root -g root",
+      dirname(local.host_artifacts_directory),
+      local.host_artifacts_directory,
+      local.host_artifacts_policy_directory,
+    ])]
+  }
+}
+
+resource "remote_file" "host_artifacts_trusted_root" {
+  count = local.host_artifacts_enabled ? 1 : 0
+
+  conn {
+    host  = local.remote_host
+    user  = "root"
+    agent = true
+  }
+
+  path        = local.host_artifacts_trusted_root_path
+  content     = file("${path.module}/host-artifacts-trusted-root.jsonl")
+  permissions = "0644"
+
+  depends_on = [terraform_data.host_artifacts_directory]
+}
+
+# The module writes each policy file with the SHA-256 of the workspace
+# selector as its file name.
+resource "remote_file" "host_artifact_policies" {
+  for_each = var.host_artifact_policies
+
+  conn {
+    host  = local.remote_host
+    user  = "root"
+    agent = true
+  }
+
+  path        = "${local.host_artifacts_policy_directory}/${sha256(each.key)}.json"
+  content     = "${each.value}\n"
+  permissions = "0644"
+
+  depends_on = [terraform_data.host_artifacts_directory]
 }
 
 resource "remote_file" "grub_boot_messages" {
