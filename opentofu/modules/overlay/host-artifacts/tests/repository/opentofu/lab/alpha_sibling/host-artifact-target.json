@@ -1,0 +1,41 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [
+    { "path": "/etc/alphabet", "mode": "0755", "owner": "root", "group": "root" }
+  ],
+  "parent_directories": [
+    { "path": "/etc/systemd/system" }
+  ],
+  "files": [
+    {
+      "destination": "/etc/alphabet/config.toml",
+      "source": "template:alphabet/config.toml.j2",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "destination": "/etc/systemd/system/alphabet.service",
+      "source": "asset:agoodkind/configs:alphabet/alphabet.service",
+      "mode": "0644",
+      "owner": "root",
+      "group": "root"
+    }
+  ],
+  "secret_fields": [
+    {
+      "name": "ALPHABET_TOKEN",
+      "storage_path": "/etc/alphabet/secrets.env",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "pattern": "^[A-Za-z0-9]+$",
+      "min_length": 16,
+      "max_length": 64,
+      "consumer_units": ["alphabet.service"]
+    }
+  ]
+}

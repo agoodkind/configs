@@ -1,0 +1,23 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "files": [
+    { "destination": "/srv/inner-secret.conf", "source": "template:inner.j2", "mode": "0644", "owner": "root", "group": "root" }
+  ],
+  "secret_fields": [
+    {
+      "name": "INNER_TOKEN",
+      "storage_path": "/srv/outer/secrets.env",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "pattern": "^[A-Za-z0-9]+$",
+      "min_length": 16,
+      "max_length": 64,
+      "consumer_units": []
+    }
+  ]
+}

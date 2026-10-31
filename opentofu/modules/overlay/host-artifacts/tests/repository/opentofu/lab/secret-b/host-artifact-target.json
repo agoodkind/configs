@@ -1,0 +1,23 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "files": [
+    { "destination": "/srv/secret-b.conf", "source": "template:b.j2", "mode": "0644", "owner": "root", "group": "root" }
+  ],
+  "secret_fields": [
+    {
+      "name": "SHARED_TOKEN",
+      "storage_path": "/srv/shared.env",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "pattern": "^[A-Za-z0-9]+$",
+      "min_length": 16,
+      "max_length": 64,
+      "consumer_units": []
+    }
+  ]
+}
