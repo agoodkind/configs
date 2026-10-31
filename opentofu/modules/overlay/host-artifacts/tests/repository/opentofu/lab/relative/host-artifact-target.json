@@ -1,0 +1,10 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "files": [
+    { "destination": "srv/relative.conf", "source": "template:a.j2", "mode": "0644", "owner": "root", "group": "root" }
+  ]
+}

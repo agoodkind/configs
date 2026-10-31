@@ -1,0 +1,13 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "parent_directories": [
+    { "path": "/srv/inspected", "mode": "0755", "owner": "root", "group": "root" }
+  ],
+  "files": [
+    { "destination": "/srv/inspect-b.conf", "source": "template:b.j2", "mode": "0644", "owner": "root", "group": "root" }
+  ]
+}

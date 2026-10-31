@@ -1,0 +1,13 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "parent_directories": [
+    { "path": "/srv/outer/inner" }
+  ],
+  "files": [
+    { "destination": "/srv/inner-parent.conf", "source": "template:inner.j2", "mode": "0644", "owner": "root", "group": "root" }
+  ]
+}
