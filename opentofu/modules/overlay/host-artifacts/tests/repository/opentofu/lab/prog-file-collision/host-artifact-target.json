@@ -1,0 +1,22 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "files": [
+    { "destination": "/usr/local/bin/tool-collision", "source": "template:a.j2", "mode": "0644", "owner": "root", "group": "root" }
+  ],
+  "programs": [
+    {
+      "name": "tool-collision",
+      "repository": "agoodkind/tool-collision",
+      "asset": "tool-collision_linux_amd64.tar.gz",
+      "member": "tool-collision",
+      "path": "/usr/local/bin/tool-collision",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    }
+  ]
+}

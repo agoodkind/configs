@@ -92,6 +92,11 @@ jobs:
         run: uv sync --frozen --project hostartifact
       - name: Check the host artifact helper
         run: make -C hostartifact check
+      - name: Test the host artifact policy module
+        run: |
+          set -euo pipefail
+          tofu -chdir=opentofu/modules/overlay/host-artifacts init -backend=false -input=false
+          tofu -chdir=opentofu/modules/overlay/host-artifacts test
       - name: Build and compare the selected host artifacts
         env:
           GH_TOKEN: ${{ github.token }}
