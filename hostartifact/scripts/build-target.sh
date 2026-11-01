@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# The script plans the backendless render root to produce the projection.
-# The script verifies each pinned application release with its checksum pin and gh attestation verify.
-# The script checks out the attested source commit.
-# The script checks each program archive against its pinned SHA-256.
-# The script writes each program attestation bundle to disk with gh attestation download.
-# The script verifies each program archive with its attestation bundle using gh attestation verify --bundle.
-# The script runs python -m hostartifact build with one --program-result file per program and a PATH that contains only the uv environment and the OpenTofu directory.
-# The CI publish job and check-target.sh run this script.
+# The build helper PATH contains only the uv environment and the OpenTofu directory.
 # Usage: build-target.sh <repository root> <workspace> <target directory> <source revision>.
 # Set GH_TOKEN and GITHUB_REPOSITORY before running it.
 
