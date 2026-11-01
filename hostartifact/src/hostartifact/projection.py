@@ -22,6 +22,7 @@ MODE_PATTERN = re.compile(r"^0[0-7]{3}$")
 ACCOUNT_PATTERN = re.compile(r"^[a-z_][a-z0-9_-]*$")
 REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
 PROGRAM_NAME_PATTERN = r"^[a-z][a-z0-9-]*$"
+PROGRAM_ASSET_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 PARENT_DIRECTORY = ".."
 ROOT_PATH = "/"
 MINIMUM_VARIABLE_NAME_LENGTH = 1
@@ -167,6 +168,28 @@ def check_metadata(path: str, mode: str, owner: str, group: str) -> None:
             )
 
 
+def check_program_archive_names(program: ProgramEntry) -> None:
+    if PROGRAM_ASSET_PATTERN.fullmatch(program.asset) is None:
+        raise BuildError(
+            f"Program {program.name}: asset {program.asset!r} must use a release asset "
+            "file name that does not contain a directory"
+        )
+    member = program.member
+    pure_member = PurePosixPath(member)
+    is_plain = (
+        bool(member)
+        and not pure_member.is_absolute()
+        and PARENT_DIRECTORY not in pure_member.parts
+        and posixpath.normpath(member) == member
+        and member != CURRENT_DIRECTORY
+    )
+    if not is_plain:
+        raise BuildError(
+            f"Program {program.name}: member {member!r} must use a normalized relative "
+            "path that does not contain a parent directory segment"
+        )
+
+
 def check_entries(projection: Projection) -> None:
     seen_directories: set[str] = set()
     for directory in projection.directories:
@@ -191,6 +214,7 @@ def check_entries(projection: Projection) -> None:
     for program in projection.programs:
         check_absolute_path(program.path)
         check_metadata(program.path, program.mode, program.owner, program.group)
+        check_program_archive_names(program)
         if program.name in seen_program_names:
             raise BuildError(
                 f"the projection lists program name {program.name} more than once"

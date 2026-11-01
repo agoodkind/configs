@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Final, Literal
+from typing import Final, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from hostartifact.projection import BuildError, StrictModel
 
 SCHEMA_VERSION: Final = 1
 PROGRAM_SCHEMA_VERSION: Final = 2
-PROGRAMS_FIELD = "programs"
+PROGRAMS_FIELD: Final = "programs"
 MANIFEST_MEMBER = "manifest.json"
 FILES_PREFIX = "files/"
 REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -60,6 +60,14 @@ class Manifest(StrictModel):
     directories: list[ManifestDirectory]
     files: list[ManifestFile]
     programs: list[ManifestProgram] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_schema_matches_programs(self) -> Self:
+        if self.schema_version == SCHEMA_VERSION and self.programs:
+            raise ValueError("A schema 1 manifest must not list programs")
+        if self.schema_version == PROGRAM_SCHEMA_VERSION and not self.programs:
+            raise ValueError("A schema 2 manifest must list at least one program")
+        return self
 
 
 def schema_version_for(programs: list[ManifestProgram]) -> Literal[1, 2]:
