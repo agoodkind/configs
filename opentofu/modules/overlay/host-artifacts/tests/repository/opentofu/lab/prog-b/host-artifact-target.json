@@ -1,0 +1,23 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "parent_directories": [
+    { "path": "/usr/local/bin" }
+  ],
+  "files": [],
+  "programs": [
+    {
+      "name": "tool-b",
+      "repository": "agoodkind/tool-b",
+      "asset": "tool-b_linux_amd64.tar.gz",
+      "member": "tool-b",
+      "path": "/usr/local/bin/tool-b",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    }
+  ]
+}

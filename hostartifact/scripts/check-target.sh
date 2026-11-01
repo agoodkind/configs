@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# The script builds one target with build-target.sh, checks every archive
-# member digest, and compares each copied file with its checkout. When the
-# push changes the pin file of the target, the script also compares the
-# manifest with the pinned release.
-# Usage: check-target.sh <repository root> <workspace> <target directory>
-# <base commit> <head commit>.
+# Usage: check-target.sh <repository root> <workspace> <target directory> <base commit> <head commit>.
 # Set GH_TOKEN and GITHUB_REPOSITORY before running it.
 
 set -euo pipefail
@@ -35,6 +30,40 @@ compare_archive() {
     cmp "$target/extracted/files$destination" "${roots[$repository]}/$path"
     echo "Archive member matches the checkout file: $destination $repository $path"
   done < "$target/assets.tsv"
+}
+
+compare_programs() {
+  local target="$1"
+  local bundles="$target/output/program-bundles.json"
+  local name
+  local asset
+  local sha256
+  local member
+  local member_sha256
+  local bundle_asset
+  local bundle_sha256
+  jq -r '(.programs // [])[] | [.name, .asset, .sha256, .member, .member_sha256] | @tsv' \
+    "$target/extracted/manifest.json" > "$target/programs.tsv"
+  if [ ! -s "$target/programs.tsv" ]; then
+    if [ -e "$bundles" ]; then
+      echo "::error::The build wrote $bundles for a target that does not list programs in its manifest"
+      exit 1
+    fi
+    echo "The manifest does not list any programs."
+    return
+  fi
+  while IFS=$'\t' read -r name asset sha256 member member_sha256; do
+    echo "$sha256  $target/programs/$name/$asset" | sha256sum --check --strict
+    tar -xzf "$target/programs/$name/$asset" -O --no-wildcards "$member" >"$target/programs/$name/member.bin"
+    echo "$member_sha256  $target/programs/$name/member.bin" | sha256sum --check --strict
+    bundle_asset="$(jq -er --arg name "$name" '.[$name].asset' "$bundles")"
+    bundle_sha256="$(jq -er --arg name "$name" '.[$name].sha256' "$bundles")"
+    echo "$bundle_sha256  $target/output/$bundle_asset" | sha256sum --check --strict
+    cmp "$target/programs/$name/bundle.jsonl" "$target/output/$bundle_asset"
+    echo "The archive SHA-256, member SHA-256, and bundle SHA-256 for program $name match the values in the manifest."
+  done < "$target/programs.tsv"
+  jq -e --slurpfile manifest "$target/extracted/manifest.json" '(keys | length) == ($manifest[0].programs | length)' \
+    "$bundles" > /dev/null
 }
 
 check_pin() {
@@ -80,6 +109,7 @@ main() {
   local head="$5"
   "$(dirname "${BASH_SOURCE[0]}")/build-target.sh" "$repository_root" "$workspace" "$target" "$head"
   compare_archive "$target"
+  compare_programs "$target"
   check_pin "$repository_root" "$workspace" "$target" "$base" "$head"
 }
 

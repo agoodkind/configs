@@ -11,6 +11,8 @@ that depend on a list of changed paths. Each target has a descriptor at
 - Python 3.15. uv installs Python from `requires-python`.
 - OpenTofu 1.13.2 for the tests and the render root.
 - git for `affected --base-revision`.
+- GitHub CLI, jq, and GNU sha256sum for test fixture preparation. GitHub CLI requires
+  an authenticated account or `GH_TOKEN` with access to the pinned program release.
 
 ## Setup
 
@@ -24,7 +26,9 @@ uv sync --frozen --project hostartifact
 
 `make -C hostartifact check` runs ruff format check, ruff check, mypy, basedpyright,
 `scripts/ban_object.py`, and pytest. `make -C hostartifact fmt` runs ruff format and
-`ruff check --fix`.
+`ruff check --fix`. The test target downloads and verifies the pinned program release
+in a temporary directory before running pytest. The target deletes that directory after
+success, failure, or interruption.
 
 ## build
 
@@ -36,6 +40,7 @@ The `build` command accepts these arguments:
 | `--repository-root <dir>` | The agoodkind/configs checkout. |
 | `--source-revision <commit>` | A commit with 40 lowercase hexadecimal characters. |
 | `--asset-root <owner>/<repository>=<dir>` | The verified checkout of one application repository. This argument is repeatable and cannot use agoodkind/configs as the repository. |
+| `--program-result <file>` | Each occurrence supplies one verified program result from a JSON file. `build` requires exactly one result file for each program in the projection and rejects missing, unexpected, or duplicate results. |
 | `--output-dir <dir>` | The directory that receives the archive. |
 
 A template or asset source path must equal its normalized form. For example, use
@@ -52,6 +57,13 @@ The archive manifest does not include validation data.
 
 The command prints one JSON line on stdout with `archive`, `asset`, `sha256`, and `size`.
 The asset file name is `hostconfig_<SHA-256 of the selector>.tar.gz`.
+
+For a target with programs, `build` writes the archive, one `hostconfig_program-<name>.sigstore.jsonl` file per program, and `program-bundles.json` to the output directory. Each entry in `program-bundles.json` maps a program name to an object with `asset` for the bundle file name and `sha256` for the bundle SHA-256. `build` records the programs in a manifest with `schema_version` 2 and a `programs` list. For a target without programs, `build` writes only the archive and uses a manifest with `schema_version` 1.
+
+Target builds and fixture builds remove obsolete program bundle files listed in a valid prior
+`program-bundles.json` after validating the new inputs. They remove the index when the
+new build omits programs. They reject unrecognized prior asset names and preserve
+unrelated files and archives with different generated names.
 
 ## affected
 
@@ -104,11 +116,23 @@ The command requires these arguments:
 | `--expected-workspace` | The fixed selector for the case. Another value causes rejection and does not change the archive. |
 | `--source-revision` | A commit with 40 lowercase hexadecimal characters. The manifest records this value. |
 | `--output-dir` | The directory that receives the archive. |
+| `--program-result <file>` | The local program verification result. |
+
+The generator applies these requirements to program inputs:
+
+| Input | Requirement |
+|---|---|
+| Result file | Program cases require the `result.json` that `verify_program` writes after checking the release archive SHA-256 and attestation. Other cases reject this option. |
+| Release identity | The result must match the pinned `opnsensectl` program name, release tag, asset, archive SHA-256, source revision, and signer revision. |
+| Archive | The generator reads the local archive from the result's `archive` field and hashes it. It rejects a digest that differs from the pinned release before creating output. |
+| Archive member | The archive must contain exactly one regular `opnsensectl` member. The generator rejects a missing member, duplicate members, links, and other member types. |
+| Member digest | The generator computes the member SHA-256 and writes it as `member_sha256` in the manifest. |
+| Bundle | The generator reads the local bundle from the result's `bundle` field and writes the bundle and `program-bundles.json` to the output directory. |
 
 The command rejects an unknown case, an invalid source revision, or a mismatched expected
 workspace before it creates the output directory. Case definitions fix the payload,
-paths, and identity. Fixture construction does not run OpenTofu or read target
-descriptors, application releases, inventory, or vault values.
+paths, and identity. Fixture construction does not run OpenTofu, read target descriptors,
+inventory, or vault values, or use the network.
 
 The targets use these selectors and directories:
 
@@ -139,6 +163,17 @@ The command accepts these cases:
 | `recovery-v1` | The first version of 300 target A files for interrupted installation and recovery. |
 | `recovery-v2` | The second version of 300 target A files for interrupted installation and recovery. |
 
+All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hostartifact-acceptance/opnsensectl`.
+
+| Case | Purpose |
+|---|---|
+| `program-valid` | The host installs the program. |
+| `program-wrong-source` | Only `source_revision` differs from the attested source revision, and the host rejects the program during verification. |
+| `program-wrong-signer` | Only `signer_revision` differs from the attested signer revision, and the host rejects the program during verification. |
+| `program-wrong-archive` | Only `sha256` differs from the SHA-256 of the downloaded release archive. The provider rejects the hash mismatch. |
+| `program-wrong-member` | Only `member_sha256` differs from the SHA-256 of the archive member, and the host rejects the archive. |
+| `program-collision` | Only `path` changes to `/srv/hostartifact-acceptance/a.conf`, the destination of another file in the archive. The provider rejects the repeated path during its manifest check in the plan. |
+
 The command prints one `BuildResult` JSON line with `archive`, `asset`, `sha256`, and
 `size`. The asset name uses
 `hostconfig_fixture-<case>-<SHA-256 of the selector>.tar.gz`. Repeated builds with the
@@ -152,14 +187,7 @@ The command returns these exit codes:
 | 1 | The command rejected the source revision or expected workspace and printed the reason on stderr with the prefix `build_fixture: `. |
 | 2 | argparse rejected the arguments, including an unknown case, and printed usage on stderr. |
 
-The `host artifact` job in [ci.yml](../.github/workflows/ci.yml) publishes a fixture
-only for a manual dispatch on `refs/heads/main` when `revision` equals the workflow
-commit. The optional `fixture_case` input defaults to `none`, which runs
-`build-target.sh` for `workspace`. A different value builds that fixture with
-`workspace` as the expected selector. The job attests the archive and publishes the
-archive and its attestation bundle as the only assets of a new release with a tag that
-starts with `hostconfig-fixture-<case>-`. Publication does not change a pin file or host
-policy.
+For fixture publication, the `host artifact` job in [ci.yml](../.github/workflows/ci.yml) runs only for a manual dispatch on `refs/heads/main` when `revision` equals the workflow commit. With the optional `fixture_case` input at its default value of `none`, the job runs [build-target.sh](scripts/build-target.sh) for `workspace`. A different value builds that fixture with `workspace` as the expected selector. For a program case, the `host artifact` job first runs `build-fixture-program.sh` to verify the opnsensectl release bundle. After attesting the fixture archive, the job publishes a fixture release with a tag starting with `hostconfig-fixture-<case>-`. A program fixture release includes the archive, its attestation bundle, and `hostconfig_program-opnsensectl.sigstore.jsonl`. Other fixture releases include only the archive and its attestation bundle. A target build release also includes each retained program bundle. Pin JSON in the job summary lists the program bundle in `program_bundles` for program fixtures and sets `program_bundles` to `{}` for other fixtures. Publication does not change a pin file or host policy.
 
 A main-branch publication request has this form:
 

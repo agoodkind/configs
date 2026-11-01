@@ -91,7 +91,14 @@ jobs:
       - name: Install the host artifact helper
         run: uv sync --frozen --project hostartifact
       - name: Check the host artifact helper
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: make -C hostartifact check
+      - name: Test the host artifact policy module
+        run: |
+          set -euo pipefail
+          tofu -chdir=opentofu/modules/overlay/host-artifacts init -backend=false -input=false
+          tofu -chdir=opentofu/modules/overlay/host-artifacts test
       - name: Build and compare the selected host artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -140,10 +147,11 @@ jobs:
             exit 1
           fi
 
-  # This job runs only for a manual dispatch on main. It checks the revision,
-  # builds the selected workspace or fixture, attests the archive, and publishes
-  # the archive and attestation bundle as the only assets of a new release.
-  # It writes the pin JSON to the job summary.
+  # This job runs only for a manual dispatch on main and requires revision to
+  # equal the workflow commit. It builds the selected workspace or fixture
+  # and attests the archive. It publishes the archive, its attestation bundle,
+  # and each retained program bundle as assets of a new release.
+  # It writes the pin JSON, including program_bundles, to the job summary.
   host-artifact:
     name: host artifact
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
@@ -192,10 +200,17 @@ jobs:
             hostartifact/scripts/build-target.sh "$GITHUB_WORKSPACE" "$WORKSPACE" "$work" "$GITHUB_SHA"
           else
             mkdir -p "$work"
+            fixture_options=()
+            # A program fixture case verifies the opnsensectl release bundle first.
+            if [[ "$FIXTURE_CASE" == program-* ]]; then
+              hostartifact/scripts/build-fixture-program.sh "$work/program"
+              fixture_options+=(--program-result "$work/program/result.json")
+            fi
             uv run --frozen --project hostartifact python hostartifact/tests/build_fixture.py \
               --case "$FIXTURE_CASE" \
               --expected-workspace "$WORKSPACE" \
               --source-revision "$GITHUB_SHA" \
+              "${fixture_options[@]}" \
               --output-dir "$work/output" > "$work/result.json"
             jq . "$work/result.json"
           fi
@@ -217,8 +232,29 @@ jobs:
           BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
         run: |
           set -euo pipefail
-          bundle="$(dirname "$ARCHIVE")/$ASSET.sigstore.json"
+          output_dir="$(dirname "$ARCHIVE")"
+          bundle="$output_dir/$ASSET.sigstore.json"
           cp "$BUNDLE_PATH" "$bundle"
+          index="$output_dir/program-bundles.json"
+          rows="$RUNNER_TEMP/program-bundle-rows.tsv"
+          program_bundles='{}'
+          program_paths=()
+          if [ -e "$index" ]; then
+            program_bundles="$(jq -c . "$index")"
+            jq -r 'to_entries[] | [.key, .value.asset, .value.sha256] | @tsv' "$index" > "$rows"
+            while IFS=$'\t' read -r name asset digest; do
+              path="$output_dir/$asset"
+              if [ "$asset" != "hostconfig_program-$name.sigstore.jsonl" ]; then
+                echo "::error::Bundle asset $asset for program $name does not match hostconfig_program-$name.sigstore.jsonl."
+                exit 1
+              fi
+              if [ ! -s "$path" ] || [ "$(sha256sum "$path" | cut -d ' ' -f 1)" != "$digest" ]; then
+                echo "::error::Bundle $path for program $name does not exist or has a SHA-256 that differs from the listed value."
+                exit 1
+              fi
+              program_paths+=("$path")
+            done < "$rows"
+          fi
           identifier="${ASSET#hostconfig_}"
           identifier="${identifier%.tar.gz}"
           tag="hostconfig-$identifier-$(date -u +%Y%m%d%H%M)-$GITHUB_RUN_NUMBER-${GITHUB_SHA:0:7}"
@@ -228,9 +264,10 @@ jobs:
           if [ "$FIXTURE_CASE" != "none" ]; then
             release_options+=(--prerelease)
           fi
-          gh release create "$tag" "${release_options[@]}" "$ARCHIVE" "$bundle"
+          gh release create "$tag" "${release_options[@]}" "$ARCHIVE" "$bundle" "${program_paths[@]}"
           {
             echo "tag=$tag"
+            echo "program_bundles=$program_bundles"
             echo "bundle_asset=$(basename "$bundle")"
             echo "bundle_sha256=$(sha256sum "$bundle" | cut -d ' ' -f 1)"
           } >> "$GITHUB_OUTPUT"
@@ -241,6 +278,7 @@ jobs:
           SHA256: ${{ steps.build.outputs.sha256 }}
           BUNDLE_ASSET: ${{ steps.release.outputs.bundle_asset }}
           BUNDLE_SHA256: ${{ steps.release.outputs.bundle_sha256 }}
+          PROGRAM_BUNDLES: ${{ steps.release.outputs.program_bundles }}
         run: |
           set -euo pipefail
           jq -n \
@@ -250,7 +288,8 @@ jobs:
             --arg bundle_asset "$BUNDLE_ASSET" \
             --arg bundle_sha256 "$BUNDLE_SHA256" \
             --arg source_revision "$GITHUB_SHA" \
-            '{release_tag: $release_tag, asset: $asset, sha256: $sha256, bundle_asset: $bundle_asset, bundle_sha256: $bundle_sha256, source_revision: $source_revision}' > "$RUNNER_TEMP/pin.json"
+            --argjson program_bundles "$PROGRAM_BUNDLES" \
+            '{release_tag: $release_tag, asset: $asset, sha256: $sha256, bundle_asset: $bundle_asset, bundle_sha256: $bundle_sha256, source_revision: $source_revision, program_bundles: $program_bundles}' > "$RUNNER_TEMP/pin.json"
           {
             echo '```json'
             cat "$RUNNER_TEMP/pin.json"

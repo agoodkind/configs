@@ -12,13 +12,14 @@ from pathlib import Path
 
 from hostartifact.manifest import (
     MANIFEST_MEMBER,
-    SCHEMA_VERSION,
     Manifest,
     ManifestDirectory,
     ManifestFile,
+    ManifestProgram,
     check_revision,
     manifest_bytes,
     member_name,
+    schema_version_for,
 )
 from hostartifact.pack import (
     ASSET_NAME_PREFIX,
@@ -26,12 +27,24 @@ from hostartifact.pack import (
     COMPRESS_LEVEL,
     MANIFEST_MODE,
     OCTAL_BASE,
+    PROGRAM_BUNDLE_PREFIX,
+    PROGRAM_BUNDLE_SUFFIX,
     ROOT_ID,
     ArchiveMember,
     BuildResult,
+    VerifiedProgram,
+    read_program_result,
+    verify_program,
     write_archive,
+    write_program_bundles,
 )
-from hostartifact.projection import REPOSITORY, BuildError, StrictModel, target_identifier
+from hostartifact.projection import (
+    REPOSITORY,
+    BuildError,
+    ProgramEntry,
+    StrictModel,
+    target_identifier,
+)
 
 PROGRAM_NAME = "build_fixture"
 FAILURE_EXIT_CODE = 1
@@ -63,6 +76,19 @@ RECOVERY_INDEX_FORMAT = "03d"
 RECOVERY_FILE_MODE = "0644"
 ARCHIVE_TIME = 0
 EMPTY_NAME = ""
+PROGRAM_IDENTIFIER = "opnsensectl"
+PROGRAM_REPOSITORY = "agoodkind/opnsensectl"
+PROGRAM_RELEASE_TAG = "202609190337-7-7db20fb"
+PROGRAM_ASSET = "opnsensectl_linux_amd64.tar.gz"
+PROGRAM_ARCHIVE_SHA256 = (
+    "29e65cb0cc7b7924478416ab98d7c22e8d3e1679e7cbcfdbff42323fde874399"
+)
+PROGRAM_MEMBER = "opnsensectl"
+PROGRAM_SOURCE_REVISION = "7db20fb56fa01fa41bbb9ebeb03f29c281bce24a"
+PROGRAM_SIGNER_REVISION = "6f29e0969c7c302aee9c1a23b3424c91f8c7796d"
+PROGRAM_MODE = "0755"
+WRONG_REVISION = "1" * 40
+WRONG_DIGEST = "0" * 64
 
 
 class FixtureCase(StrEnum):
@@ -81,6 +107,24 @@ class FixtureCase(StrEnum):
     MEMBER_MODE = "member-mode"
     RECOVERY_V1 = "recovery-v1"
     RECOVERY_V2 = "recovery-v2"
+    PROGRAM_VALID = "program-valid"
+    PROGRAM_WRONG_SOURCE = "program-wrong-source"
+    PROGRAM_WRONG_SIGNER = "program-wrong-signer"
+    PROGRAM_WRONG_ARCHIVE = "program-wrong-archive"
+    PROGRAM_WRONG_MEMBER = "program-wrong-member"
+    PROGRAM_COLLISION = "program-collision"
+
+
+PROGRAM_CASES = frozenset(
+    {
+        FixtureCase.PROGRAM_VALID,
+        FixtureCase.PROGRAM_WRONG_SOURCE,
+        FixtureCase.PROGRAM_WRONG_SIGNER,
+        FixtureCase.PROGRAM_WRONG_ARCHIVE,
+        FixtureCase.PROGRAM_WRONG_MEMBER,
+        FixtureCase.PROGRAM_COLLISION,
+    }
+)
 
 
 class LinkKind(StrEnum):
@@ -114,11 +158,17 @@ class FixtureArchive(StrictModel):
     members: list[FixtureMember]
 
 
+class ProgramInput(StrictModel):
+    bundle: bytes
+    member_sha256: str
+
+
 class Arguments(StrictModel):
     case: FixtureCase
     expected_workspace: str
     source_revision: str
     output_dir: Path
+    program_result: Path | None
 
 
 TARGET_A = FixtureTarget(
@@ -208,14 +258,52 @@ def defect_member(name: str) -> ArchiveMember:
     return ArchiveMember(name=name, content=DEFECT_CONTENT, mode=DEFECT_MODE)
 
 
+def program_manifest(
+    case: FixtureCase, target: FixtureTarget, archive_member_sha256: str
+) -> ManifestProgram:
+    source_revision = PROGRAM_SOURCE_REVISION
+    signer_revision = PROGRAM_SIGNER_REVISION
+    archive_sha256 = PROGRAM_ARCHIVE_SHA256
+    member_sha256 = archive_member_sha256
+    path = destination(target, PROGRAM_IDENTIFIER)
+    if case == FixtureCase.PROGRAM_WRONG_SOURCE:
+        source_revision = WRONG_REVISION
+    if case == FixtureCase.PROGRAM_WRONG_SIGNER:
+        signer_revision = WRONG_REVISION
+    if case == FixtureCase.PROGRAM_WRONG_ARCHIVE:
+        archive_sha256 = WRONG_DIGEST
+    if case == FixtureCase.PROGRAM_WRONG_MEMBER:
+        member_sha256 = WRONG_DIGEST
+    if case == FixtureCase.PROGRAM_COLLISION:
+        path = destination(target, FIRST_FILE_LABEL + FILE_NAME_SUFFIX)
+    return ManifestProgram(
+        name=PROGRAM_IDENTIFIER,
+        repository=PROGRAM_REPOSITORY,
+        release_tag=PROGRAM_RELEASE_TAG,
+        asset=PROGRAM_ASSET,
+        sha256=archive_sha256,
+        source_revision=source_revision,
+        signer_revision=signer_revision,
+        member=PROGRAM_MEMBER,
+        member_sha256=member_sha256,
+        path=path,
+        mode=PROGRAM_MODE,
+        owner=ROOT_ACCOUNT,
+        group=ROOT_ACCOUNT,
+    )
+
+
 def manifest_member(
-    target: FixtureTarget, source_revision: str, entries: list[ManifestFile]
+    target: FixtureTarget,
+    source_revision: str,
+    entries: list[ManifestFile],
+    programs: list[ManifestProgram],
 ) -> ArchiveMember:
     directory = ManifestDirectory(
         path=target.directory, mode=DIRECTORY_MODE, owner=ROOT_ACCOUNT, group=ROOT_ACCOUNT
     )
     manifest = Manifest(
-        schema_version=SCHEMA_VERSION,
+        schema_version=schema_version_for(programs),
         repository=REPOSITORY,
         source_revision=source_revision,
         workspace=target.workspace,
@@ -223,6 +311,7 @@ def manifest_member(
         environment=ENVIRONMENT,
         directories=[directory],
         files=entries,
+        programs=programs,
     )
     return ArchiveMember(
         name=MANIFEST_MEMBER, content=manifest_bytes(manifest), mode=MANIFEST_MODE
@@ -234,8 +323,12 @@ def assembled_archive(
     source_revision: str,
     entries: list[ManifestFile],
     file_members: Sequence[FixtureMember],
+    programs: list[ManifestProgram] | None = None,
 ) -> FixtureArchive:
-    manifest = manifest_member(target, source_revision, entries)
+    listed_programs: list[ManifestProgram] = []
+    if programs is not None:
+        listed_programs = programs
+    manifest = manifest_member(target, source_revision, entries, listed_programs)
     return FixtureArchive(target=target, members=[manifest, *file_members])
 
 
@@ -247,7 +340,9 @@ def matching_archive(
     return assembled_archive(target, source_revision, entries, file_members)
 
 
-def fixture_archive(case: FixtureCase, source_revision: str) -> FixtureArchive:
+def fixture_archive(
+    case: FixtureCase, source_revision: str, program_member_digest: str
+) -> FixtureArchive:
     target = case_target(case)
     version_two = two_files(target, VERSION_TWO)
     entries = [manifest_file(item) for item in version_two]
@@ -259,6 +354,18 @@ def fixture_archive(case: FixtureCase, source_revision: str) -> FixtureArchive:
             return matching_archive(target, source_revision, version_one)
         case FixtureCase.VALID_V2:
             return matching_archive(target, source_revision, version_two)
+        case (
+            FixtureCase.PROGRAM_VALID
+            | FixtureCase.PROGRAM_WRONG_SOURCE
+            | FixtureCase.PROGRAM_WRONG_SIGNER
+            | FixtureCase.PROGRAM_WRONG_ARCHIVE
+            | FixtureCase.PROGRAM_WRONG_MEMBER
+            | FixtureCase.PROGRAM_COLLISION
+        ):
+            program = program_manifest(case, target, program_member_digest)
+            return assembled_archive(
+                target, source_revision, entries, [first, second], [program]
+            )
         case FixtureCase.RECOVERY_V1:
             recovery_one = recovery_files(target, VERSION_ONE)
             return matching_archive(target, source_revision, recovery_one)
@@ -365,11 +472,83 @@ def write_link_archive(path: Path, members: Sequence[FixtureMember]) -> None:
                 archive.addfile(info, io.BytesIO(member.content))
 
 
+def check_result_field(field: str, actual: str, expected: str) -> None:
+    if actual != expected:
+        raise BuildError(
+            f"Program result field {field} contains {actual}, but the pinned "
+            f"opnsensectl release uses {expected}"
+        )
+
+
+def fixture_program() -> ProgramEntry:
+    return ProgramEntry(
+        name=PROGRAM_IDENTIFIER,
+        repository=PROGRAM_REPOSITORY,
+        asset=PROGRAM_ASSET,
+        member=PROGRAM_MEMBER,
+        path=destination(TARGET_A, PROGRAM_IDENTIFIER),
+        mode=PROGRAM_MODE,
+        owner=ROOT_ACCOUNT,
+        group=ROOT_ACCOUNT,
+    )
+
+
+def load_program_input(
+    case: FixtureCase, result_path: Path | None
+) -> ProgramInput | None:
+    if result_path is None:
+        if case in PROGRAM_CASES:
+            raise BuildError(
+                f"{case.value} is a program case and requires --program-result"
+            )
+        return None
+    if case not in PROGRAM_CASES:
+        raise BuildError(
+            f"{case.value} is not a program case and does not accept --program-result"
+        )
+    result = read_program_result(result_path)
+    check_result_field("name", result.name, PROGRAM_IDENTIFIER)
+    check_result_field("release_tag", result.release_tag, PROGRAM_RELEASE_TAG)
+    check_result_field("asset", result.asset, PROGRAM_ASSET)
+    check_result_field("sha256", result.sha256, PROGRAM_ARCHIVE_SHA256)
+    check_result_field("source_revision", result.source_revision, PROGRAM_SOURCE_REVISION)
+    check_result_field("signer_revision", result.signer_revision, PROGRAM_SIGNER_REVISION)
+    verified = verify_program(fixture_program(), result)
+    return ProgramInput(
+        bundle=verified.bundle_content,
+        member_sha256=verified.manifest.member_sha256,
+    )
+
+
+def write_fixture_bundle(
+    case: FixtureCase,
+    target: FixtureTarget,
+    program_input: ProgramInput | None,
+    output_dir: Path,
+) -> None:
+    if program_input is None:
+        write_program_bundles(output_dir, [])
+        return
+    bundle_asset = f"{PROGRAM_BUNDLE_PREFIX}{PROGRAM_IDENTIFIER}{PROGRAM_BUNDLE_SUFFIX}"
+    verified = VerifiedProgram(
+        manifest=program_manifest(case, target, program_input.member_sha256),
+        bundle_asset=bundle_asset,
+        bundle_content=program_input.bundle,
+    )
+    write_program_bundles(output_dir, [verified])
+
+
 def build_fixture(
-    case: FixtureCase, source_revision: str, output_dir: Path
+    case: FixtureCase,
+    source_revision: str,
+    output_dir: Path,
+    program_input: ProgramInput | None,
 ) -> BuildResult:
     check_revision(source_revision)
-    fixture = fixture_archive(case, source_revision)
+    member_digest = EMPTY_NAME
+    if program_input is not None:
+        member_digest = program_input.member_sha256
+    fixture = fixture_archive(case, source_revision, member_digest)
     identifier = target_identifier(fixture.target.workspace)
     asset_stem = ASSET_FIELD_SEPARATOR.join((FIXTURE_ASSET_LABEL, case.value, identifier))
     asset = f"{ASSET_NAME_PREFIX}{asset_stem}{ASSET_NAME_SUFFIX}"
@@ -378,6 +557,7 @@ def build_fixture(
     regular_members = [
         item for item in fixture.members if isinstance(item, ArchiveMember)
     ]
+    write_fixture_bundle(case, fixture.target, program_input, output_dir)
     if len(regular_members) == len(fixture.members):
         write_archive(archive_path, regular_members)
     else:
@@ -408,6 +588,7 @@ def parse_arguments(arguments: list[str]) -> Arguments:
     parser.add_argument("--expected-workspace", required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--program-result", type=Path, default=None)
     parsed = parser.parse_args(arguments)
     return Arguments.model_validate(vars(parsed))
 
@@ -417,7 +598,10 @@ def main(arguments: list[str]) -> int:
     case = parsed.case
     try:
         check_expected_workspace(case, parsed.expected_workspace)
-        result = build_fixture(case, parsed.source_revision, parsed.output_dir)
+        program_input = load_program_input(case, parsed.program_result)
+        result = build_fixture(
+            case, parsed.source_revision, parsed.output_dir, program_input
+        )
     except BuildError as error:
         print(f"{PROGRAM_NAME}: {error}", file=sys.stderr)
         return FAILURE_EXIT_CODE
