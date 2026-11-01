@@ -36,6 +36,7 @@ The `build` command accepts these arguments:
 | `--repository-root <dir>` | The agoodkind/configs checkout. |
 | `--source-revision <commit>` | A commit with 40 lowercase hexadecimal characters. |
 | `--asset-root <owner>/<repository>=<dir>` | The verified checkout of one application repository. This argument is repeatable and cannot use agoodkind/configs as the repository. |
+| `--program-result <file>` | Each occurrence supplies one verified program result from a JSON file. `build` requires exactly one result file for each program in the projection and rejects missing, unexpected, or duplicate results. |
 | `--output-dir <dir>` | The directory that receives the archive. |
 
 A template or asset source path must equal its normalized form. For example, use
@@ -52,6 +53,8 @@ The archive manifest does not include validation data.
 
 The command prints one JSON line on stdout with `archive`, `asset`, `sha256`, and `size`.
 The asset file name is `hostconfig_<SHA-256 of the selector>.tar.gz`.
+
+For a target with programs, `build` writes the archive, one `hostconfig_program-<name>.sigstore.jsonl` file per program, and `program-bundles.json` to the output directory. Each entry in `program-bundles.json` maps a program name to an object with `asset` for the bundle file name and `sha256` for the bundle SHA-256. `build` records the programs in a manifest with `schema_version` 2 and a `programs` list. For a target without programs, `build` writes only the archive and uses a manifest with `schema_version` 1.
 
 ## affected
 
@@ -163,14 +166,7 @@ The command returns these exit codes:
 | 1 | The command rejected the source revision or expected workspace and printed the reason on stderr with the prefix `build_fixture: `. |
 | 2 | argparse rejected the arguments, including an unknown case, and printed usage on stderr. |
 
-The `host artifact` job in [ci.yml](../.github/workflows/ci.yml) publishes a fixture
-only for a manual dispatch on `refs/heads/main` when `revision` equals the workflow
-commit. The optional `fixture_case` input defaults to `none`, which runs
-`build-target.sh` for `workspace`. A different value builds that fixture with
-`workspace` as the expected selector. The job attests the archive and publishes the
-archive and its attestation bundle as the only assets of a new release with a tag that
-starts with `hostconfig-fixture-<case>-`. Publication does not change a pin file or host
-policy.
+For fixture publication, the `host artifact` job in [ci.yml](../.github/workflows/ci.yml) runs only for a manual dispatch on `refs/heads/main` when `revision` equals the workflow commit. With the optional `fixture_case` input at its default value of `none`, the job runs [build-target.sh](scripts/build-target.sh) for `workspace`. A different value builds that fixture with `workspace` as the expected selector. After attesting the archive, the job publishes a fixture release with a tag starting with `hostconfig-fixture-<case>-` and only the archive and its attestation bundle as assets. A target build release also includes each retained program bundle. Pin JSON in the job summary includes `program_bundles`, which equals `{}` for fixtures. Publication does not change a pin file or host policy.
 
 A main-branch publication request has this form:
 
