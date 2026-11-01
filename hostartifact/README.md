@@ -139,6 +139,17 @@ The command accepts these cases:
 | `recovery-v1` | The first version of 300 target A files for interrupted installation and recovery. |
 | `recovery-v2` | The second version of 300 target A files for interrupted installation and recovery. |
 
+All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hostartifact-acceptance/opnsensectl`; the generator does not read any network resource.
+
+| Case | Purpose |
+|---|---|
+| `program-valid` | This case keeps the program entry unchanged, and the host installs the program. |
+| `program-wrong-source` | Only `source_revision` differs from the attested source revision, and the host rejects the program during verification. |
+| `program-wrong-signer` | Only `signer_revision` differs from the attested signer revision, and the host rejects the program during verification. |
+| `program-wrong-archive` | Only `sha256` differs from the SHA-256 of the staged archive, and the host rejects the archive before writing anything. |
+| `program-wrong-member` | Only `member_sha256` differs from the SHA-256 of the archive member, and the host rejects the archive before writing anything. |
+| `program-collision` | Only `path` changes to `/srv/hostartifact-acceptance/a.conf`, the destination of another file in the archive, and the host rejects the archive before writing anything. |
+
 The command prints one `BuildResult` JSON line with `archive`, `asset`, `sha256`, and
 `size`. The asset name uses
 `hostconfig_fixture-<case>-<SHA-256 of the selector>.tar.gz`. Repeated builds with the

@@ -12,13 +12,14 @@ from pathlib import Path
 
 from hostartifact.manifest import (
     MANIFEST_MEMBER,
-    SCHEMA_VERSION,
     Manifest,
     ManifestDirectory,
     ManifestFile,
+    ManifestProgram,
     check_revision,
     manifest_bytes,
     member_name,
+    schema_version_for,
 )
 from hostartifact.pack import (
     ASSET_NAME_PREFIX,
@@ -63,6 +64,20 @@ RECOVERY_INDEX_FORMAT = "03d"
 RECOVERY_FILE_MODE = "0644"
 ARCHIVE_TIME = 0
 EMPTY_NAME = ""
+PROGRAM_IDENTIFIER = "opnsensectl"
+PROGRAM_REPOSITORY = "agoodkind/opnsensectl"
+PROGRAM_RELEASE_TAG = "202609190337-7-7db20fb"
+PROGRAM_ASSET = "opnsensectl_linux_amd64.tar.gz"
+PROGRAM_ARCHIVE_SHA256 = (
+    "29e65cb0cc7b7924478416ab98d7c22e8d3e1679e7cbcfdbff42323fde874399"
+)
+PROGRAM_MEMBER = "opnsensectl"
+PROGRAM_MEMBER_SHA256 = "19153b0b2026c69df0c2f7c9b0268dcdb3c85c7313544ba993e7587fb048322e"
+PROGRAM_SOURCE_REVISION = "7db20fb56fa01fa41bbb9ebeb03f29c281bce24a"
+PROGRAM_SIGNER_REVISION = "6f29e0969c7c302aee9c1a23b3424c91f8c7796d"
+PROGRAM_MODE = "0755"
+WRONG_REVISION = "1" * 40
+WRONG_DIGEST = "0" * 64
 
 
 class FixtureCase(StrEnum):
@@ -81,6 +96,12 @@ class FixtureCase(StrEnum):
     MEMBER_MODE = "member-mode"
     RECOVERY_V1 = "recovery-v1"
     RECOVERY_V2 = "recovery-v2"
+    PROGRAM_VALID = "program-valid"
+    PROGRAM_WRONG_SOURCE = "program-wrong-source"
+    PROGRAM_WRONG_SIGNER = "program-wrong-signer"
+    PROGRAM_WRONG_ARCHIVE = "program-wrong-archive"
+    PROGRAM_WRONG_MEMBER = "program-wrong-member"
+    PROGRAM_COLLISION = "program-collision"
 
 
 class LinkKind(StrEnum):
@@ -208,14 +229,50 @@ def defect_member(name: str) -> ArchiveMember:
     return ArchiveMember(name=name, content=DEFECT_CONTENT, mode=DEFECT_MODE)
 
 
+def program_manifest(case: FixtureCase, target: FixtureTarget) -> ManifestProgram:
+    source_revision = PROGRAM_SOURCE_REVISION
+    signer_revision = PROGRAM_SIGNER_REVISION
+    archive_sha256 = PROGRAM_ARCHIVE_SHA256
+    member_sha256 = PROGRAM_MEMBER_SHA256
+    path = destination(target, PROGRAM_IDENTIFIER)
+    if case == FixtureCase.PROGRAM_WRONG_SOURCE:
+        source_revision = WRONG_REVISION
+    if case == FixtureCase.PROGRAM_WRONG_SIGNER:
+        signer_revision = WRONG_REVISION
+    if case == FixtureCase.PROGRAM_WRONG_ARCHIVE:
+        archive_sha256 = WRONG_DIGEST
+    if case == FixtureCase.PROGRAM_WRONG_MEMBER:
+        member_sha256 = WRONG_DIGEST
+    if case == FixtureCase.PROGRAM_COLLISION:
+        path = destination(target, FIRST_FILE_LABEL + FILE_NAME_SUFFIX)
+    return ManifestProgram(
+        name=PROGRAM_IDENTIFIER,
+        repository=PROGRAM_REPOSITORY,
+        release_tag=PROGRAM_RELEASE_TAG,
+        asset=PROGRAM_ASSET,
+        sha256=archive_sha256,
+        source_revision=source_revision,
+        signer_revision=signer_revision,
+        member=PROGRAM_MEMBER,
+        member_sha256=member_sha256,
+        path=path,
+        mode=PROGRAM_MODE,
+        owner=ROOT_ACCOUNT,
+        group=ROOT_ACCOUNT,
+    )
+
+
 def manifest_member(
-    target: FixtureTarget, source_revision: str, entries: list[ManifestFile]
+    target: FixtureTarget,
+    source_revision: str,
+    entries: list[ManifestFile],
+    programs: list[ManifestProgram],
 ) -> ArchiveMember:
     directory = ManifestDirectory(
         path=target.directory, mode=DIRECTORY_MODE, owner=ROOT_ACCOUNT, group=ROOT_ACCOUNT
     )
     manifest = Manifest(
-        schema_version=SCHEMA_VERSION,
+        schema_version=schema_version_for(programs),
         repository=REPOSITORY,
         source_revision=source_revision,
         workspace=target.workspace,
@@ -223,6 +280,7 @@ def manifest_member(
         environment=ENVIRONMENT,
         directories=[directory],
         files=entries,
+        programs=programs,
     )
     return ArchiveMember(
         name=MANIFEST_MEMBER, content=manifest_bytes(manifest), mode=MANIFEST_MODE
@@ -234,8 +292,12 @@ def assembled_archive(
     source_revision: str,
     entries: list[ManifestFile],
     file_members: Sequence[FixtureMember],
+    programs: list[ManifestProgram] | None = None,
 ) -> FixtureArchive:
-    manifest = manifest_member(target, source_revision, entries)
+    listed_programs: list[ManifestProgram] = []
+    if programs is not None:
+        listed_programs = programs
+    manifest = manifest_member(target, source_revision, entries, listed_programs)
     return FixtureArchive(target=target, members=[manifest, *file_members])
 
 
@@ -259,6 +321,18 @@ def fixture_archive(case: FixtureCase, source_revision: str) -> FixtureArchive:
             return matching_archive(target, source_revision, version_one)
         case FixtureCase.VALID_V2:
             return matching_archive(target, source_revision, version_two)
+        case (
+            FixtureCase.PROGRAM_VALID
+            | FixtureCase.PROGRAM_WRONG_SOURCE
+            | FixtureCase.PROGRAM_WRONG_SIGNER
+            | FixtureCase.PROGRAM_WRONG_ARCHIVE
+            | FixtureCase.PROGRAM_WRONG_MEMBER
+            | FixtureCase.PROGRAM_COLLISION
+        ):
+            program = program_manifest(case, target)
+            return assembled_archive(
+                target, source_revision, entries, [first, second], [program]
+            )
         case FixtureCase.RECOVERY_V1:
             recovery_one = recovery_files(target, VERSION_ONE)
             return matching_archive(target, source_revision, recovery_one)
