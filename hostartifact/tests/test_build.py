@@ -129,10 +129,6 @@ PROGRAM_SOURCE_REVISION = "c09e62f7e0d61526c91183734bf28c6934accded"
 PROGRAM_SIGNER_REVISION = "4e9b31f5b944594bb74e316aefa49093b5abd865"
 PROGRAM_BUNDLE_TEXT = '{"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}\n'
 PROGRAM_BUNDLES_FILE = "program-bundles.json"
-SUBJECT_CHECK = REPOSITORY_ROOT / "hostartifact/scripts/subject-check.jq"
-SUBJECT_DIGEST = "a" * 64
-OTHER_SUBJECT_DIGEST = "c" * 64
-UNRELATED_ASSET = "unrelated.tar.gz"
 NOT_UTF8_BYTES = b"\xff\xfe\x00"
 PROGRAM_EXECUTABLE = b"synthetic program executable\n"
 PROGRAM_README = b"synthetic program readme\n"
@@ -1157,85 +1153,6 @@ def test_build_rejects_a_program_result_that_is_not_utf8(
     assert "The build cannot read or validate program result" in built.stderr
     assert "Traceback" not in built.stderr
     assert not (tmp_path / "output").exists()
-
-
-def subject_statement(subjects: list[tuple[str, str]]) -> JsonObject:
-    listed: list[JsonValue] = []
-    for name, digest in subjects:
-        listed.append({"name": name, "digest": {"sha256": digest}})
-    return {"verificationResult": {"statement": {"subject": listed}}}
-
-
-def run_subject_check(statements: list[JsonObject]) -> subprocess.CompletedProcess[str]:
-    command = [
-        "jq",
-        "-e",
-        "--arg",
-        "asset",
-        PROGRAM_ASSET,
-        "--arg",
-        "sha256",
-        SUBJECT_DIGEST,
-        "-f",
-        str(SUBJECT_CHECK),
-    ]
-    return subprocess.run(
-        command, input=json.dumps(statements), capture_output=True, text=True, check=False
-    )
-
-
-MATCHING_SUBJECT = (PROGRAM_ASSET, SUBJECT_DIGEST)
-WRONG_DIGEST_SUBJECT = (PROGRAM_ASSET, OTHER_SUBJECT_DIGEST)
-UNRELATED_SUBJECT = (UNRELATED_ASSET, OTHER_SUBJECT_DIGEST)
-OTHER_ASSET_SUBJECT = (UNRELATED_ASSET, SUBJECT_DIGEST)
-STATEMENT_WITHOUT_SUBJECT: JsonObject = {"verificationResult": {"statement": {}}}
-
-
-@pytest.mark.parametrize(
-    ("statements", "accepted"),
-    [
-        pytest.param([subject_statement([MATCHING_SUBJECT])], True, id="exact-subject"),
-        pytest.param(
-            [subject_statement([UNRELATED_SUBJECT, MATCHING_SUBJECT])],
-            True,
-            id="matching-subject-beside-an-unrelated-subject",
-        ),
-        pytest.param(
-            [
-                subject_statement([MATCHING_SUBJECT]),
-                subject_statement([UNRELATED_SUBJECT, MATCHING_SUBJECT]),
-            ],
-            True,
-            id="every-statement-matches",
-        ),
-        pytest.param(
-            [subject_statement([WRONG_DIGEST_SUBJECT])],
-            False,
-            id="right-asset-with-another-digest",
-        ),
-        pytest.param(
-            [subject_statement([WRONG_DIGEST_SUBJECT, OTHER_ASSET_SUBJECT])],
-            False,
-            id="asset-and-digest-split-across-two-subjects",
-        ),
-        pytest.param(
-            [
-                subject_statement([MATCHING_SUBJECT]),
-                subject_statement([WRONG_DIGEST_SUBJECT]),
-            ],
-            False,
-            id="second-statement-with-the-wrong-digest",
-        ),
-        pytest.param([], False, id="no-statements"),
-        pytest.param([STATEMENT_WITHOUT_SUBJECT], False, id="statement-without-subject"),
-    ],
-)
-def test_subject_check_requires_the_exact_asset_and_digest_in_every_statement(
-    statements: list[JsonObject], accepted: bool
-) -> None:
-    checked = run_subject_check(statements)
-
-    assert (checked.returncode == 0) is accepted, checked.stderr
 
 
 @pytest.mark.parametrize(

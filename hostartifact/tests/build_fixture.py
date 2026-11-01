@@ -486,7 +486,7 @@ def fixture_program() -> ProgramEntry:
         repository=PROGRAM_REPOSITORY,
         asset=PROGRAM_ASSET,
         member=PROGRAM_MEMBER,
-        path="/",
+        path=destination(TARGET_A, PROGRAM_IDENTIFIER),
         mode=PROGRAM_MODE,
         owner=ROOT_ACCOUNT,
         group=ROOT_ACCOUNT,
