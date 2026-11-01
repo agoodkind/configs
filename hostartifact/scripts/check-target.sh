@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# The script builds one target with build-target.sh.
-# The script checks every archive member digest and compares each copied file with its checkout.
-# For each program, the script checks the archive SHA-256, the member SHA-256, and the bundle file against the manifest.
-# When the push changes the pin file of the target, the script also compares the manifest with the pinned release.
 # Usage: check-target.sh <repository root> <workspace> <target directory> <base commit> <head commit>.
 # Set GH_TOKEN and GITHUB_REPOSITORY before running it.
 

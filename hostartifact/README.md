@@ -165,9 +165,9 @@ All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hosta
 | `program-valid` | This case keeps the program entry unchanged, and the host installs the program. |
 | `program-wrong-source` | Only `source_revision` differs from the attested source revision, and the host rejects the program during verification. |
 | `program-wrong-signer` | Only `signer_revision` differs from the attested signer revision, and the host rejects the program during verification. |
-| `program-wrong-archive` | Only `sha256` differs from the SHA-256 of the downloaded release archive. The provider rejects the hash mismatch before it stages anything. |
-| `program-wrong-member` | Only `member_sha256` differs from the SHA-256 of the archive member, and the host rejects the archive before writing anything. |
-| `program-collision` | Only `path` changes to `/srv/hostartifact-acceptance/a.conf`, the destination of another file in the archive. The provider rejects the repeated path during its manifest check in the plan, before it stages anything. |
+| `program-wrong-archive` | Only `sha256` differs from the SHA-256 of the downloaded release archive. The provider rejects the hash mismatch. |
+| `program-wrong-member` | Only `member_sha256` differs from the SHA-256 of the archive member, and the host rejects the archive. |
+| `program-collision` | Only `path` changes to `/srv/hostartifact-acceptance/a.conf`, the destination of another file in the archive. The provider rejects the repeated path during its manifest check in the plan. |
 
 The command prints one `BuildResult` JSON line with `archive`, `asset`, `sha256`, and
 `size`. The asset name uses
