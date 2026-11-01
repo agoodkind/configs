@@ -1,0 +1,33 @@
+{
+    "Dhcp4": {
+        "interfaces-config": {
+            "interfaces": ["eth0"],
+            "service-sockets-require-all": true,
+            "service-sockets-max-retries": ${socket_max_retries},
+            "service-sockets-retry-wait-time": ${socket_retry_wait_ms}
+        },
+        "lease-database": { "type": "memfile", "persist": false },
+        "valid-lifetime": ${valid_lifetime_seconds},
+%{~ if renew_seconds != "omit" }
+        "renew-timer": ${renew_seconds},
+%{~ endif }
+%{~ if rebind_seconds != "omit" }
+        "rebind-timer": ${rebind_seconds},
+%{~ endif }
+        "subnet4": [{
+            "id": 1,
+            "subnet": "${v4_subnet}",
+            "interface": "eth0",
+            "pools": [{ "pool": "${v4_pool}" }],
+            "option-data": [
+                { "name": "routers", "data": "${v4_gateway}" },
+                { "name": "domain-name-servers", "data": "${v4_dns}" }
+            ],
+            "reservations": [
+%{ for index, reservation in v4_reservations ~}
+${"                "}{ "hw-address": "${lower(reservation.mac)}", "ip-address": "${reservation.addr}" }%{ if index < length(v4_reservations) - 1 },%{ endif }
+%{~ endfor ~}
+${"            "}]
+        }]
+    }
+}

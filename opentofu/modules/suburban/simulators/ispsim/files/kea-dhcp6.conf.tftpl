@@ -1,0 +1,37 @@
+{
+    "Dhcp6": {
+        "interfaces-config": {
+            "interfaces": ["eth0"],
+            "service-sockets-max-retries": ${socket_max_retries},
+            "service-sockets-retry-wait-time": ${socket_retry_wait_ms}
+        },
+        "lease-database": { "type": "memfile", "persist": false },
+        "preferred-lifetime": ${preferred_lifetime_seconds},
+        "valid-lifetime": ${valid_lifetime_seconds},
+%{~ if renew_seconds != "omit" }
+        "renew-timer": ${renew_seconds},
+%{~ endif }
+%{~ if rebind_seconds != "omit" }
+        "rebind-timer": ${rebind_seconds},
+%{~ endif }
+%{~ if length(dns_servers) > 0 }
+        "option-data": [{
+            "name": "dns-servers",
+            "data": ${jsonencode(join(", ", dns_servers))}
+        }],
+%{~ endif }
+        "subnet6": [{
+            "id": 1,
+%{~ if ia_na }
+            "subnet": "${slaac_prefix}",
+            "interface": "eth0",
+            "pools": [{ "pool": "${ia_na_pool}" }],
+            "pd-pools": [{ "prefix": "${replace(pd_prefix, "/\\/[0-9]+$/", "")}", "prefix-len": ${pd_len}, "delegated-len": ${pd_len} }]
+%{~ else }
+            "subnet": "fe80::/10",
+            "interface": "eth0",
+            "pd-pools": [{ "prefix": "${replace(pd_prefix, "/\\/[0-9]+$/", "")}", "prefix-len": ${pd_len}, "delegated-len": ${pd_len} }]
+%{~ endif }
+        }]
+    }
+}

@@ -71,6 +71,9 @@ module "ispsim" {
   vmid            = local.guests["isp_att_suburban"].vmid
   repository_root = local.repository_root
   name            = "att"
+
+  service_mapping        = local.service_mapping
+  management_public_keys = local.github_keys
 }
 
 module "suburban" {

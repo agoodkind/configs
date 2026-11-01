@@ -27,6 +27,21 @@ variable "name" {
   type        = string
 }
 
+variable "service_mapping" {
+  description = "The module uses this decoded service mapping to resolve v4_reservations placeholders. A missing guest or field causes an invalid index error during planning."
+  type        = any
+}
+
+variable "management_public_keys" {
+  description = "The module sorts these SSH public keys, removes duplicates, and writes them to the mwan-testbed key file."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.management_public_keys) > 0
+    error_message = "management_public_keys must contain at least one SSH public key because an empty key file locks the management user out of the simulator."
+  }
+}
+
 locals {
   kind = "lxc"
 
@@ -69,7 +84,43 @@ locals {
     ra_dns_lifetime_seconds              = tostring(local.entry.ra_dns_lifetime_seconds)
     ra_prefix_preferred_lifetime_seconds = tostring(local.entry.ra_prefix_preferred_lifetime_seconds)
     ra_prefix_valid_lifetime_seconds     = tostring(local.entry.ra_prefix_valid_lifetime_seconds)
+
+    ia_na                            = try(local.entry.ia_na, false)
+    ia_na_pool                       = try(local.entry.ia_na_pool, "")
+    pd_len                           = try(local.entry.pd_len, 0)
+    dhcp6_preferred_lifetime_seconds = local.entry.dhcp6_preferred_lifetime_seconds
+    dhcp6_valid_lifetime_seconds     = local.entry.dhcp6_valid_lifetime_seconds
+    dhcp6_renew_seconds              = tostring(local.entry.dhcp6_renew_seconds)
+    dhcp6_rebind_seconds             = tostring(local.entry.dhcp6_rebind_seconds)
+    dhcp6_dns_servers                = local.entry.dhcp6_dns_servers
+    dhcp6_socket_max_retries         = local.entry.dhcp6_socket_max_retries
+    dhcp6_socket_retry_wait_ms       = local.entry.dhcp6_socket_retry_wait_ms
+    dhcp4_valid_lifetime_seconds     = local.entry.dhcp4_valid_lifetime_seconds
+    dhcp4_renew_seconds              = tostring(local.entry.dhcp4_renew_seconds)
+    dhcp4_rebind_seconds             = tostring(local.entry.dhcp4_rebind_seconds)
+    dhcp4_socket_max_retries         = local.entry.dhcp4_socket_max_retries
+    dhcp4_socket_retry_wait_ms       = local.entry.dhcp4_socket_retry_wait_ms
+    v4_gateway                       = try(local.entry.v4_gateway, "")
+    v4_pool                          = try(local.entry.v4_pool, "")
+    v4_dns                           = try(local.entry.v4_dns, "")
+    v4_reservations                  = local.v4_reservations
   }
+
+  # Each v4_reservations address is a literal IPv4 address or a {{service_mapping.<guest>.<field>}} placeholder.
+  # The regex captures the guest key first and the field second.
+  # The module resolves placeholders against service_mapping and leaves literal addresses unchanged.
+  reservation_placeholder_pattern = "^\\{\\{ service_mapping\\.([a-z0-9_]+)\\.([a-z0-9_]+) \\}\\}$"
+
+  v4_reservations = [
+    for reservation in try(local.entry.v4_reservations, []) : {
+      mac = reservation.mac
+      addr = (
+        can(regex(local.reservation_placeholder_pattern, reservation.addr))
+        ? var.service_mapping[regex(local.reservation_placeholder_pattern, reservation.addr)[0]][regex(local.reservation_placeholder_pattern, reservation.addr)[1]]
+        : reservation.addr
+      )
+    }
+  ]
 
   # Every ISP simulator container installs nftables. The package supplies nftables.service,
   # which loads the firewall and masquerade rules.
@@ -99,6 +150,17 @@ locals {
     ? toset(["pd-route.service"])
     : toset([])
   )
+
+  # Only simulators with ipv6_enabled enabled create DHCPv6 units.
+  # Only simulators with dynamic_v4 enabled create DHCPv4 units.
+  # Each corresponding set contains the unit name when the scenario enables the family and stays empty otherwise.
+  kea_dhcp6_units = local.simulator.ipv6_enabled ? toset(["kea-dhcp6-server.service"]) : toset([])
+  kea_dhcp4_units = local.simulator.dynamic_v4 ? toset(["kea-dhcp4-server.service"]) : toset([])
+
+  isp_lxc_dir = "${var.repository_root}/testbed/isp-lxc"
+
+  management_keys_path = "/etc/ssh/authorized_keys.d/mwan-testbed"
+  management_keys      = sort(distinct([for key in var.management_public_keys : trimspace(key)]))
 }
 
 resource "pveguest_apt_packages" "simulator" {
@@ -248,4 +310,155 @@ resource "pveguest_systemd_unit" "pd_route" {
   restart_on = {
     unit = pveguest_file.pd_route[each.key].write_id
   }
+}
+
+# Ansible retains cleanup operations that the module does not declare.
+# Ansible stops and disables Kea families that the scenario does not enable when their units exist.
+# Ansible stops, disables, and masks leftover dnsmasq, resets failed units, and deletes the obsolete sshd drop-in 00-mwan-testbed-management.conf.
+# pveguest_systemd_unit requires existing units and cannot mask units or reset failed units.
+# pveguest_file cannot remove files.
+# Declare these operations after a pinned pveguest release adds unit masking, tolerance for absent units, and file removal.
+resource "pveguest_file" "kea_dhcp6" {
+  for_each = local.kea_dhcp6_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path = "/etc/kea/kea-dhcp6.conf"
+  content = templatefile("${path.module}/files/kea-dhcp6.conf.tftpl", {
+    socket_max_retries         = local.simulator.dhcp6_socket_max_retries
+    socket_retry_wait_ms       = local.simulator.dhcp6_socket_retry_wait_ms
+    preferred_lifetime_seconds = local.simulator.dhcp6_preferred_lifetime_seconds
+    valid_lifetime_seconds     = local.simulator.dhcp6_valid_lifetime_seconds
+    renew_seconds              = local.simulator.dhcp6_renew_seconds
+    rebind_seconds             = local.simulator.dhcp6_rebind_seconds
+    dns_servers                = local.simulator.dhcp6_dns_servers
+    ia_na                      = local.simulator.ia_na
+    slaac_prefix               = local.simulator.slaac_prefix
+    ia_na_pool                 = local.simulator.ia_na_pool
+    pd_prefix                  = local.simulator.pd_prefix
+    pd_len                     = local.simulator.pd_len
+  })
+
+  depends_on = [pveguest_apt_packages.simulator]
+}
+
+resource "pveguest_systemd_unit" "kea_dhcp6" {
+  for_each = local.kea_dhcp6_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = each.key
+  enabled = true
+  active  = true
+
+  restart_on = {
+    conf = pveguest_file.kea_dhcp6[each.key].write_id
+  }
+
+  depends_on = [pveguest_apt_packages.simulator]
+}
+
+resource "pveguest_file" "kea_dhcp4" {
+  for_each = local.kea_dhcp4_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path = "/etc/kea/kea-dhcp4.conf"
+  content = templatefile("${path.module}/files/kea-dhcp4.conf.tftpl", {
+    socket_max_retries     = local.simulator.dhcp4_socket_max_retries
+    socket_retry_wait_ms   = local.simulator.dhcp4_socket_retry_wait_ms
+    valid_lifetime_seconds = local.simulator.dhcp4_valid_lifetime_seconds
+    renew_seconds          = local.simulator.dhcp4_renew_seconds
+    rebind_seconds         = local.simulator.dhcp4_rebind_seconds
+    v4_subnet              = local.simulator.v4_subnet
+    v4_pool                = local.simulator.v4_pool
+    v4_gateway             = local.simulator.v4_gateway
+    v4_dns                 = local.simulator.v4_dns
+    v4_reservations        = local.simulator.v4_reservations
+  })
+
+  depends_on = [pveguest_apt_packages.simulator]
+}
+
+resource "pveguest_systemd_unit" "kea_dhcp4" {
+  for_each = local.kea_dhcp4_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = each.key
+  enabled = true
+  active  = true
+
+  restart_on = {
+    conf = pveguest_file.kea_dhcp4[each.key].write_id
+  }
+
+  depends_on = [pveguest_apt_packages.simulator]
+}
+
+# kea-rebind restarts the Kea services and pd-route when the eth0 interface index changes.
+# The unit restarts when the script or unit file changes to apply either update.
+resource "pveguest_file" "kea_rebind_script" {
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path    = "/usr/local/sbin/kea-rebind"
+  content = file("${local.isp_lxc_dir}/kea-rebind.sh")
+  mode    = "0755"
+}
+
+resource "pveguest_file" "kea_rebind_unit" {
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path    = "/etc/systemd/system/kea-rebind.service"
+  content = file("${local.isp_lxc_dir}/kea-rebind.service")
+}
+
+resource "pveguest_systemd_unit" "kea_rebind" {
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = "kea-rebind.service"
+  enabled = true
+  active  = true
+
+  restart_on = {
+    script = pveguest_file.kea_rebind_script.write_id
+    unit   = pveguest_file.kea_rebind_unit.write_id
+  }
+}
+
+# This resource writes the testbed operator's GitHub SSH public keys.
+# The base module configures sshd to read this file but does not write it.
+resource "pveguest_file" "management_keys" {
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path    = local.management_keys_path
+  content = "${join("\n", local.management_keys)}\n"
+  mode    = "0600"
+}
+
+# ssh.service owns the TCP listener when socket activation is off.
+resource "pveguest_systemd_unit" "ssh_socket" {
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = "ssh.socket"
+  enabled = false
+  active  = false
 }
