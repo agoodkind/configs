@@ -15,6 +15,7 @@
 # Run examples:
 #   ./configsctl deploy deploy-proxmox --limit vault
 #   ./configsctl deploy deploy-proxmox --limit suburban
+#   ./configsctl deploy deploy-proxmox --limit suburban --tags mwan-host
 #
 # The mwan and opnsensectl binaries come from the releases the environment pins
 # in group_vars; the play pulls and verifies both before touching the host.
@@ -47,6 +48,7 @@
     # own release.
     - name: Pull the pinned mwan release
       ansible.builtin.import_tasks: tasks/github-release.yml
+      tags: [mwan-host]
       vars:
         release_repo: "{{ mwan_release_repo }}"
         release_tag: "{{ mwan_release_tag }}"
