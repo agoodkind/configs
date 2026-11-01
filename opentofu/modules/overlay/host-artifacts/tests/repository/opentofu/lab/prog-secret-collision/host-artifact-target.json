@@ -1,0 +1,33 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "files": [],
+  "programs": [
+    {
+      "name": "tool-secret-collision",
+      "repository": "agoodkind/tool-secret-collision",
+      "asset": "tool-secret-collision_linux_amd64.tar.gz",
+      "member": "tool-secret-collision",
+      "path": "/srv/tool-secret-collision.env",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    }
+  ],
+  "secret_fields": [
+    {
+      "name": "COLLISION_TOKEN",
+      "storage_path": "/srv/tool-secret-collision.env",
+      "mode": "0600",
+      "owner": "root",
+      "group": "root",
+      "pattern": "^[A-Za-z0-9]+$",
+      "min_length": 16,
+      "max_length": 64,
+      "consumer_units": []
+    }
+  ]
+}

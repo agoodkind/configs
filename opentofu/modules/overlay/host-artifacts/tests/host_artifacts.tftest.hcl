@@ -232,16 +232,24 @@ run "sibling_programs_under_inspected_parent_pass" {
   }
 }
 
-run "descriptor_without_programs_has_no_programs_key" {
+run "target_without_programs_next_to_targets_with_programs_passes" {
   command = plan
 
   variables {
-    workspaces = ["lab/alpha"]
+    workspaces = ["lab/alpha", "lab/prog-a", "lab/prog-b"]
   }
 
   assert {
     condition     = !contains(keys(jsondecode(output.policies["lab/alpha"])), "programs")
-    error_message = "a descriptor without programs cannot produce a programs key"
+    error_message = "the policy of lab/alpha must not include a programs key"
+  }
+
+  assert {
+    condition = alltrue([
+      for workspace in ["lab/prog-a", "lab/prog-b"] :
+      length(jsondecode(output.policies[workspace]).programs) == 1
+    ])
+    error_message = "the policies of lab/prog-a and lab/prog-b must each list exactly one program"
   }
 }
 
@@ -280,6 +288,16 @@ run "program_path_equals_file_of_same_target_fails" {
 
   variables {
     workspaces = ["lab/prog-file-collision"]
+  }
+
+  expect_failures = [output.policies]
+}
+
+run "program_path_equals_secret_storage_path_of_same_target_fails" {
+  command = plan
+
+  variables {
+    workspaces = ["lab/prog-secret-collision"]
   }
 
   expect_failures = [output.policies]
