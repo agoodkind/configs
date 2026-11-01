@@ -1,0 +1,22 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [
+    { "path": "/srv/tool-owned-collision", "mode": "0755", "owner": "root", "group": "root" }
+  ],
+  "files": [],
+  "programs": [
+    {
+      "name": "tool-owned-collision",
+      "repository": "agoodkind/tool-owned-collision",
+      "asset": "tool-owned-collision_linux_amd64.tar.gz",
+      "member": "tool-owned-collision",
+      "path": "/srv/tool-owned-collision",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    }
+  ]
+}
