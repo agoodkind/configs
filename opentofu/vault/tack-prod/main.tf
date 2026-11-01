@@ -11,6 +11,68 @@ locals {
   cloudflare_zone_ids = module.contracts.cloudflare_zone_ids
 }
 
+module "guest_inputs" {
+  source          = "../../modules/guest-inputs"
+  guest_keys      = toset(["tack", "tack_app2", "tack_data1", "tack_data2", "tack_data3", "tack_search1"])
+  shared_vars     = local.shared_vars
+  service_mapping = local.service_mapping
+  proxy_vars      = module.contracts.proxy_vars
+  timezone        = "America/Los_Angeles"
+}
+
+module "github_keys" {
+  source        = "../../modules/github-keys"
+  response_body = data.http.github_ssh_keys.response_body
+}
+
+locals {
+  guests         = module.guest_inputs.guests
+  mail_relays    = module.guest_inputs.mail_relays
+  sshpiper_lines = module.guest_inputs.sshpiper_lines
+  github_keys    = module.github_keys.public_keys
+  nodes = {
+    vault = {
+      endpoint  = regex("^https://[^/]+", var.proxmox_endpoint)
+      api_token = "${local.proxmox_token_principal}=${var.vault_proxmox_token_secret}"
+      insecure  = true
+      node_name = "vault"
+    }
+  }
+}
+
+module "base" {
+  source   = "../../modules/base"
+  for_each = local.guests
+
+  node = each.value.node
+  vmid = each.value.vmid
+  kind = each.value.kind
+  name = each.key
+
+  authorized_key_lines        = each.value.authorized_key_lines
+  extra_authorized_keys_files = each.value.extra_authorized_keys_files
+  public_keys                 = each.value.authorized_key_lines == null ? local.github_keys : []
+  restricted_key_lines        = each.value.authorized_key_lines == null ? local.sshpiper_lines : []
+  mail_relay                  = try(local.mail_relays[each.key], null)
+  timezone                    = each.value.timezone
+  login_dir                   = local.shared_vars.login_dir
+  revision                    = local.shared_vars.guest_prep_revision
+  revision_file               = local.shared_vars.guest_prep_revision_file
+
+  scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
+  scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
+}
+
+# Ansible created the SMTP2GO user and /etc/msmtprc on each guest.
+# The pveguest provider imports the existing mail configuration and keeps the
+# SMTP2GO password. A new pveguest_mail_relay resource would rotate the
+# password.
+import {
+  for_each = module.guest_inputs.mail_relay_import_ids
+  to       = module.base[each.key].pveguest_mail_relay.smtp["smtp2go"]
+  id       = each.value
+}
+
 module "vault" {
   source = "../../modules/vault/tack-prod"
 

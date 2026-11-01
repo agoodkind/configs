@@ -17,6 +17,7 @@ module "guest_inputs" {
   shared_vars     = local.shared_vars
   service_mapping = local.service_mapping
   proxy_vars      = module.contracts.proxy_vars
+  timezone        = "America/Los_Angeles"
 }
 
 module "github_keys" {
@@ -26,8 +27,6 @@ module "github_keys" {
 
 locals {
   guests                  = module.guest_inputs.guests
-  guest_kinds             = module.guest_inputs.guest_kinds
-  guest_kind_values       = module.guest_inputs.guest_kind_values
   mail_relays             = module.guest_inputs.mail_relays
   sshpiper_lines          = module.guest_inputs.sshpiper_lines
   github_keys             = module.github_keys.public_keys
@@ -101,12 +100,6 @@ data "http" "github_ssh_keys" {
         if trimspace(line) != ""
       ])
       error_message = "GitHub returned an invalid SSH public key response for ${local.shared_vars.github_ssh_keys_user}."
-    }
-    precondition {
-      condition = alltrue([
-        for kind in values(local.guest_kinds) : contains(local.guest_kind_values, kind)
-      ])
-      error_message = "Enrolled guest kinds must be lxc or qemu."
     }
   }
 }
