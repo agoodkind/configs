@@ -186,16 +186,6 @@ proxmox_zfs_arc_max_bytes: 1073741824
 # zfs_arc_max=3309305856 (read 2026-10-02). The rollback restores that value.
 proxmox_zfs_arc_rollback_bytes: 3309305856
 
-# Suburban is the only host with a WireGuard interface, so it is the only one
-# that watches peer handshake age. Local-exec mode: an empty ssh_host makes the
-# module run `wg show` on this host instead of over SSH, and the daemon already
-# runs as root so it needs no sudo.
-mwan_ifmgr_wg_enabled: true
-mwan_ifmgr_wg_ssh_host: ""
-mwan_ifmgr_wg_identity_file: ""
-mwan_ifmgr_wg_iface: "wg0"
-mwan_ifmgr_wg_sudo: false
-
 # Testbed-only: ISP LXCs simulating WANs. Consumed by deploy-testbed.yml
 # to provision the per-WAN LXCs on suburban. No production equivalent.
 # Each entry includes the full capability schema for its enabled feature set
