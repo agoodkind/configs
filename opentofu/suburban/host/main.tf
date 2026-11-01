@@ -66,7 +66,7 @@ locals {
   overlay_hosts = { suburban = {
     ssh_host       = local.service_mapping.suburban_hypervisor.ipv6
     node_name      = "hypervisor"
-    commit         = "aeeb163c10c6c905137a5061941aafe719e89e03"
+    commit         = "abe52220a3c283b3de26014749740b9764a5aa29"
     guest_api      = true
     kernel_modules = null
 
