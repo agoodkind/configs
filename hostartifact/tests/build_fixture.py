@@ -86,7 +86,6 @@ PROGRAM_ARCHIVE_SHA256 = (
     "29e65cb0cc7b7924478416ab98d7c22e8d3e1679e7cbcfdbff42323fde874399"
 )
 PROGRAM_MEMBER = "opnsensectl"
-PROGRAM_MEMBER_SHA256 = "19153b0b2026c69df0c2f7c9b0268dcdb3c85c7313544ba993e7587fb048322e"
 PROGRAM_SOURCE_REVISION = "7db20fb56fa01fa41bbb9ebeb03f29c281bce24a"
 PROGRAM_SIGNER_REVISION = "6f29e0969c7c302aee9c1a23b3424c91f8c7796d"
 PROGRAM_MODE = "0755"
@@ -159,6 +158,11 @@ type FixtureMember = ArchiveMember | LinkMember
 class FixtureArchive(StrictModel):
     target: FixtureTarget
     members: list[FixtureMember]
+
+
+class ProgramInput(StrictModel):
+    bundle: bytes
+    member_sha256: str
 
 
 class Arguments(StrictModel):
@@ -256,11 +260,13 @@ def defect_member(name: str) -> ArchiveMember:
     return ArchiveMember(name=name, content=DEFECT_CONTENT, mode=DEFECT_MODE)
 
 
-def program_manifest(case: FixtureCase, target: FixtureTarget) -> ManifestProgram:
+def program_manifest(
+    case: FixtureCase, target: FixtureTarget, archive_member_sha256: str
+) -> ManifestProgram:
     source_revision = PROGRAM_SOURCE_REVISION
     signer_revision = PROGRAM_SIGNER_REVISION
     archive_sha256 = PROGRAM_ARCHIVE_SHA256
-    member_sha256 = PROGRAM_MEMBER_SHA256
+    member_sha256 = archive_member_sha256
     path = destination(target, PROGRAM_IDENTIFIER)
     if case == FixtureCase.PROGRAM_WRONG_SOURCE:
         source_revision = WRONG_REVISION
@@ -336,7 +342,9 @@ def matching_archive(
     return assembled_archive(target, source_revision, entries, file_members)
 
 
-def fixture_archive(case: FixtureCase, source_revision: str) -> FixtureArchive:
+def fixture_archive(
+    case: FixtureCase, source_revision: str, program_member_digest: str
+) -> FixtureArchive:
     target = case_target(case)
     version_two = two_files(target, VERSION_TWO)
     entries = [manifest_file(item) for item in version_two]
@@ -356,7 +364,7 @@ def fixture_archive(case: FixtureCase, source_revision: str) -> FixtureArchive:
             | FixtureCase.PROGRAM_WRONG_MEMBER
             | FixtureCase.PROGRAM_COLLISION
         ):
-            program = program_manifest(case, target)
+            program = program_manifest(case, target, program_member_digest)
             return assembled_archive(
                 target, source_revision, entries, [first, second], [program]
             )
@@ -484,7 +492,7 @@ def check_result_field(field: str, actual: str, expected: str) -> None:
         )
 
 
-def check_member_digest(archive_path: Path) -> None:
+def archive_member_digest(archive_path: Path) -> str:
     program = ProgramEntry(
         name=PROGRAM_IDENTIFIER,
         repository=PROGRAM_REPOSITORY,
@@ -495,15 +503,12 @@ def check_member_digest(archive_path: Path) -> None:
         owner=ROOT_ACCOUNT,
         group=ROOT_ACCOUNT,
     )
-    actual = program_member_sha256(program, archive_path)
-    if actual != PROGRAM_MEMBER_SHA256:
-        raise BuildError(
-            f"Program member {PROGRAM_MEMBER} in archive {archive_path} has SHA-256 "
-            f"{actual}, but the pinned opnsensectl release uses {PROGRAM_MEMBER_SHA256}"
-        )
+    return program_member_sha256(program, archive_path)
 
 
-def load_program_bundle(case: FixtureCase, result_path: Path | None) -> bytes | None:
+def load_program_input(
+    case: FixtureCase, result_path: Path | None
+) -> ProgramInput | None:
     if result_path is None:
         if case in PROGRAM_CASES:
             raise BuildError(
@@ -521,7 +526,7 @@ def load_program_bundle(case: FixtureCase, result_path: Path | None) -> bytes | 
     check_result_field("sha256", result.sha256, PROGRAM_ARCHIVE_SHA256)
     check_result_field("source_revision", result.source_revision, PROGRAM_SOURCE_REVISION)
     check_result_field("signer_revision", result.signer_revision, PROGRAM_SIGNER_REVISION)
-    check_member_digest(Path(result.archive))
+    member_digest = archive_member_digest(Path(result.archive))
     bundle_path = Path(result.bundle)
     try:
         bundle = bundle_path.read_bytes()
@@ -531,26 +536,35 @@ def load_program_bundle(case: FixtureCase, result_path: Path | None) -> bytes | 
         ) from error
     if not bundle:
         raise BuildError(f"Bundle file {bundle_path} does not contain any data")
-    return bundle
+    return ProgramInput(bundle=bundle, member_sha256=member_digest)
 
 
 def write_fixture_bundle(
-    case: FixtureCase, target: FixtureTarget, bundle: bytes, output_dir: Path
+    case: FixtureCase,
+    target: FixtureTarget,
+    program_input: ProgramInput,
+    output_dir: Path,
 ) -> None:
     bundle_asset = f"{PROGRAM_BUNDLE_PREFIX}{PROGRAM_IDENTIFIER}{PROGRAM_BUNDLE_SUFFIX}"
     verified = VerifiedProgram(
-        manifest=program_manifest(case, target),
+        manifest=program_manifest(case, target, program_input.member_sha256),
         bundle_asset=bundle_asset,
-        bundle_content=bundle,
+        bundle_content=program_input.bundle,
     )
     write_program_bundles(output_dir, [verified])
 
 
 def build_fixture(
-    case: FixtureCase, source_revision: str, output_dir: Path, bundle: bytes | None
+    case: FixtureCase,
+    source_revision: str,
+    output_dir: Path,
+    program_input: ProgramInput | None,
 ) -> BuildResult:
     check_revision(source_revision)
-    fixture = fixture_archive(case, source_revision)
+    member_digest = EMPTY_NAME
+    if program_input is not None:
+        member_digest = program_input.member_sha256
+    fixture = fixture_archive(case, source_revision, member_digest)
     identifier = target_identifier(fixture.target.workspace)
     asset_stem = ASSET_FIELD_SEPARATOR.join((FIXTURE_ASSET_LABEL, case.value, identifier))
     asset = f"{ASSET_NAME_PREFIX}{asset_stem}{ASSET_NAME_SUFFIX}"
@@ -563,8 +577,8 @@ def build_fixture(
         write_archive(archive_path, regular_members)
     else:
         write_link_archive(archive_path, fixture.members)
-    if bundle is not None:
-        write_fixture_bundle(case, fixture.target, bundle, output_dir)
+    if program_input is not None:
+        write_fixture_bundle(case, fixture.target, program_input, output_dir)
     archive_bytes = archive_path.read_bytes()
     return BuildResult(
         archive=str(archive_path),
@@ -601,8 +615,10 @@ def main(arguments: list[str]) -> int:
     case = parsed.case
     try:
         check_expected_workspace(case, parsed.expected_workspace)
-        bundle = load_program_bundle(case, parsed.program_result)
-        result = build_fixture(case, parsed.source_revision, parsed.output_dir, bundle)
+        program_input = load_program_input(case, parsed.program_result)
+        result = build_fixture(
+            case, parsed.source_revision, parsed.output_dir, program_input
+        )
     except BuildError as error:
         print(f"{PROGRAM_NAME}: {error}", file=sys.stderr)
         return FAILURE_EXIT_CODE

@@ -107,7 +107,7 @@ The command requires these arguments:
 | `--expected-workspace` | The fixed selector for the case. Another value causes rejection and does not change the archive. |
 | `--source-revision` | A commit with 40 lowercase hexadecimal characters. The manifest records this value. |
 | `--output-dir` | The directory that receives the archive. |
-| `--program-result <file>` | A program case requires the `result.json` from `verify_program`; other cases reject this option. The generator checks the SHA-256 of the program member in the result's archive against the pinned member digest. From that result, the generator writes the bundle and `program-bundles.json`. |
+| `--program-result <file>` | A program case requires the `result.json` that `verify_program` writes after checking the archive SHA-256 and attestation; other cases reject this option. The generator checks the result's release tag, asset, archive SHA-256, source revision, and signer revision against the pinned `opnsensectl` release. It computes the SHA-256 of the `opnsensectl` member in the archive identified by the result's `archive` field and writes that value as `member_sha256` in the manifest. The `program-wrong-member` case substitutes a different value. The generator fails if the archive omits the member, contains multiple copies, or stores it as a link. It reads the bundle and writes the bundle and `program-bundles.json`. |
 
 The command rejects an unknown case, an invalid source revision, or a mismatched expected
 workspace before it creates the output directory. Case definitions fix the payload,
@@ -149,9 +149,9 @@ All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hosta
 | `program-valid` | This case keeps the program entry unchanged, and the host installs the program. |
 | `program-wrong-source` | Only `source_revision` differs from the attested source revision, and the host rejects the program during verification. |
 | `program-wrong-signer` | Only `signer_revision` differs from the attested signer revision, and the host rejects the program during verification. |
-| `program-wrong-archive` | Only `sha256` differs from the SHA-256 of the staged archive, and the host rejects the archive before writing anything. |
+| `program-wrong-archive` | Only `sha256` differs from the SHA-256 of the downloaded release archive. The provider rejects the hash mismatch before it stages anything. |
 | `program-wrong-member` | Only `member_sha256` differs from the SHA-256 of the archive member, and the host rejects the archive before writing anything. |
-| `program-collision` | Only `path` changes to `/srv/hostartifact-acceptance/a.conf`, the destination of another file in the archive, and the host rejects the archive before writing anything. |
+| `program-collision` | Only `path` changes to `/srv/hostartifact-acceptance/a.conf`, the destination of another file in the archive. The provider rejects the repeated path during its manifest check in the plan, before it stages anything. |
 
 The command prints one `BuildResult` JSON line with `archive`, `asset`, `sha256`, and
 `size`. The asset name uses

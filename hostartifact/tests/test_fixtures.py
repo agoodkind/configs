@@ -77,18 +77,12 @@ PROGRAM_ASSET = "opnsensectl_linux_amd64.tar.gz"
 PROGRAM_ARCHIVE_SHA256 = (
     "29e65cb0cc7b7924478416ab98d7c22e8d3e1679e7cbcfdbff42323fde874399"
 )
-PROGRAM_MEMBER_SHA256 = "19153b0b2026c69df0c2f7c9b0268dcdb3c85c7313544ba993e7587fb048322e"
 PROGRAM_SOURCE_REVISION = "7db20fb56fa01fa41bbb9ebeb03f29c281bce24a"
 PROGRAM_SIGNER_REVISION = "6f29e0969c7c302aee9c1a23b3424c91f8c7796d"
 PROGRAM_PATH = f"{DIRECTORY_A}/opnsensectl"
 PROGRAM_BUNDLE_TEXT = '{"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}\n'
 SYNTHETIC_PROGRAM_BINARY = b"synthetic opnsensectl executable\n"
 SYNTHETIC_MEMBER_SHA256 = hashlib.sha256(SYNTHETIC_PROGRAM_BINARY).hexdigest()
-PATCHED_GENERATOR_SCRIPT = (
-    "import sys; sys.path.insert(0, sys.argv[1]); import build_fixture; "
-    "build_fixture.PROGRAM_MEMBER_SHA256 = sys.argv[2]; "
-    "sys.exit(build_fixture.main(sys.argv[3:]))"
-)
 PROGRAM_BUNDLE_ASSET = "hostconfig_program-opnsensectl.sigstore.jsonl"
 PROGRAM_BUNDLES_FILE = "program-bundles.json"
 WRONG_REVISION = "1" * 40
@@ -158,20 +152,8 @@ def case_workspace(case: str) -> str:
     return TARGET_A
 
 
-def run_fixture_with_pinned_member(*arguments: str) -> subprocess.CompletedProcess[str]:
-    command = [sys.executable, str(GENERATOR), *arguments]
-    return subprocess.run(command, capture_output=True, text=True, check=False)
-
-
 def run_fixture(*arguments: str) -> subprocess.CompletedProcess[str]:
-    command = [
-        sys.executable,
-        "-c",
-        PATCHED_GENERATOR_SCRIPT,
-        str(GENERATOR.parent),
-        SYNTHETIC_MEMBER_SHA256,
-        *arguments,
-    ]
+    command = [sys.executable, str(GENERATOR), *arguments]
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
@@ -179,12 +161,13 @@ def write_program_result(
     directory: Path,
     overrides: JsonObject,
     program_binary: bytes = SYNTHETIC_PROGRAM_BINARY,
+    member_name: str = PROGRAM_NAME,
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     bundle = directory / "bundle.jsonl"
     bundle.write_text(PROGRAM_BUNDLE_TEXT, encoding="utf-8")
     with tarfile.open(directory / PROGRAM_ASSET, mode="w:gz") as archive:
-        info = tarfile.TarInfo(PROGRAM_NAME)
+        info = tarfile.TarInfo(member_name)
         info.size = len(program_binary)
         archive.addfile(info, io.BytesIO(program_binary))
     result: JsonObject = {
@@ -659,13 +642,11 @@ def test_program_result_that_differs_from_the_pinned_release_creates_no_output(
     assert not output_dir.exists()
 
 
-def test_program_archive_member_that_differs_from_the_pinned_digest_creates_no_output(
-    tmp_path: Path,
-) -> None:
+def test_program_archive_without_the_member_creates_no_output(tmp_path: Path) -> None:
     output_dir = tmp_path / "output"
-    result_file = write_program_result(tmp_path / "input", {})
+    result_file = write_program_result(tmp_path / "input", {}, member_name="other")
 
-    rejected = run_fixture_with_pinned_member(
+    rejected = run_fixture(
         *fixture_arguments("program-valid", output_dir),
         "--program-result",
         str(result_file),
@@ -673,8 +654,7 @@ def test_program_archive_member_that_differs_from_the_pinned_digest_creates_no_o
 
     assert rejected.returncode == REJECTED_INPUT_EXIT_CODE
     assert rejected.stderr.startswith(ERROR_PREFIX)
-    assert SYNTHETIC_MEMBER_SHA256 in rejected.stderr
-    assert PROGRAM_MEMBER_SHA256 in rejected.stderr
+    assert f"does not contain the member {PROGRAM_NAME}" in rejected.stderr
     assert not output_dir.exists()
 
 

@@ -52,15 +52,23 @@ class SecretField(StrictModel):
     consumer_units: list[str]
 
 
+class ParentDirectory(StrictModel):
+    path: str
+    mode: str | None = None
+    owner: str | None = None
+    group: str | None = None
+
+
 class TargetDescriptor(StrictModel):
     node: str
     environment: str
     validation_file: str
     group_vars: list[str]
     directories: list[DirectoryEntry]
+    parent_directories: list[ParentDirectory] = Field(default_factory=list)
     files: list[FileEntry]
     programs: list[ProgramEntry] = Field(default_factory=list)
-    secret_fields: list[SecretField]
+    secret_fields: list[SecretField] = Field(default_factory=list)
 
 
 class AffectedTargets(StrictModel):
@@ -82,7 +90,7 @@ def load_descriptor(repository_root: Path, workspace: str) -> TargetDescriptor:
         return TargetDescriptor.model_validate(
             json.loads(path.read_text(encoding="utf-8"))
         )
-    except (OSError, json.JSONDecodeError, ValidationError) as error:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValidationError) as error:
         raise BuildError(f"target descriptor {path} is not valid: {error}") from error
 
 

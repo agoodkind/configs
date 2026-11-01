@@ -1367,6 +1367,35 @@ def test_affected_reads_a_descriptor_with_programs(tmp_path: Path) -> None:
     assert selected.stderr == ""
 
 
+def test_affected_selects_a_target_whose_descriptor_lists_parent_directories(
+    tmp_path: Path,
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    path = descriptor_file(repository, SUBURBAN)
+    descriptor = as_object(json.loads(path.read_text(encoding="utf-8")))
+    descriptor["parent_directories"] = [{"path": "/usr/local/bin"}]
+    path.write_text(json.dumps(descriptor), encoding="utf-8")
+
+    selected = run_affected(tmp_path, repository, [SUBURBAN_GROUP_FILE])
+
+    assert affected_output(selected) == [SUBURBAN]
+    assert selected.stderr == ""
+
+
+def test_affected_ignores_an_unrelated_descriptor_that_is_not_utf8(
+    tmp_path: Path,
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    descriptor_file(repository, VAULT).write_bytes(NOT_UTF8_BYTES)
+
+    selected = run_affected(tmp_path, repository, [SUBURBAN_GROUP_FILE])
+
+    assert selected.returncode == 0, selected.stderr
+    assert json.loads(selected.stdout) == [SUBURBAN]
+    assert VAULT in selected.stderr
+    assert "Traceback" not in selected.stderr
+
+
 def test_unknown_workspace_fails_with_known_selectors(suburban_repository: Path) -> None:
     planned = plan_projection(suburban_repository, "suburban/absent")
 
