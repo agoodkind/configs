@@ -107,7 +107,7 @@ The command requires these arguments:
 | `--expected-workspace` | The fixed selector for the case. Another value causes rejection and does not change the archive. |
 | `--source-revision` | A commit with 40 lowercase hexadecimal characters. The manifest records this value. |
 | `--output-dir` | The directory that receives the archive. |
-| `--program-result <file>` | A program case requires the `result.json` from `verify_program`; other cases reject this option. From that result, the generator writes the bundle and `program-bundles.json`. |
+| `--program-result <file>` | A program case requires the `result.json` from `verify_program`; other cases reject this option. The generator checks the SHA-256 of the program member in the result's archive against the pinned member digest. From that result, the generator writes the bundle and `program-bundles.json`. |
 
 The command rejects an unknown case, an invalid source revision, or a mismatched expected
 workspace before it creates the output directory. Case definitions fix the payload,

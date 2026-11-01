@@ -36,10 +36,17 @@ from hostartifact.pack import (
     BuildResult,
     ProgramResult,
     VerifiedProgram,
+    program_member_sha256,
     write_archive,
     write_program_bundles,
 )
-from hostartifact.projection import REPOSITORY, BuildError, StrictModel, target_identifier
+from hostartifact.projection import (
+    REPOSITORY,
+    BuildError,
+    ProgramEntry,
+    StrictModel,
+    target_identifier,
+)
 
 PROGRAM_NAME = "build_fixture"
 FAILURE_EXIT_CODE = 1
@@ -477,6 +484,25 @@ def check_result_field(field: str, actual: str, expected: str) -> None:
         )
 
 
+def check_member_digest(archive_path: Path) -> None:
+    program = ProgramEntry(
+        name=PROGRAM_IDENTIFIER,
+        repository=PROGRAM_REPOSITORY,
+        asset=PROGRAM_ASSET,
+        member=PROGRAM_MEMBER,
+        path="/",
+        mode=PROGRAM_MODE,
+        owner=ROOT_ACCOUNT,
+        group=ROOT_ACCOUNT,
+    )
+    actual = program_member_sha256(program, archive_path)
+    if actual != PROGRAM_MEMBER_SHA256:
+        raise BuildError(
+            f"Program member {PROGRAM_MEMBER} in archive {archive_path} has SHA-256 "
+            f"{actual}, but the pinned opnsensectl release uses {PROGRAM_MEMBER_SHA256}"
+        )
+
+
 def load_program_bundle(case: FixtureCase, result_path: Path | None) -> bytes | None:
     if result_path is None:
         if case in PROGRAM_CASES:
@@ -495,6 +521,7 @@ def load_program_bundle(case: FixtureCase, result_path: Path | None) -> bytes | 
     check_result_field("sha256", result.sha256, PROGRAM_ARCHIVE_SHA256)
     check_result_field("source_revision", result.source_revision, PROGRAM_SOURCE_REVISION)
     check_result_field("signer_revision", result.signer_revision, PROGRAM_SIGNER_REVISION)
+    check_member_digest(Path(result.archive))
     bundle_path = Path(result.bundle)
     try:
         bundle = bundle_path.read_bytes()
