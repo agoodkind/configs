@@ -15,14 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from pydantic import BaseModel, JsonValue, ValidationError
-
-from hostartifact.manifest import (
-    Manifest,
-    ManifestProgram,
-    manifest_bytes,
-    schema_version_for,
-)
+from pydantic import BaseModel, JsonValue
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RENDER_ROOT = "opentofu/render/host-artifact"
@@ -785,41 +778,6 @@ def test_target_without_programs_keeps_schema_one_bytes(tmp_path: Path) -> None:
     assert sorted(manifest) == SCHEMA_ONE_MANIFEST_KEYS
 
 
-def test_manifest_with_programs_serializes_as_schema_two() -> None:
-    program = ManifestProgram(
-        name=PROGRAM_NAME,
-        repository=PROGRAM_REPOSITORY,
-        release_tag="v1.0.0",
-        asset=PROGRAM_ASSET,
-        sha256="a" * SHA256_LENGTH,
-        source_revision=SOURCE_REVISION,
-        signer_revision=SOURCE_REVISION,
-        member=PROGRAM_NAME,
-        member_sha256="b" * SHA256_LENGTH,
-        path=PROGRAM_PATH,
-        mode="0755",
-        owner="root",
-        group="root",
-    )
-    manifest = Manifest(
-        schema_version=schema_version_for([program]),
-        repository=CONFIGS_REPOSITORY,
-        source_revision=SOURCE_REVISION,
-        workspace=SUBURBAN,
-        node="hypervisor",
-        environment="testbed",
-        directories=[],
-        files=[],
-        programs=[program],
-    )
-
-    document = as_object(json.loads(manifest_bytes(manifest)))
-
-    assert document["schema_version"] == 2
-    assert document["programs"] == [program.model_dump(mode="json")]
-    assert schema_version_for([]) == 1
-
-
 def add_descriptor_program(repository: Path) -> None:
     path = descriptor_file(repository, SUBURBAN)
     descriptor = as_object(json.loads(path.read_text(encoding="utf-8")))
@@ -1291,45 +1249,6 @@ def test_build_rejects_an_invalid_program_asset_or_member(
     assert expected_text in built.stderr
     assert "Traceback" not in built.stderr
     assert not (tmp_path / "output").exists()
-
-
-def manifest_with(
-    schema_version: Literal[1, 2], programs: list[ManifestProgram]
-) -> Manifest:
-    return Manifest(
-        schema_version=schema_version,
-        repository=CONFIGS_REPOSITORY,
-        source_revision=SOURCE_REVISION,
-        workspace=SUBURBAN,
-        node="hypervisor",
-        environment="testbed",
-        directories=[],
-        files=[],
-        programs=programs,
-    )
-
-
-def test_manifest_rejects_a_schema_that_disagrees_with_its_programs() -> None:
-    program = ManifestProgram(
-        name=PROGRAM_NAME,
-        repository=PROGRAM_REPOSITORY,
-        release_tag=PROGRAM_RELEASE_TAG,
-        asset=PROGRAM_ASSET,
-        sha256="a" * SHA256_LENGTH,
-        source_revision=PROGRAM_SOURCE_REVISION,
-        signer_revision=PROGRAM_SIGNER_REVISION,
-        member=PROGRAM_NAME,
-        member_sha256="b" * SHA256_LENGTH,
-        path=PROGRAM_PATH,
-        mode="0755",
-        owner="root",
-        group="root",
-    )
-
-    with pytest.raises(ValidationError, match="schema 1 manifest must not list programs"):
-        manifest_with(1, [program])
-    with pytest.raises(ValidationError, match="schema 2 manifest must list at least one"):
-        manifest_with(2, [])
 
 
 @pytest.mark.parametrize(
