@@ -1,0 +1,30 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "files": [],
+  "programs": [
+    {
+      "name": "tool-one",
+      "repository": "agoodkind/tool-one",
+      "asset": "tool-one_linux_amd64.tar.gz",
+      "member": "tool-one",
+      "path": "/usr/local/bin/tool-twice",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "name": "tool-two",
+      "repository": "agoodkind/tool-two",
+      "asset": "tool-two_linux_amd64.tar.gz",
+      "member": "tool-two",
+      "path": "/usr/local/bin/tool-twice",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    }
+  ]
+}

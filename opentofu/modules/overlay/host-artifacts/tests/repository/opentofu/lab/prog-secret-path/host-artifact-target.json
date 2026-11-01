@@ -1,0 +1,20 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "files": [],
+  "programs": [
+    {
+      "name": "tool-secret",
+      "repository": "agoodkind/tool-secret",
+      "asset": "tool-secret_linux_amd64.tar.gz",
+      "member": "tool-secret",
+      "path": "/srv/shared.env",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    }
+  ]
+}

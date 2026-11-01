@@ -1,0 +1,20 @@
+{
+  "node": "lab",
+  "environment": "testbed",
+  "validation_file": "validation.json",
+  "group_vars": [],
+  "directories": [],
+  "files": [],
+  "programs": [
+    {
+      "name": "tool-inner",
+      "repository": "agoodkind/tool-inner",
+      "asset": "tool-inner_linux_amd64.tar.gz",
+      "member": "tool-inner",
+      "path": "/srv/outer/tool-inner",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    }
+  ]
+}

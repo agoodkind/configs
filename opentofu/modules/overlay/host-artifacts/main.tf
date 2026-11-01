@@ -28,6 +28,14 @@ locals {
     max_bundle_bytes  = 1024 * 1024
   }
 
+  # The module fixes the workflow, source ref, and size limits for all programs.
+  program_configuration = {
+    workflow_uri      = "https://github.com/agoodkind/go-makefile/.github/workflows/_package.yml@refs/heads/main"
+    source_ref        = "refs/heads/main"
+    max_archive_bytes = 64 * 1024 * 1024
+    max_bundle_bytes  = 1024 * 1024
+  }
+
   # The installer stores its policies and records in these directories.
   protected_directories = ["/etc/pve-overlay", "/var/lib/pve-overlay"]
   entry_keys            = ["path", "mode", "owner", "group"]
@@ -40,8 +48,26 @@ locals {
   descriptor_workspaces   = [for workspace in var.workspaces : workspace if module.targets[workspace].target != null]
   descriptor_of_workspace = { for workspace in local.descriptor_workspaces : workspace => module.targets[workspace].target }
 
+  # Policy programs omit the descriptor's asset and member fields.
+  programs_of_workspace = {
+    for workspace, descriptor in local.descriptor_of_workspace : workspace => [
+      for entry in lookup(descriptor, "programs", []) : {
+        name              = entry.name
+        repository        = entry.repository
+        workflow_uri      = local.program_configuration.workflow_uri
+        source_ref        = local.program_configuration.source_ref
+        path              = entry.path
+        mode              = entry.mode
+        owner             = entry.owner
+        group             = entry.group
+        max_archive_bytes = local.program_configuration.max_archive_bytes
+        max_bundle_bytes  = local.program_configuration.max_bundle_bytes
+      }
+    ]
+  }
+
   policies = {
-    for workspace, descriptor in local.descriptor_of_workspace : workspace => {
+    for workspace, descriptor in local.descriptor_of_workspace : workspace => merge({
       workspace     = workspace
       node          = descriptor.node
       environment   = descriptor.environment
@@ -80,21 +106,28 @@ locals {
           consumer_units = field.consumer_units
         }
       ]
-    }
+      }, {
+      # Include programs only when the descriptor lists at least one program.
+      # Installed overlays reject unknown policy keys. Descriptors without programs
+      # produce the same policy JSON as before.
+      for key in ["programs"] : key => local.programs_of_workspace[workspace]
+      if length(local.programs_of_workspace[workspace]) > 0
+    })
   }
 
   paths_of_target = {
     for workspace, policy in local.policies : workspace => {
-      owned   = distinct([for entry in policy.directories : entry.path])
-      parents = distinct([for entry in policy.parent_directories : entry.path])
-      files   = distinct([for entry in policy.files : entry.path])
-      secrets = distinct([for field in policy.secret_fields : field.storage_path])
+      owned    = distinct([for entry in policy.directories : entry.path])
+      parents  = distinct([for entry in policy.parent_directories : entry.path])
+      files    = distinct([for entry in policy.files : entry.path])
+      secrets  = distinct([for field in policy.secret_fields : field.storage_path])
+      programs = distinct([for entry in local.programs_of_workspace[workspace] : entry.path])
     }
   }
 
   all_paths = distinct(flatten([
     for workspace, paths in local.paths_of_target :
-    concat(paths.owned, paths.parents, paths.files, paths.secrets)
+    concat(paths.owned, paths.parents, paths.files, paths.secrets, paths.programs)
   ]))
 
   unclean_paths = [
@@ -146,6 +179,7 @@ locals {
         for path in concat(
           local.paths_of_target[pair[1]].files,
           local.paths_of_target[pair[1]].secrets,
+          local.paths_of_target[pair[1]].programs,
           local.paths_of_target[pair[1]].owned,
           local.paths_of_target[pair[1]].parents,
         ) :
@@ -160,13 +194,26 @@ locals {
   ])
 
   leaf_paths = flatten([
-    for workspace, paths in local.paths_of_target : distinct(concat(paths.files, paths.secrets))
+    for workspace, paths in local.paths_of_target : distinct(concat(paths.files, paths.secrets, paths.programs))
   ])
   shared_leaf_paths = [
     for path in distinct(local.leaf_paths) :
-    "${path} (${join(", ", [for workspace, paths in local.paths_of_target : workspace if contains(concat(paths.files, paths.secrets), path)])})"
+    "${path} (${join(", ", [for workspace, paths in local.paths_of_target : workspace if contains(concat(paths.files, paths.secrets, paths.programs), path)])})"
     if length([for leaf in local.leaf_paths : leaf if leaf == path]) > 1
   ]
+
+  # local.shared_leaf_paths compares targets using each target's distinct paths.
+  # This check finds repeated program paths and paths that equal file destinations
+  # or secret storage paths within one target.
+  same_target_program_paths = flatten([
+    for workspace, paths in local.paths_of_target : [
+      for path in paths.programs :
+      "${path} (${workspace})"
+      if contains(paths.files, path) || contains(paths.secrets, path) || length([
+        for entry in local.programs_of_workspace[workspace] : entry if entry.path == path
+      ]) > 1
+    ]
+  ])
 }
 
 module "targets" {
@@ -213,11 +260,16 @@ output "policies" {
 
   precondition {
     condition     = length(local.contained_paths) == 0
-    error_message = "an owned directory of one target cannot equal or contain a file, secret storage path, owned directory, or inspect-only parent of another target: ${join("; ", local.contained_paths)}"
+    error_message = "an owned directory of one target cannot equal or contain a file, secret storage path, program path, owned directory, or inspect-only parent of another target: ${join("; ", local.contained_paths)}"
   }
 
   precondition {
     condition     = length(local.shared_leaf_paths) == 0
-    error_message = "two targets on one host cannot list the same file destination or secret storage path: ${join("; ", local.shared_leaf_paths)}"
+    error_message = "two targets on one host cannot list the same file destination, secret storage path, or program path: ${join("; ", local.shared_leaf_paths)}"
+  }
+
+  precondition {
+    condition     = length(local.same_target_program_paths) == 0
+    error_message = "a target cannot repeat a program path or use it as a file destination or secret storage path: ${join("; ", local.same_target_program_paths)}"
   }
 }

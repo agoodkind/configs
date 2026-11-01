@@ -203,6 +203,98 @@ run "descriptor_of_another_node_fails" {
   expect_failures = [output.policies]
 }
 
+run "sibling_programs_under_inspected_parent_pass" {
+  command = plan
+
+  variables {
+    workspaces = ["lab/prog-a", "lab/prog-b"]
+  }
+
+  assert {
+    condition = jsondecode(output.policies["lab/prog-a"]).programs == [{
+      name              = "tool-a"
+      repository        = "agoodkind/tool-a"
+      workflow_uri      = "https://github.com/agoodkind/go-makefile/.github/workflows/_package.yml@refs/heads/main"
+      source_ref        = "refs/heads/main"
+      path              = "/usr/local/bin/tool-a"
+      mode              = "0755"
+      owner             = "root"
+      group             = "root"
+      max_archive_bytes = 67108864
+      max_bundle_bytes  = 1048576
+    }]
+    error_message = "the policy must list the program with the fixed workflow, source ref, and size limits"
+  }
+
+  assert {
+    condition     = jsondecode(output.policies["lab/prog-b"]).parent_directories == [{ path = "/usr/local/bin" }]
+    error_message = "a program path must not make /usr/local/bin an owned directory"
+  }
+}
+
+run "descriptor_without_programs_has_no_programs_key" {
+  command = plan
+
+  variables {
+    workspaces = ["lab/alpha"]
+  }
+
+  assert {
+    condition     = !contains(keys(jsondecode(output.policies["lab/alpha"])), "programs")
+    error_message = "a descriptor without programs cannot produce a programs key"
+  }
+}
+
+run "shared_program_path_fails" {
+  command = plan
+
+  variables {
+    workspaces = ["lab/prog-shared-a", "lab/prog-shared-b"]
+  }
+
+  expect_failures = [output.policies]
+}
+
+run "program_path_equals_secret_storage_path_of_other_target_fails" {
+  command = plan
+
+  variables {
+    workspaces = ["lab/secret-a", "lab/prog-secret-path"]
+  }
+
+  expect_failures = [output.policies]
+}
+
+run "program_path_inside_owned_directory_of_other_target_fails" {
+  command = plan
+
+  variables {
+    workspaces = ["lab/outer", "lab/prog-inner"]
+  }
+
+  expect_failures = [output.policies]
+}
+
+run "program_path_equals_file_of_same_target_fails" {
+  command = plan
+
+  variables {
+    workspaces = ["lab/prog-file-collision"]
+  }
+
+  expect_failures = [output.policies]
+}
+
+run "two_programs_with_one_path_in_one_target_fail" {
+  command = plan
+
+  variables {
+    workspaces = ["lab/prog-twice"]
+  }
+
+  expect_failures = [output.policies]
+}
+
 run "workspace_without_descriptor_fails" {
   command = plan
 
