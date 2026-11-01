@@ -11,6 +11,8 @@ that depend on a list of changed paths. Each target has a descriptor at
 - Python 3.15. uv installs Python from `requires-python`.
 - OpenTofu 1.13.2 for the tests and the render root.
 - git for `affected --base-revision`.
+- GitHub CLI, jq, and GNU sha256sum for test fixture preparation. GitHub CLI requires
+  an authenticated account or `GH_TOKEN` with access to the pinned program release.
 
 ## Setup
 
@@ -24,7 +26,9 @@ uv sync --frozen --project hostartifact
 
 `make -C hostartifact check` runs ruff format check, ruff check, mypy, basedpyright,
 `scripts/ban_object.py`, and pytest. `make -C hostartifact fmt` runs ruff format and
-`ruff check --fix`.
+`ruff check --fix`. The test target downloads and verifies the pinned program release
+in a temporary directory before running pytest. The target deletes that directory after
+success, failure, or interruption.
 
 ## build
 
@@ -107,7 +111,7 @@ The command requires these arguments:
 | `--expected-workspace` | The fixed selector for the case. Another value causes rejection and does not change the archive. |
 | `--source-revision` | A commit with 40 lowercase hexadecimal characters. The manifest records this value. |
 | `--output-dir` | The directory that receives the archive. |
-| `--program-result <file>` | A program case requires the `result.json` that `verify_program` writes after checking the archive SHA-256 and attestation; other cases reject this option. The generator checks the result's release tag, asset, archive SHA-256, source revision, and signer revision against the pinned `opnsensectl` release. It computes the SHA-256 of the `opnsensectl` member in the archive identified by the result's `archive` field and writes that value as `member_sha256` in the manifest. The `program-wrong-member` case substitutes a different value. The generator fails if the archive omits the member, contains multiple copies, or stores it as a link. It reads the bundle and writes the bundle and `program-bundles.json`. |
+| `--program-result <file>` | A program case requires the `result.json` that `verify_program` writes after checking the archive SHA-256 and attestation; other cases reject this option. The generator checks the result's release tag, asset, archive SHA-256, source revision, and signer revision against the pinned `opnsensectl` release. It hashes the referenced archive and rejects a digest that differs from the pinned release before creating output. It computes the SHA-256 of the `opnsensectl` member in the archive identified by the result's `archive` field and writes that value as `member_sha256` in the manifest. The `program-wrong-member` case substitutes a different value. The generator fails if the archive omits the member, contains multiple copies, or stores it as a link. It reads the bundle and writes the bundle and `program-bundles.json`. |
 
 The command rejects an unknown case, an invalid source revision, or a mismatched expected
 workspace before it creates the output directory. Case definitions fix the payload,

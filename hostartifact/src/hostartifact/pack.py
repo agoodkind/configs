@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Final
 
 from jinja2 import StrictUndefined
-from pydantic import Field
+from pydantic import Field, ValidationError
 lazy from pydantic import JsonValue
 
 from hostartifact.manifest import (
@@ -93,6 +93,15 @@ class VerifiedProgram(StrictModel):
     manifest: ManifestProgram
     bundle_asset: str
     bundle_content: bytes
+
+
+def read_program_result(path: Path) -> ProgramResult:
+    try:
+        return ProgramResult.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValidationError) as error:
+        raise BuildError(
+            f"The build cannot read or validate program result {path}: {error}"
+        ) from error
 
 
 def file_sha256(path: Path) -> str:

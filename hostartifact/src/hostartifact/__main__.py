@@ -5,9 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from pydantic import ValidationError
-
-from hostartifact.pack import ProgramResult, build_artifact
+from hostartifact.pack import ProgramResult, build_artifact, read_program_result
 from hostartifact.projection import BuildError, load_projection
 from hostartifact.targets import affected_targets
 
@@ -68,12 +66,7 @@ def parse_asset_roots(values: list[str]) -> dict[str, Path]:
 def load_program_results(paths: list[Path]) -> dict[str, ProgramResult]:
     results: dict[str, ProgramResult] = {}
     for path in paths:
-        try:
-            result = ProgramResult.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, ValidationError) as error:
-            raise BuildError(
-                f"The build cannot read or validate program result {path}: {error}"
-            ) from error
+        result = read_program_result(path)
         if result.name in results:
             raise BuildError(
                 f"The --program-result files specify program {result.name} more than once"

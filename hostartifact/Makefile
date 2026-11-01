@@ -22,4 +22,10 @@ ban-object:
 	$(UV_RUN) python scripts/ban_object.py src tests scripts
 
 test:
-	$(UV_RUN) pytest
+	@set -eu; \
+	work=$$(mktemp -d); \
+	trap 'rm -rf "$$work"' EXIT; \
+	trap 'exit 130' INT; \
+	trap 'exit 143' TERM; \
+	bash scripts/build-fixture-program.sh "$$work"; \
+	HOSTARTIFACT_FIXTURE_PROGRAM_RESULT="$$work/result.json" $(UV_RUN) pytest

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import gzip
 import hashlib
-import io
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -80,9 +81,8 @@ PROGRAM_ARCHIVE_SHA256 = (
 PROGRAM_SOURCE_REVISION = "7db20fb56fa01fa41bbb9ebeb03f29c281bce24a"
 PROGRAM_SIGNER_REVISION = "6f29e0969c7c302aee9c1a23b3424c91f8c7796d"
 PROGRAM_PATH = f"{DIRECTORY_A}/opnsensectl"
-PROGRAM_BUNDLE_TEXT = '{"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}\n'
-SYNTHETIC_PROGRAM_BINARY = b"synthetic opnsensectl executable\n"
-SYNTHETIC_MEMBER_SHA256 = hashlib.sha256(SYNTHETIC_PROGRAM_BINARY).hexdigest()
+FIXTURE_PROGRAM_RESULT_ENV = "HOSTARTIFACT_FIXTURE_PROGRAM_RESULT"
+TAMPERED_ARCHIVE_SUFFIX = b"tampered"
 PROGRAM_BUNDLE_ASSET = "hostconfig_program-opnsensectl.sigstore.jsonl"
 PROGRAM_BUNDLES_FILE = "program-bundles.json"
 WRONG_REVISION = "1" * 40
@@ -157,29 +157,32 @@ def run_fixture(*arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
-def write_program_result(
-    directory: Path,
-    overrides: JsonObject,
-    program_binary: bytes = SYNTHETIC_PROGRAM_BINARY,
-    member_name: str = PROGRAM_NAME,
-) -> Path:
+def qualified_program_result() -> JsonObject:
+    path = Path(os.environ[FIXTURE_PROGRAM_RESULT_ENV])
+    return as_object(json.loads(path.read_text(encoding="utf-8")))
+
+
+def qualified_program_bundle() -> bytes:
+    result = qualified_program_result()
+    return Path(as_text(result["bundle"])).read_bytes()
+
+
+def qualified_member_sha256() -> str:
+    result = qualified_program_result()
+    members = read_members(Path(as_text(result["archive"])))
+    member = next(item for item in members if item.name == PROGRAM_NAME)
+    return hashlib.sha256(member.content).hexdigest()
+
+
+def write_program_result(directory: Path, overrides: JsonObject) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
+    result = qualified_program_result()
+    archive = directory / PROGRAM_ASSET
     bundle = directory / "bundle.jsonl"
-    bundle.write_text(PROGRAM_BUNDLE_TEXT, encoding="utf-8")
-    with tarfile.open(directory / PROGRAM_ASSET, mode="w:gz") as archive:
-        info = tarfile.TarInfo(member_name)
-        info.size = len(program_binary)
-        archive.addfile(info, io.BytesIO(program_binary))
-    result: JsonObject = {
-        "name": PROGRAM_NAME,
-        "release_tag": PROGRAM_RELEASE_TAG,
-        "asset": PROGRAM_ASSET,
-        "sha256": PROGRAM_ARCHIVE_SHA256,
-        "source_revision": PROGRAM_SOURCE_REVISION,
-        "signer_revision": PROGRAM_SIGNER_REVISION,
-        "archive": str(directory / PROGRAM_ASSET),
-        "bundle": str(bundle),
-    }
+    shutil.copyfile(as_text(result["archive"]), archive)
+    shutil.copyfile(as_text(result["bundle"]), bundle)
+    result["archive"] = str(archive)
+    result["bundle"] = str(bundle)
     result.update(overrides)
     result_file = directory / "result.json"
     result_file.write_text(json.dumps(result), encoding="utf-8")
@@ -438,7 +441,7 @@ def expected_program(overrides: JsonObject) -> JsonObject:
         "source_revision": PROGRAM_SOURCE_REVISION,
         "signer_revision": PROGRAM_SIGNER_REVISION,
         "member": PROGRAM_NAME,
-        "member_sha256": SYNTHETIC_MEMBER_SHA256,
+        "member_sha256": qualified_member_sha256(),
         "path": PROGRAM_PATH,
         "mode": "0755",
         "owner": ROOT_ACCOUNT,
@@ -567,7 +570,7 @@ def test_program_case_publishes_the_verified_bundle(tmp_path: Path, case: str) -
         [as_text(result["asset"]), PROGRAM_BUNDLES_FILE, PROGRAM_BUNDLE_ASSET]
     )
     bundle_bytes = (output_dir / PROGRAM_BUNDLE_ASSET).read_bytes()
-    assert bundle_bytes == PROGRAM_BUNDLE_TEXT.encode()
+    assert bundle_bytes == qualified_program_bundle()
     index = json.loads((output_dir / PROGRAM_BUNDLES_FILE).read_text(encoding="utf-8"))
     assert index == {
         PROGRAM_NAME: {
@@ -642,9 +645,12 @@ def test_program_result_that_differs_from_the_pinned_release_creates_no_output(
     assert not output_dir.exists()
 
 
-def test_program_archive_without_the_member_creates_no_output(tmp_path: Path) -> None:
+def test_tampered_program_archive_creates_no_output(tmp_path: Path) -> None:
     output_dir = tmp_path / "output"
-    result_file = write_program_result(tmp_path / "input", {}, member_name="other")
+    result_file = write_program_result(tmp_path / "input", {})
+    archive_path = tmp_path / "input" / PROGRAM_ASSET
+    with archive_path.open("ab") as archive:
+        archive.write(TAMPERED_ARCHIVE_SUFFIX)
 
     rejected = run_fixture(
         *fixture_arguments("program-valid", output_dir),
@@ -653,8 +659,10 @@ def test_program_archive_without_the_member_creates_no_output(tmp_path: Path) ->
     )
 
     assert rejected.returncode == REJECTED_INPUT_EXIT_CODE
+    assert rejected.stdout == ""
     assert rejected.stderr.startswith(ERROR_PREFIX)
-    assert f"does not contain the member {PROGRAM_NAME}" in rejected.stderr
+    assert str(archive_path) in rejected.stderr
+    assert "has SHA-256" in rejected.stderr
     assert not output_dir.exists()
 
 

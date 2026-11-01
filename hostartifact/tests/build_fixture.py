@@ -10,8 +10,6 @@ from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import ValidationError
-
 from hostartifact.manifest import (
     MANIFEST_MEMBER,
     Manifest,
@@ -34,9 +32,9 @@ from hostartifact.pack import (
     ROOT_ID,
     ArchiveMember,
     BuildResult,
-    ProgramResult,
     VerifiedProgram,
-    program_member_sha256,
+    read_program_result,
+    verify_program,
     write_archive,
     write_program_bundles,
 )
@@ -474,16 +472,6 @@ def write_link_archive(path: Path, members: Sequence[FixtureMember]) -> None:
                 archive.addfile(info, io.BytesIO(member.content))
 
 
-def read_program_result(path: Path) -> ProgramResult:
-    try:
-        return ProgramResult.model_validate_json(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValidationError) as error:
-        raise BuildError(
-            f"{PROGRAM_NAME}.py cannot read or validate program result file "
-            f"{path}: {error}"
-        ) from error
-
-
 def check_result_field(field: str, actual: str, expected: str) -> None:
     if actual != expected:
         raise BuildError(
@@ -492,8 +480,8 @@ def check_result_field(field: str, actual: str, expected: str) -> None:
         )
 
 
-def archive_member_digest(archive_path: Path) -> str:
-    program = ProgramEntry(
+def fixture_program() -> ProgramEntry:
+    return ProgramEntry(
         name=PROGRAM_IDENTIFIER,
         repository=PROGRAM_REPOSITORY,
         asset=PROGRAM_ASSET,
@@ -503,7 +491,6 @@ def archive_member_digest(archive_path: Path) -> str:
         owner=ROOT_ACCOUNT,
         group=ROOT_ACCOUNT,
     )
-    return program_member_sha256(program, archive_path)
 
 
 def load_program_input(
@@ -526,17 +513,11 @@ def load_program_input(
     check_result_field("sha256", result.sha256, PROGRAM_ARCHIVE_SHA256)
     check_result_field("source_revision", result.source_revision, PROGRAM_SOURCE_REVISION)
     check_result_field("signer_revision", result.signer_revision, PROGRAM_SIGNER_REVISION)
-    member_digest = archive_member_digest(Path(result.archive))
-    bundle_path = Path(result.bundle)
-    try:
-        bundle = bundle_path.read_bytes()
-    except OSError as error:
-        raise BuildError(
-            f"{PROGRAM_NAME}.py cannot read bundle file {bundle_path}: {error}"
-        ) from error
-    if not bundle:
-        raise BuildError(f"Bundle file {bundle_path} does not contain any data")
-    return ProgramInput(bundle=bundle, member_sha256=member_digest)
+    verified = verify_program(fixture_program(), result)
+    return ProgramInput(
+        bundle=verified.bundle_content,
+        member_sha256=verified.manifest.member_sha256,
+    )
 
 
 def write_fixture_bundle(
