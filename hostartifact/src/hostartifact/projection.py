@@ -21,6 +21,7 @@ EXCLUDED_DIRECTORIES = frozenset({"terraform.d", "modules"})
 MODE_PATTERN = re.compile(r"^0[0-7]{3}$")
 ACCOUNT_PATTERN = re.compile(r"^[a-z_][a-z0-9_-]*$")
 REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
+PROGRAM_NAME_PATTERN = r"^[a-z][a-z0-9-]*$"
 PARENT_DIRECTORY = ".."
 ROOT_PATH = "/"
 MINIMUM_VARIABLE_NAME_LENGTH = 1
@@ -49,6 +50,17 @@ class FileEntry(StrictModel):
     group: str
 
 
+class ProgramEntry(StrictModel):
+    name: str = Field(pattern=PROGRAM_NAME_PATTERN)
+    repository: str = Field(pattern=REPOSITORY_PATTERN.pattern)
+    asset: str
+    member: str
+    path: str
+    mode: str
+    owner: str
+    group: str
+
+
 class IdentityVariables(StrictModel):
     node: str = Field(min_length=MINIMUM_VARIABLE_NAME_LENGTH)
     environment: str = Field(min_length=MINIMUM_VARIABLE_NAME_LENGTH)
@@ -71,6 +83,7 @@ class Projection(StrictModel):
     service_mapping: dict[str, JsonValue]
     directories: list[DirectoryEntry]
     files: list[FileEntry]
+    programs: list[ProgramEntry] = Field(default_factory=list)
 
 
 class TemplateSource(StrictModel):
@@ -173,6 +186,26 @@ def check_entries(projection: Projection) -> None:
                 f"the projection lists destination {entry.destination} more than once"
             )
         seen_destinations.add(entry.destination)
+    seen_program_names: set[str] = set()
+    seen_program_paths: set[str] = set()
+    for program in projection.programs:
+        check_absolute_path(program.path)
+        check_metadata(program.path, program.mode, program.owner, program.group)
+        if program.name in seen_program_names:
+            raise BuildError(
+                f"the projection lists program name {program.name} more than once"
+            )
+        seen_program_names.add(program.name)
+        if program.path in seen_program_paths:
+            raise BuildError(
+                f"the projection lists program path {program.path} more than once"
+            )
+        seen_program_paths.add(program.path)
+        if program.path in seen_destinations:
+            raise BuildError(
+                f"the projection lists {program.path} as both the path for program "
+                f"{program.name} and a file destination"
+            )
 
 
 def parse_source(source: str) -> TemplateSource | AssetSource:

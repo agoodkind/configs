@@ -15,6 +15,13 @@ from pathlib import Path
 import pytest
 from pydantic import JsonValue
 
+from hostartifact.manifest import (
+    Manifest,
+    ManifestProgram,
+    manifest_bytes,
+    schema_version_for,
+)
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RENDER_ROOT = "opentofu/render/host-artifact"
 PRODUCER_PATHS = (RENDER_ROOT, "opentofu/modules/host-artifact-targets")
@@ -115,6 +122,30 @@ VAULT_EMAIL_LINE = 'mwan_email_from: "mwan@example.invalid"\n'
 SERVICE_MAPPING_FILE = "ansible/inventory/group_vars/all/service_mapping.yml"
 SHARED_GROUP_FILE = "ansible/inventory/group_vars/all/vars.yml"
 WATCHDOG_TEMPLATE = "proxmox/services/mwan-watchdog.service.j2"
+PROGRAM_REPOSITORY = "agoodkind/mwan"
+PROGRAM_ASSET = "mwan_linux_amd64.tar.gz"
+SHA256_LENGTH = 64
+PROGRAM_NAME = "mwan"
+PROGRAM_PATH = "/usr/local/bin/mwan"
+OTHER_PROGRAM_NAME = "mwan-agent"
+OTHER_PROGRAM_PATH = "/usr/local/bin/mwan-agent"
+MISSING_PROGRAM_RESULTS_TEXT = (
+    "hostartifact: the build stops before writing an archive because it does not yet "
+    "have verified release results for the programs in the projection\n"
+)
+SCHEMA_ONE_MANIFEST_KEYS = [
+    "directories",
+    "environment",
+    "files",
+    "node",
+    "repository",
+    "schema_version",
+    "source_revision",
+    "workspace",
+]
+SCHEMA_ONE_ARCHIVE_SHA256 = (
+    "6bb99ed9508831c78e8f975f48456a1a38fd583b74fd2304f8d192614670f8c6"
+)
 FIXTURE_FILES = {
     VALIDATION_FILE: json.dumps(VALIDATION_POLICY),
     SERVICE_MAPPING_FILE: (
@@ -718,6 +749,125 @@ def test_build_succeeds_while_another_target_is_broken(tmp_path: Path) -> None:
     assert opnsense_config == {"email": {"from": "mwan-testbed@example.invalid"}}
 
 
+def test_target_without_programs_keeps_schema_one_bytes(tmp_path: Path) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    projection = project(repository, SUBURBAN)
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 0, built.stderr
+    result = as_object(json.loads(built.stdout))
+    with tarfile.open(as_text(result["archive"]), mode="r:gz") as archive:
+        extracted = archive.extractfile(MANIFEST_MEMBER)
+        assert extracted is not None
+        manifest = as_object(json.loads(extracted.read()))
+    assert projection["programs"] == []
+    assert result["sha256"] == SCHEMA_ONE_ARCHIVE_SHA256
+    assert manifest["schema_version"] == 1
+    assert sorted(manifest) == SCHEMA_ONE_MANIFEST_KEYS
+
+
+def test_manifest_with_programs_serializes_as_schema_two() -> None:
+    program = ManifestProgram(
+        name=PROGRAM_NAME,
+        repository=PROGRAM_REPOSITORY,
+        release_tag="v1.0.0",
+        asset=PROGRAM_ASSET,
+        sha256="a" * SHA256_LENGTH,
+        source_revision=SOURCE_REVISION,
+        signer_revision=SOURCE_REVISION,
+        member=PROGRAM_NAME,
+        member_sha256="b" * SHA256_LENGTH,
+        path=PROGRAM_PATH,
+        mode="0755",
+        owner="root",
+        group="root",
+    )
+    manifest = Manifest(
+        schema_version=schema_version_for([program]),
+        repository=CONFIGS_REPOSITORY,
+        source_revision=SOURCE_REVISION,
+        workspace=SUBURBAN,
+        node="hypervisor",
+        environment="testbed",
+        directories=[],
+        files=[],
+        programs=[program],
+    )
+
+    document = as_object(json.loads(manifest_bytes(manifest)))
+
+    assert document["schema_version"] == 2
+    assert document["programs"] == [program.model_dump(mode="json")]
+    assert schema_version_for([]) == 1
+
+
+def add_descriptor_program(repository: Path) -> None:
+    path = descriptor_file(repository, SUBURBAN)
+    descriptor = as_object(json.loads(path.read_text(encoding="utf-8")))
+    descriptor["programs"] = [program_entry(PROGRAM_NAME, PROGRAM_PATH)]
+    path.write_text(json.dumps(descriptor), encoding="utf-8")
+
+
+def test_projection_includes_descriptor_programs(tmp_path: Path) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    add_descriptor_program(repository)
+
+    projection = project(repository, SUBURBAN)
+
+    assert projection["programs"] == [program_entry(PROGRAM_NAME, PROGRAM_PATH)]
+
+
+def test_build_stops_before_output_while_program_results_are_missing(
+    tmp_path: Path,
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    add_descriptor_program(repository)
+    projection = project(repository, SUBURBAN)
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 1, built.stderr
+    assert MISSING_PROGRAM_RESULTS_TEXT in built.stderr
+    assert "Traceback" not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize(
+    "program",
+    [
+        pytest.param({"name": "Mwan"}, id="uppercase-name"),
+        pytest.param({"name": "1mwan"}, id="leading-digit-name"),
+        pytest.param({"repository": "mwan"}, id="repository-without-owner"),
+        pytest.param({"path": "usr/local/bin/mwan"}, id="relative-path"),
+        pytest.param({"mode": "4755"}, id="special-mode"),
+        pytest.param({"owner": "Root"}, id="invalid-owner"),
+    ],
+)
+def test_build_rejects_an_invalid_program_entry(
+    tmp_path: Path, suburban_projection: JsonObject, program: JsonObject
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    projection = copy.deepcopy(suburban_projection)
+    projection["programs"] = [{**program_entry(PROGRAM_NAME, PROGRAM_PATH), **program}]
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 1, built.stderr
+    assert "Traceback" not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+def test_affected_reads_a_descriptor_with_programs(tmp_path: Path) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    add_descriptor_program(repository)
+
+    selected = run_affected(tmp_path, repository, [SUBURBAN_GROUP_FILE])
+
+    assert affected_output(selected) == [SUBURBAN]
+    assert selected.stderr == ""
+
+
 def test_unknown_workspace_fails_with_known_selectors(suburban_repository: Path) -> None:
     planned = plan_projection(suburban_repository, "suburban/absent")
 
@@ -961,6 +1111,40 @@ def duplicate_destination(projection: JsonObject, repository: Path) -> None:
     files.append(copy.deepcopy(file_entry(projection, MWAN_CONFIG)))
 
 
+def program_entry(name: str, path: str) -> JsonObject:
+    return {
+        "name": name,
+        "repository": PROGRAM_REPOSITORY,
+        "asset": PROGRAM_ASSET,
+        "member": name,
+        "path": path,
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+    }
+
+
+def duplicate_program_name(projection: JsonObject, repository: Path) -> None:
+    del repository
+    projection["programs"] = [
+        program_entry(PROGRAM_NAME, PROGRAM_PATH),
+        program_entry(PROGRAM_NAME, OTHER_PROGRAM_PATH),
+    ]
+
+
+def duplicate_program_path(projection: JsonObject, repository: Path) -> None:
+    del repository
+    projection["programs"] = [
+        program_entry(PROGRAM_NAME, PROGRAM_PATH),
+        program_entry(OTHER_PROGRAM_NAME, PROGRAM_PATH),
+    ]
+
+
+def program_at_file_destination(projection: JsonObject, repository: Path) -> None:
+    del repository
+    projection["programs"] = [program_entry(PROGRAM_NAME, MWAN_CONFIG)]
+
+
 def duplicate_directory(projection: JsonObject, repository: Path) -> None:
     del repository
     directories = as_list(projection["directories"])
@@ -1077,6 +1261,24 @@ def render_secret_key(projection: JsonObject, repository: Path) -> None:
             duplicate_directory,
             "hostartifact: the projection lists directory /etc/mwan more than once\n",
             id="duplicate-directory",
+        ),
+        pytest.param(
+            duplicate_program_name,
+            f"hostartifact: the projection lists program name {PROGRAM_NAME} more than "
+            "once\n",
+            id="duplicate-program-name",
+        ),
+        pytest.param(
+            duplicate_program_path,
+            f"hostartifact: the projection lists program path {PROGRAM_PATH} more than "
+            "once\n",
+            id="duplicate-program-path",
+        ),
+        pytest.param(
+            program_at_file_destination,
+            f"hostartifact: the projection lists {MWAN_CONFIG} as both the path for "
+            f"program {PROGRAM_NAME} and a file destination\n",
+            id="program-at-file-destination",
         ),
         pytest.param(
             use_special_mode,

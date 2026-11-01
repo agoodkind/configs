@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from jinja2 import TemplateSyntaxError, meta
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
 from hostartifact.manifest import check_revision
 from hostartifact.projection import (
@@ -18,6 +18,7 @@ from hostartifact.projection import (
     BuildError,
     DirectoryEntry,
     FileEntry,
+    ProgramEntry,
     StrictModel,
     check_selector,
 )
@@ -58,6 +59,7 @@ class TargetDescriptor(StrictModel):
     group_vars: list[str]
     directories: list[DirectoryEntry]
     files: list[FileEntry]
+    programs: list[ProgramEntry] = Field(default_factory=list)
     secret_fields: list[SecretField]
 
 

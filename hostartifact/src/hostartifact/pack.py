@@ -11,13 +11,14 @@ lazy from pydantic import JsonValue
 
 from hostartifact.manifest import (
     MANIFEST_MEMBER,
-    SCHEMA_VERSION,
     Manifest,
     ManifestDirectory,
     ManifestFile,
+    ManifestProgram,
     check_revision,
     manifest_bytes,
     member_name,
+    schema_version_for,
 )
 from hostartifact.projection import (
     REPOSITORY,
@@ -138,6 +139,11 @@ def build_artifact(
     identifier = target_identifier(projection.workspace)
     check_revision(source_revision)
     check_entries(projection)
+    if projection.programs:
+        raise BuildError(
+            "the build stops before writing an archive because it does not yet have "
+            "verified release results for the programs in the projection"
+        )
     if REPOSITORY in asset_roots:
         raise BuildError(
             f"--asset-root must not name {REPOSITORY}, because --repository-root is "
@@ -175,8 +181,9 @@ def build_artifact(
                 path=item.path, mode=item.mode, owner=item.owner, group=item.group
             )
         )
+    manifest_programs: list[ManifestProgram] = []
     manifest = Manifest(
-        schema_version=SCHEMA_VERSION,
+        schema_version=schema_version_for(manifest_programs),
         repository=REPOSITORY,
         source_revision=source_revision,
         workspace=projection.workspace,
@@ -184,6 +191,7 @@ def build_artifact(
         environment=projection.environment,
         directories=directories,
         files=manifest_files,
+        programs=manifest_programs,
     )
     manifest_member = ArchiveMember(
         name=MANIFEST_MEMBER, content=manifest_bytes(manifest), mode=MANIFEST_MODE
