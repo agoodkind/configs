@@ -111,11 +111,23 @@ The command requires these arguments:
 | `--expected-workspace` | The fixed selector for the case. Another value causes rejection and does not change the archive. |
 | `--source-revision` | A commit with 40 lowercase hexadecimal characters. The manifest records this value. |
 | `--output-dir` | The directory that receives the archive. |
-| `--program-result <file>` | A program case requires the `result.json` that `verify_program` writes after checking the archive SHA-256 and attestation; other cases reject this option. The generator checks the result's release tag, asset, archive SHA-256, source revision, and signer revision against the pinned `opnsensectl` release. It hashes the referenced archive and rejects a digest that differs from the pinned release before creating output. It computes the SHA-256 of the `opnsensectl` member in the archive identified by the result's `archive` field and writes that value as `member_sha256` in the manifest. The `program-wrong-member` case substitutes a different value. The generator fails if the archive omits the member, contains multiple copies, or stores it as a link. It reads the bundle and writes the bundle and `program-bundles.json`. |
+| `--program-result <file>` | The local program verification result. |
+
+The generator applies these requirements to program inputs:
+
+| Input | Requirement |
+|---|---|
+| Result file | Program cases require the `result.json` that `verify_program` writes after checking the release archive SHA-256 and attestation. Other cases reject this option. |
+| Release identity | The result must match the pinned `opnsensectl` program name, release tag, asset, archive SHA-256, source revision, and signer revision. |
+| Archive | The generator reads the local archive from the result's `archive` field and hashes it. It rejects a digest that differs from the pinned release before creating output. |
+| Archive member | The archive must contain exactly one regular `opnsensectl` member. The generator rejects a missing member, duplicate members, links, and other member types. |
+| Member digest | The generator computes the member SHA-256 and writes it as `member_sha256` in the manifest. |
+| Bundle | The generator reads the local bundle from the result's `bundle` field and writes the bundle and `program-bundles.json` to the output directory. |
 
 The command rejects an unknown case, an invalid source revision, or a mismatched expected
 workspace before it creates the output directory. Case definitions fix the payload,
-paths, and identity. Fixture construction does not run OpenTofu or read target descriptors, application releases, inventory, or vault values; for program cases, the generator reads the bundle file referenced by the result JSON supplied with `--program-result` and does not use the network.
+paths, and identity. Fixture construction does not run OpenTofu, read target descriptors,
+inventory, or vault values, or use the network.
 
 The targets use these selectors and directories:
 
@@ -146,7 +158,7 @@ The command accepts these cases:
 | `recovery-v1` | The first version of 300 target A files for interrupted installation and recovery. |
 | `recovery-v2` | The second version of 300 target A files for interrupted installation and recovery. |
 
-All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hostartifact-acceptance/opnsensectl`; each program case requires `--program-result`.
+All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hostartifact-acceptance/opnsensectl`.
 
 | Case | Purpose |
 |---|---|
