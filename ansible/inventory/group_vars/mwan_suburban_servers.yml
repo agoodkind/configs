@@ -1100,17 +1100,6 @@ mwan_ifmgr_cloudflared_tap_enabled: false
 mwan_ifmgr_cloudflared_tap_unit: "cloudflared-oob"
 mwan_ifmgr_cloudflared_tap_downgrade_patterns: []
 
-# Interface-manager WireGuard health module (off).
-mwan_ifmgr_wg_enabled: false
-mwan_ifmgr_wg_ssh_host: ""
-mwan_ifmgr_wg_identity_file: ""
-mwan_ifmgr_wg_iface: "wg0"
-mwan_ifmgr_wg_sudo: false
-mwan_ifmgr_wg_warn_handshake_age: "180s"
-mwan_ifmgr_wg_error_handshake_age: "300s"
-mwan_ifmgr_wg_timeout: "10s"
-mwan_ifmgr_wg_ignore_peers: []
-
 # ----------------------------------------------------------------------------
 # SMTP defaults (shared non-secret settings)
 # ----------------------------------------------------------------------------
