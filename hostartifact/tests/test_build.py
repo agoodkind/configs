@@ -989,6 +989,32 @@ def test_build_rejects_a_program_archive_without_one_regular_member(
     assert not (tmp_path / "output").exists()
 
 
+def test_build_rejects_a_program_path_that_matches_a_directory(
+    tmp_path: Path, suburban_projection: JsonObject
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)]},
+    )
+    directory = as_object(as_list(prepared.projection["directories"])[0])
+    directory_path = as_text(directory["path"])
+    program = as_object(as_list(prepared.projection["programs"])[0])
+    program["path"] = directory_path
+
+    built = run_build(
+        tmp_path, prepared.repository, prepared.projection, prepared.results
+    )
+
+    assert built.returncode == 1, built.stderr
+    assert built.stdout == ""
+    assert (
+        f"hostartifact: the projection lists {directory_path} as both the path for "
+        f"program {PROGRAM_NAME} and a directory path\n"
+    ) == built.stderr
+    assert not (tmp_path / "output").exists()
+
+
 def test_build_rejects_an_archive_that_differs_from_its_result(
     tmp_path: Path, suburban_projection: JsonObject
 ) -> None:

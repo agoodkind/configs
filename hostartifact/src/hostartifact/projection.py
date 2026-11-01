@@ -225,6 +225,11 @@ def check_entries(projection: Projection) -> None:
                 f"the projection lists program path {program.path} more than once"
             )
         seen_program_paths.add(program.path)
+        if program.path in seen_directories:
+            raise BuildError(
+                f"the projection lists {program.path} as both the path for program "
+                f"{program.name} and a directory path"
+            )
         if program.path in seen_destinations:
             raise BuildError(
                 f"the projection lists {program.path} as both the path for program "
