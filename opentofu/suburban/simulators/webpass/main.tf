@@ -74,6 +74,8 @@ module "ispsim" {
 
   service_mapping        = local.service_mapping
   management_public_keys = local.github_keys
+
+  depends_on = [module.base]
 }
 
 module "suburban" {

@@ -40,6 +40,16 @@ variable "management_public_keys" {
     condition     = length(var.management_public_keys) > 0
     error_message = "management_public_keys must contain at least one SSH public key because an empty key file locks the management user out of the simulator."
   }
+
+  validation {
+    condition = alltrue([
+      for key in var.management_public_keys : can(regex(
+        "^(ssh-[A-Za-z0-9@._+-]+|ecdsa-[A-Za-z0-9@._+-]+|sk-[A-Za-z0-9@._+-]+) [A-Za-z0-9+/]+={0,3}( .*)?$",
+        trimspace(key),
+      ))
+    ])
+    error_message = "Each `management_public_keys` entry must match the SSH public key pattern: a key type starting with `ssh-`, `ecdsa-`, or `sk-`, followed by base64 data and an optional comment."
+  }
 }
 
 locals {
@@ -318,6 +328,7 @@ resource "pveguest_systemd_unit" "pd_route" {
 # pveguest_systemd_unit requires existing units and cannot mask units or reset failed units.
 # pveguest_file cannot remove files.
 # Declare these operations after a pinned pveguest release adds unit masking, tolerance for absent units, and file removal.
+
 resource "pveguest_file" "kea_dhcp6" {
   for_each = local.kea_dhcp6_units
 
