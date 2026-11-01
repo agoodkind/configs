@@ -60,6 +60,11 @@ The asset file name is `hostconfig_<SHA-256 of the selector>.tar.gz`.
 
 For a target with programs, `build` writes the archive, one `hostconfig_program-<name>.sigstore.jsonl` file per program, and `program-bundles.json` to the output directory. Each entry in `program-bundles.json` maps a program name to an object with `asset` for the bundle file name and `sha256` for the bundle SHA-256. `build` records the programs in a manifest with `schema_version` 2 and a `programs` list. For a target without programs, `build` writes only the archive and uses a manifest with `schema_version` 1.
 
+Target builds and fixture builds remove obsolete program bundle files listed in a valid prior
+`program-bundles.json` after validating the new inputs. They remove the index when the
+new build omits programs. They reject unrecognized prior asset names and preserve
+unrelated files and archives with different generated names.
+
 ## affected
 
 The `affected` command accepts these arguments:

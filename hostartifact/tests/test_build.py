@@ -985,6 +985,66 @@ def test_build_rejects_a_program_archive_without_one_regular_member(
     assert not (tmp_path / "output").exists()
 
 
+def test_rebuild_without_programs_removes_only_previous_program_outputs(
+    tmp_path: Path, suburban_projection: JsonObject
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)]},
+    )
+    first = run_build(
+        tmp_path, prepared.repository, prepared.projection, prepared.results
+    )
+    assert first.returncode == 0, first.stderr
+    output = tmp_path / "output"
+    unrelated = output / "keep.txt"
+    unrelated.write_bytes(PROGRAM_README)
+    rejected = run_build(tmp_path, prepared.repository, prepared.projection)
+    assert rejected.returncode == 1, rejected.stderr
+    assert (output / PROGRAM_BUNDLES_FILE).is_file()
+    assert (output / f"hostconfig_program-{PROGRAM_NAME}.sigstore.jsonl").is_file()
+    projection = copy.deepcopy(prepared.projection)
+    projection["programs"] = []
+
+    rebuilt = run_build(tmp_path, prepared.repository, projection)
+
+    assert rebuilt.returncode == 0, rebuilt.stderr
+    assert sorted(path.name for path in output.iterdir()) == [
+        target_asset(SUBURBAN),
+        unrelated.name,
+    ]
+    assert unrelated.read_bytes() == PROGRAM_README
+
+
+@pytest.mark.parametrize(
+    "asset", ["../keep.txt", "keep.txt", "hostconfig_program-other.sigstore.jsonl"]
+)
+def test_build_rejects_an_unrecognized_prior_program_asset(
+    tmp_path: Path, suburban_projection: JsonObject, asset: str
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    output = tmp_path / "output"
+    output.mkdir()
+    index_path = output / PROGRAM_BUNDLES_FILE
+    index_path.write_text(
+        json.dumps({PROGRAM_NAME: {"asset": asset, "sha256": "0" * SHA256_LENGTH}}),
+        encoding="utf-8",
+    )
+    previous_index = index_path.read_bytes()
+    unrelated = tmp_path / "keep.txt"
+    unrelated.write_bytes(PROGRAM_README)
+
+    rejected = run_build(tmp_path, repository, suburban_projection)
+
+    assert rejected.returncode == 1, rejected.stderr
+    assert "unrecognized program asset" in rejected.stderr
+    assert str(index_path) in rejected.stderr
+    assert unrelated.read_bytes() == PROGRAM_README
+    assert index_path.read_bytes() == previous_index
+    assert list(output.iterdir()) == [index_path]
+
+
 def test_build_rejects_a_program_path_that_matches_a_directory(
     tmp_path: Path, suburban_projection: JsonObject
 ) -> None:

@@ -158,7 +158,14 @@ def run_fixture(*arguments: str) -> subprocess.CompletedProcess[str]:
 
 
 def qualified_program_result() -> JsonObject:
-    path = Path(os.environ[FIXTURE_PROGRAM_RESULT_ENV])
+    result_path = os.environ.get(FIXTURE_PROGRAM_RESULT_ENV)
+    if result_path is None:
+        pytest.fail(
+            f"{FIXTURE_PROGRAM_RESULT_ENV} is required. Run make -C hostartifact test "
+            "or make -C hostartifact check from the repository root.",
+            pytrace=False,
+        )
+    path = Path(result_path)
     return as_object(json.loads(path.read_text(encoding="utf-8")))
 
 
@@ -680,3 +687,17 @@ def test_program_result_with_an_empty_bundle_creates_no_output(tmp_path: Path) -
     assert rejected.returncode == REJECTED_INPUT_EXIT_CODE
     assert rejected.stderr.startswith(ERROR_PREFIX)
     assert not output_dir.exists()
+
+
+def test_legacy_rebuild_removes_only_previous_program_companions(tmp_path: Path) -> None:
+    output = tmp_path / "output"
+    first = build("program-valid", output)
+    unrelated = output / "keep.txt"
+    unrelated.write_bytes(BAD_CONTENT)
+
+    rebuilt = build(VALID_ONE_CASE, output)
+
+    assert sorted(path.name for path in output.iterdir()) == sorted(
+        [as_text(first["asset"]), as_text(rebuilt["asset"]), unrelated.name]
+    )
+    assert unrelated.read_bytes() == BAD_CONTENT

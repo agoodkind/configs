@@ -523,9 +523,12 @@ def load_program_input(
 def write_fixture_bundle(
     case: FixtureCase,
     target: FixtureTarget,
-    program_input: ProgramInput,
+    program_input: ProgramInput | None,
     output_dir: Path,
 ) -> None:
+    if program_input is None:
+        write_program_bundles(output_dir, [])
+        return
     bundle_asset = f"{PROGRAM_BUNDLE_PREFIX}{PROGRAM_IDENTIFIER}{PROGRAM_BUNDLE_SUFFIX}"
     verified = VerifiedProgram(
         manifest=program_manifest(case, target, program_input.member_sha256),
@@ -554,12 +557,11 @@ def build_fixture(
     regular_members = [
         item for item in fixture.members if isinstance(item, ArchiveMember)
     ]
+    write_fixture_bundle(case, fixture.target, program_input, output_dir)
     if len(regular_members) == len(fixture.members):
         write_archive(archive_path, regular_members)
     else:
         write_link_archive(archive_path, fixture.members)
-    if program_input is not None:
-        write_fixture_bundle(case, fixture.target, program_input, output_dir)
     archive_bytes = archive_path.read_bytes()
     return BuildResult(
         archive=str(archive_path),

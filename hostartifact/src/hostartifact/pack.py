@@ -4,6 +4,7 @@ import gzip
 import hashlib
 import io
 import json
+import re
 import tarfile
 import zlib
 from functools import partial
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Final
 
 from jinja2 import StrictUndefined
-from pydantic import Field, ValidationError
+from pydantic import Field, TypeAdapter, ValidationError
 lazy from pydantic import JsonValue
 
 from hostartifact.manifest import (
@@ -27,6 +28,7 @@ from hostartifact.manifest import (
     schema_version_for,
 )
 from hostartifact.projection import (
+    PROGRAM_NAME_PATTERN,
     REPOSITORY,
     AssetSource,
     BuildError,
@@ -80,8 +82,8 @@ class ProgramResult(StrictModel):
     sha256: str = Field(pattern=SHA256_PATTERN)
     source_revision: str = Field(pattern=REVISION_PATTERN.pattern)
     signer_revision: str = Field(pattern=REVISION_PATTERN.pattern)
-    archive: str
-    bundle: str
+    archive: Path
+    bundle: Path
 
 
 class ProgramBundle(StrictModel):
@@ -176,7 +178,7 @@ def verify_program(program: ProgramEntry, result: ProgramResult) -> VerifiedProg
             f"Program {program.name}: the result records asset {result.asset}, but the "
             f"projection uses {program.asset}"
         )
-    archive_path = Path(result.archive)
+    archive_path = result.archive
     archive_digest = file_sha256(archive_path)
     if archive_digest != result.sha256:
         raise BuildError(
@@ -184,7 +186,7 @@ def verify_program(program: ProgramEntry, result: ProgramResult) -> VerifiedProg
             f"{archive_digest}, but the result records {result.sha256}"
         )
     member_digest = program_member_sha256(program, archive_path)
-    bundle_path = Path(result.bundle)
+    bundle_path = result.bundle
     try:
         bundle_content = bundle_path.read_bytes()
     except OSError as error:
@@ -219,7 +221,51 @@ def verify_program(program: ProgramEntry, result: ProgramResult) -> VerifiedProg
     )
 
 
+def previous_program_assets(output_dir: Path) -> list[str]:
+    index_path = output_dir / PROGRAM_BUNDLES_FILE
+    try:
+        content = index_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    except (OSError, UnicodeDecodeError) as error:
+        raise BuildError(
+            f"The build cannot read program bundle index {index_path}: {error}"
+        ) from error
+    try:
+        index = TypeAdapter(dict[str, ProgramBundle]).validate_json(content)
+    except ValidationError as error:
+        raise BuildError(
+            f"The program bundle index {index_path} is not valid: {error}"
+        ) from error
+    assets: list[str] = []
+    for name, bundle in index.items():
+        expected_asset = f"{PROGRAM_BUNDLE_PREFIX}{name}{PROGRAM_BUNDLE_SUFFIX}"
+        if (
+            re.fullmatch(PROGRAM_NAME_PATTERN, name) is None
+            or bundle.asset != expected_asset
+        ):
+            raise BuildError(
+                f"The program bundle index {index_path} contains an unrecognized "
+                f"program asset {bundle.asset!r} for {name!r}"
+            )
+        assets.append(bundle.asset)
+    return assets
+
+
 def write_program_bundles(output_dir: Path, programs: list[VerifiedProgram]) -> None:
+    previous_assets = previous_program_assets(output_dir)
+    current_assets = {program.bundle_asset for program in programs}
+    try:
+        for asset in previous_assets:
+            if asset not in current_assets:
+                (output_dir / asset).unlink(missing_ok=True)
+        if not programs:
+            (output_dir / PROGRAM_BUNDLES_FILE).unlink(missing_ok=True)
+            return
+    except OSError as error:
+        raise BuildError(
+            f"The build cannot remove previous program outputs in {output_dir}: {error}"
+        ) from error
     index: dict[str, ProgramBundle] = {}
     for program in programs:
         (output_dir / program.bundle_asset).write_bytes(program.bundle_content)
@@ -375,9 +421,8 @@ def build_artifact(
     asset = f"{ASSET_NAME_PREFIX}{identifier}{ASSET_NAME_SUFFIX}"
     output_dir.mkdir(parents=True, exist_ok=True)
     archive_path = output_dir / asset
+    write_program_bundles(output_dir, verified_programs)
     write_archive(archive_path, [manifest_member, *members])
-    if verified_programs:
-        write_program_bundles(output_dir, verified_programs)
     archive_bytes = archive_path.read_bytes()
     return BuildResult(
         archive=str(archive_path),
