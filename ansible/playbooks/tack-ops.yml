@@ -306,7 +306,7 @@
         - docker-compose.audit-redactor.yml
       check_mode: false
       when: >-
-        tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
+        tack_ops_command in ['ops qa datagen seed', 'ops qa datagen search', 'ops audit dlq inspect',
                              'ops audit dlq replay', 'ops audit consumer-offsets']
       no_log: true
 
@@ -326,7 +326,7 @@
               {{ '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.search-projections.yml'
                  if tack_ops_command == 'ops backfill once-search-projections'
                  else '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml'
-                 if tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
+                 if tack_ops_command in ['ops qa datagen seed', 'ops qa datagen search', 'ops audit dlq inspect',
                                          'ops audit dlq replay', 'ops audit consumer-offsets'] else '' }}
               {{ '-f docker-compose.audit-redactor.yml'
                  if tack_ops_command == 'ops qa datagen seed'
@@ -384,7 +384,7 @@
               {{ '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.search-projections.yml'
                  if tack_ops_command == 'ops backfill once-search-projections'
                  else '-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml'
-                 if tack_ops_command in ['ops qa datagen seed', 'ops audit dlq inspect',
+                 if tack_ops_command in ['ops qa datagen seed', 'ops qa datagen search', 'ops audit dlq inspect',
                                          'ops audit dlq replay', 'ops audit consumer-offsets'] else '' }}
               {{ '-f docker-compose.audit-redactor.yml'
                  if tack_ops_command == 'ops qa datagen seed'
