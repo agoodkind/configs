@@ -1,0 +1,48 @@
+#!/usr/sbin/nft -f
+flush ruleset
+%{ if length(uplink_sources) > 0 }
+table ip nat {
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+%{~ for source in uplink_sources }
+        oifname "${management_interface}" ip saddr ${source} masquerade
+%{~ endfor }
+    }
+}
+%{ endif }
+table inet filter {
+    chain input {
+        type filter hook input priority filter; policy drop;
+        iifname "lo" accept
+        iifname "${management_interface}" accept
+        ct state established,related accept
+        ip protocol icmp accept
+        meta l4proto ipv6-icmp accept
+%{~ for tunnel in tunnels }
+        ip saddr ${tunnel.local.outer_ipv4} ip daddr ${tunnel.remote.outer_ipv4} ip protocol 41 accept
+%{~ endfor }
+%{~ for session in sessions }
+%{~ if session.local.node == name }
+        ip6 saddr ${session.remote.address} tcp dport 179 accept
+%{~ else }
+        ip6 saddr ${session.local.address} tcp dport 179 accept
+%{~ endif }
+%{~ endfor }
+%{~ if transfer_server }
+        tcp dport ${transfer_port} accept
+%{~ endif }
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+%{~ if length(uplink_sources) > 0 }
+        iifname { ${uplink_interface_list} } oifname "${management_interface}" ip saddr { ${uplink_source_list} } accept
+        iifname "${management_interface}" oifname { ${uplink_interface_list} } ct state established,related accept
+%{~ endif }
+        iifname "${management_interface}" drop
+        oifname "${management_interface}" drop
+%{~ if forwarding }
+        iifname { ${test_interface_list} } oifname { ${test_interface_list} } accept
+%{~ endif }
+    }
+}

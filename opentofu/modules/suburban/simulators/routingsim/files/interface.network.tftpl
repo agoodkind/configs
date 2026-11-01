@@ -1,0 +1,30 @@
+[Match]
+Name=${name}
+
+[Network]
+IPv6AcceptRA=no
+%{~ for address in addresses }
+Address=${address}
+%{~ endfor }
+%{~ for route in routes }
+
+[Route]
+Destination=${route.destination}
+Gateway=${route.gateway}
+%{~ endfor }
+%{~ for prefix in unreachable_prefixes }
+%{~ if strcontains(prefix, ":") }
+
+[RoutingPolicyRule]
+Family=ipv6
+To=${prefix}
+Type=unreachable
+Priority=${unreachable_rule_priority}
+%{~ else }
+
+[Route]
+Destination=${prefix}
+Type=unreachable
+Metric=${unreachable_metric}
+%{~ endif }
+%{~ endfor }

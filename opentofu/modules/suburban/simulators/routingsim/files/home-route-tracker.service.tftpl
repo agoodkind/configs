@@ -1,0 +1,12 @@
+[Unit]
+Description=Track the configured route to ${route.destination}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/sbin/routing-home-route-tracker ${route.destination} ${route.gateway} ${route.interface} ${interval_seconds} ${failure_threshold} ${route_metric}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

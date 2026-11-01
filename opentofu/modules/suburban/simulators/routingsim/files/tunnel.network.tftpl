@@ -1,0 +1,13 @@
+[Match]
+Name=${tunnel.remote.interface}
+
+[Network]
+IPv6AcceptRA=no
+Address=${tunnel.remote.inner_ipv6}/${tunnel.inner_prefix_length}
+Address=${link_local_ipv6}/64
+%{~ for route in routes }
+
+[Route]
+Destination=${route.destination}
+Gateway=${route.gateway}
+%{~ endfor }

@@ -1,0 +1,10 @@
+[NetDev]
+Name=${tunnel.remote.interface}
+Kind=${tunnel.protocol}
+MTUBytes=${tunnel.mtu}
+
+[Tunnel]
+Independent=yes
+Local=${tunnel.remote.outer_ipv4}
+Remote=${tunnel.local.outer_ipv4}
+TTL=${tunnel.outer_ttl}
