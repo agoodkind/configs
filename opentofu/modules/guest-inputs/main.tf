@@ -144,12 +144,28 @@ locals {
   ]
 }
 
-output "guests" { value = local.guests }
+output "guests" {
+  value = local.guests
+
+  precondition {
+    condition = alltrue([
+      for kind in values(local.guest_kinds) : contains(local.guest_kind_values, kind)
+    ])
+    error_message = "Enrolled guest kinds must be lxc or qemu."
+  }
+}
 
 output "guest_kinds" { value = local.guest_kinds }
 
 output "guest_kind_values" { value = local.guest_kind_values }
 
 output "mail_relays" { value = local.mail_relays }
+
+output "mail_relay_import_ids" {
+  value = {
+    for name, relay in local.mail_relays :
+    name => "${local.guests[name].node}/${local.guests[name].vmid}/${local.guests[name].kind}/${relay.username}/${relay.password_version}"
+  }
+}
 
 output "sshpiper_lines" { value = local.sshpiper_lines }

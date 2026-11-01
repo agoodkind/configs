@@ -71,9 +71,9 @@ module "base" {
 # SMTP2GO password. A new pveguest_mail_relay resource would rotate the
 # password.
 import {
-  for_each = local.mail_relays
+  for_each = module.guest_inputs.mail_relay_import_ids
   to       = module.base[each.key].pveguest_mail_relay.smtp["smtp2go"]
-  id       = "${local.guests[each.key].node}/${local.guests[each.key].vmid}/${local.guests[each.key].kind}/${each.value.username}/${each.value.password_version}"
+  id       = each.value
 }
 
 module "suburban" {
