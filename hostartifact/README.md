@@ -107,11 +107,11 @@ The command requires these arguments:
 | `--expected-workspace` | The fixed selector for the case. Another value causes rejection and does not change the archive. |
 | `--source-revision` | A commit with 40 lowercase hexadecimal characters. The manifest records this value. |
 | `--output-dir` | The directory that receives the archive. |
+| `--program-result <file>` | A program case requires the `result.json` from `verify_program`; other cases reject this option. From that result, the generator writes the bundle and `program-bundles.json`. |
 
 The command rejects an unknown case, an invalid source revision, or a mismatched expected
 workspace before it creates the output directory. Case definitions fix the payload,
-paths, and identity. Fixture construction does not run OpenTofu or read target
-descriptors, application releases, inventory, or vault values.
+paths, and identity. Fixture construction does not run OpenTofu or read target descriptors, application releases, inventory, or vault values; for program cases, the generator reads the bundle file referenced by the result JSON supplied with `--program-result` and does not use the network.
 
 The targets use these selectors and directories:
 
@@ -142,7 +142,7 @@ The command accepts these cases:
 | `recovery-v1` | The first version of 300 target A files for interrupted installation and recovery. |
 | `recovery-v2` | The second version of 300 target A files for interrupted installation and recovery. |
 
-All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hostartifact-acceptance/opnsensectl`; the generator does not read any network resource.
+All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hostartifact-acceptance/opnsensectl`; each program case requires `--program-result`.
 
 | Case | Purpose |
 |---|---|
@@ -166,7 +166,7 @@ The command returns these exit codes:
 | 1 | The command rejected the source revision or expected workspace and printed the reason on stderr with the prefix `build_fixture: `. |
 | 2 | argparse rejected the arguments, including an unknown case, and printed usage on stderr. |
 
-For fixture publication, the `host artifact` job in [ci.yml](../.github/workflows/ci.yml) runs only for a manual dispatch on `refs/heads/main` when `revision` equals the workflow commit. With the optional `fixture_case` input at its default value of `none`, the job runs [build-target.sh](scripts/build-target.sh) for `workspace`. A different value builds that fixture with `workspace` as the expected selector. After attesting the archive, the job publishes a fixture release with a tag starting with `hostconfig-fixture-<case>-` and only the archive and its attestation bundle as assets. A target build release also includes each retained program bundle. Pin JSON in the job summary includes `program_bundles`, which equals `{}` for fixtures. Publication does not change a pin file or host policy.
+For fixture publication, the `host artifact` job in [ci.yml](../.github/workflows/ci.yml) runs only for a manual dispatch on `refs/heads/main` when `revision` equals the workflow commit. With the optional `fixture_case` input at its default value of `none`, the job runs [build-target.sh](scripts/build-target.sh) for `workspace`. A different value builds that fixture with `workspace` as the expected selector. For a program case, the `host artifact` job first runs `build-fixture-program.sh` to verify the opnsensectl release bundle. After attesting the fixture archive, the job publishes a fixture release with a tag starting with `hostconfig-fixture-<case>-`. A program fixture release includes the archive, its attestation bundle, and `hostconfig_program-opnsensectl.sigstore.jsonl`. Other fixture releases include only the archive and its attestation bundle. A target build release also includes each retained program bundle. Pin JSON in the job summary lists the program bundle in `program_bundles` for program fixtures and sets `program_bundles` to `{}` for other fixtures. Publication does not change a pin file or host policy.
 
 A main-branch publication request has this form:
 

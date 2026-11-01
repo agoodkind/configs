@@ -248,4 +248,7 @@ main() {
   build_archive "$repository_root" "$target" "$source_revision" "$venv_bin:$tofu_dir"
 }
 
-main "$@"
+# Only direct shell execution runs main. Other scripts can source its functions.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

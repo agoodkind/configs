@@ -10,6 +10,8 @@ from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from hostartifact.manifest import (
     MANIFEST_MEMBER,
     Manifest,
@@ -27,10 +29,15 @@ from hostartifact.pack import (
     COMPRESS_LEVEL,
     MANIFEST_MODE,
     OCTAL_BASE,
+    PROGRAM_BUNDLE_PREFIX,
+    PROGRAM_BUNDLE_SUFFIX,
     ROOT_ID,
     ArchiveMember,
     BuildResult,
+    ProgramResult,
+    VerifiedProgram,
     write_archive,
+    write_program_bundles,
 )
 from hostartifact.projection import REPOSITORY, BuildError, StrictModel, target_identifier
 
@@ -104,6 +111,18 @@ class FixtureCase(StrEnum):
     PROGRAM_COLLISION = "program-collision"
 
 
+PROGRAM_CASES = frozenset(
+    {
+        FixtureCase.PROGRAM_VALID,
+        FixtureCase.PROGRAM_WRONG_SOURCE,
+        FixtureCase.PROGRAM_WRONG_SIGNER,
+        FixtureCase.PROGRAM_WRONG_ARCHIVE,
+        FixtureCase.PROGRAM_WRONG_MEMBER,
+        FixtureCase.PROGRAM_COLLISION,
+    }
+)
+
+
 class LinkKind(StrEnum):
     SYMBOLIC = "symbolic"
     HARD = "hard"
@@ -140,6 +159,7 @@ class Arguments(StrictModel):
     expected_workspace: str
     source_revision: str
     output_dir: Path
+    program_result: Path | None
 
 
 TARGET_A = FixtureTarget(
@@ -439,8 +459,68 @@ def write_link_archive(path: Path, members: Sequence[FixtureMember]) -> None:
                 archive.addfile(info, io.BytesIO(member.content))
 
 
+def read_program_result(path: Path) -> ProgramResult:
+    try:
+        return ProgramResult.model_validate_json(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValidationError) as error:
+        raise BuildError(
+            f"{PROGRAM_NAME}.py cannot read or validate program result file "
+            f"{path}: {error}"
+        ) from error
+
+
+def check_result_field(field: str, actual: str, expected: str) -> None:
+    if actual != expected:
+        raise BuildError(
+            f"Program result field {field} contains {actual}, but the pinned "
+            f"opnsensectl release uses {expected}"
+        )
+
+
+def load_program_bundle(case: FixtureCase, result_path: Path | None) -> bytes | None:
+    if result_path is None:
+        if case in PROGRAM_CASES:
+            raise BuildError(
+                f"{case.value} is a program case and requires --program-result"
+            )
+        return None
+    if case not in PROGRAM_CASES:
+        raise BuildError(
+            f"{case.value} is not a program case and does not accept --program-result"
+        )
+    result = read_program_result(result_path)
+    check_result_field("name", result.name, PROGRAM_IDENTIFIER)
+    check_result_field("release_tag", result.release_tag, PROGRAM_RELEASE_TAG)
+    check_result_field("asset", result.asset, PROGRAM_ASSET)
+    check_result_field("sha256", result.sha256, PROGRAM_ARCHIVE_SHA256)
+    check_result_field("source_revision", result.source_revision, PROGRAM_SOURCE_REVISION)
+    check_result_field("signer_revision", result.signer_revision, PROGRAM_SIGNER_REVISION)
+    bundle_path = Path(result.bundle)
+    try:
+        bundle = bundle_path.read_bytes()
+    except OSError as error:
+        raise BuildError(
+            f"{PROGRAM_NAME}.py cannot read bundle file {bundle_path}: {error}"
+        ) from error
+    if not bundle:
+        raise BuildError(f"Bundle file {bundle_path} does not contain any data")
+    return bundle
+
+
+def write_fixture_bundle(
+    case: FixtureCase, target: FixtureTarget, bundle: bytes, output_dir: Path
+) -> None:
+    bundle_asset = f"{PROGRAM_BUNDLE_PREFIX}{PROGRAM_IDENTIFIER}{PROGRAM_BUNDLE_SUFFIX}"
+    verified = VerifiedProgram(
+        manifest=program_manifest(case, target),
+        bundle_asset=bundle_asset,
+        bundle_content=bundle,
+    )
+    write_program_bundles(output_dir, [verified])
+
+
 def build_fixture(
-    case: FixtureCase, source_revision: str, output_dir: Path
+    case: FixtureCase, source_revision: str, output_dir: Path, bundle: bytes | None
 ) -> BuildResult:
     check_revision(source_revision)
     fixture = fixture_archive(case, source_revision)
@@ -456,6 +536,8 @@ def build_fixture(
         write_archive(archive_path, regular_members)
     else:
         write_link_archive(archive_path, fixture.members)
+    if bundle is not None:
+        write_fixture_bundle(case, fixture.target, bundle, output_dir)
     archive_bytes = archive_path.read_bytes()
     return BuildResult(
         archive=str(archive_path),
@@ -482,6 +564,7 @@ def parse_arguments(arguments: list[str]) -> Arguments:
     parser.add_argument("--expected-workspace", required=True)
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--program-result", type=Path, default=None)
     parsed = parser.parse_args(arguments)
     return Arguments.model_validate(vars(parsed))
 
@@ -491,7 +574,8 @@ def main(arguments: list[str]) -> int:
     case = parsed.case
     try:
         check_expected_workspace(case, parsed.expected_workspace)
-        result = build_fixture(case, parsed.source_revision, parsed.output_dir)
+        bundle = load_program_bundle(case, parsed.program_result)
+        result = build_fixture(case, parsed.source_revision, parsed.output_dir, bundle)
     except BuildError as error:
         print(f"{PROGRAM_NAME}: {error}", file=sys.stderr)
         return FAILURE_EXIT_CODE

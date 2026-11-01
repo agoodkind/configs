@@ -193,10 +193,17 @@ jobs:
             hostartifact/scripts/build-target.sh "$GITHUB_WORKSPACE" "$WORKSPACE" "$work" "$GITHUB_SHA"
           else
             mkdir -p "$work"
+            fixture_options=()
+            # A program fixture case verifies the opnsensectl release bundle first.
+            if [[ "$FIXTURE_CASE" == program-* ]]; then
+              hostartifact/scripts/build-fixture-program.sh "$work/program"
+              fixture_options+=(--program-result "$work/program/result.json")
+            fi
             uv run --frozen --project hostartifact python hostartifact/tests/build_fixture.py \
               --case "$FIXTURE_CASE" \
               --expected-workspace "$WORKSPACE" \
               --source-revision "$GITHUB_SHA" \
+              "${fixture_options[@]}" \
               --output-dir "$work/output" > "$work/result.json"
             jq . "$work/result.json"
           fi

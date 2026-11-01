@@ -80,6 +80,9 @@ PROGRAM_MEMBER_SHA256 = "19153b0b2026c69df0c2f7c9b0268dcdb3c85c7313544ba993e7587
 PROGRAM_SOURCE_REVISION = "7db20fb56fa01fa41bbb9ebeb03f29c281bce24a"
 PROGRAM_SIGNER_REVISION = "6f29e0969c7c302aee9c1a23b3424c91f8c7796d"
 PROGRAM_PATH = f"{DIRECTORY_A}/opnsensectl"
+PROGRAM_BUNDLE_TEXT = '{"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}\n'
+PROGRAM_BUNDLE_ASSET = "hostconfig_program-opnsensectl.sigstore.jsonl"
+PROGRAM_BUNDLES_FILE = "program-bundles.json"
 WRONG_REVISION = "1" * 40
 WRONG_DIGEST = "0" * 64
 LEGACY_TAR_DIGESTS = {
@@ -152,8 +155,28 @@ def run_fixture(*arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
-def build(case: str, output_dir: Path) -> JsonObject:
-    built = run_fixture(
+def write_program_result(directory: Path, overrides: JsonObject) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    bundle = directory / "bundle.jsonl"
+    bundle.write_text(PROGRAM_BUNDLE_TEXT, encoding="utf-8")
+    result: JsonObject = {
+        "name": PROGRAM_NAME,
+        "release_tag": PROGRAM_RELEASE_TAG,
+        "asset": PROGRAM_ASSET,
+        "sha256": PROGRAM_ARCHIVE_SHA256,
+        "source_revision": PROGRAM_SOURCE_REVISION,
+        "signer_revision": PROGRAM_SIGNER_REVISION,
+        "archive": str(directory / PROGRAM_ASSET),
+        "bundle": str(bundle),
+    }
+    result.update(overrides)
+    result_file = directory / "result.json"
+    result_file.write_text(json.dumps(result), encoding="utf-8")
+    return result_file
+
+
+def fixture_arguments(case: str, output_dir: Path) -> list[str]:
+    return [
         "--case",
         case,
         "--expected-workspace",
@@ -162,7 +185,15 @@ def build(case: str, output_dir: Path) -> JsonObject:
         SOURCE_REVISION,
         "--output-dir",
         str(output_dir),
-    )
+    ]
+
+
+def build(case: str, output_dir: Path) -> JsonObject:
+    arguments = fixture_arguments(case, output_dir)
+    if case in PROGRAM_CASES:
+        result_file = write_program_result(output_dir.parent / "program-input", {})
+        arguments.extend(["--program-result", str(result_file)])
+    built = run_fixture(*arguments)
     assert built.returncode == 0, built.stderr
     return as_object(json.loads(built.stdout))
 
@@ -512,5 +543,105 @@ def test_invalid_source_revision_creates_no_output(tmp_path: Path, revision: str
 
     assert rejected.returncode == REJECTED_INPUT_EXIT_CODE
     assert rejected.stdout == ""
+    assert rejected.stderr.startswith(ERROR_PREFIX)
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize("case", PROGRAM_CASES)
+def test_program_case_publishes_the_verified_bundle(tmp_path: Path, case: str) -> None:
+    result = build(case, tmp_path / "output")
+
+    output_dir = tmp_path / "output"
+    assert sorted(path.name for path in output_dir.iterdir()) == sorted(
+        [as_text(result["asset"]), PROGRAM_BUNDLES_FILE, PROGRAM_BUNDLE_ASSET]
+    )
+    bundle_bytes = (output_dir / PROGRAM_BUNDLE_ASSET).read_bytes()
+    assert bundle_bytes == PROGRAM_BUNDLE_TEXT.encode()
+    index = json.loads((output_dir / PROGRAM_BUNDLES_FILE).read_text(encoding="utf-8"))
+    assert index == {
+        PROGRAM_NAME: {
+            "asset": PROGRAM_BUNDLE_ASSET,
+            "sha256": hashlib.sha256(bundle_bytes).hexdigest(),
+        }
+    }
+
+
+def test_legacy_case_writes_no_bundle_files(tmp_path: Path) -> None:
+    result = build(VALID_ONE_CASE, tmp_path / "output")
+
+    names = [path.name for path in (tmp_path / "output").iterdir()]
+    assert names == [as_text(result["asset"])]
+
+
+@pytest.mark.parametrize("case", PROGRAM_CASES)
+def test_program_case_without_a_result_creates_no_output(
+    tmp_path: Path, case: str
+) -> None:
+    output_dir = tmp_path / "output"
+
+    rejected = run_fixture(*fixture_arguments(case, output_dir))
+
+    assert rejected.returncode == REJECTED_INPUT_EXIT_CODE
+    assert rejected.stdout == ""
+    assert rejected.stderr.startswith(ERROR_PREFIX)
+    assert "--program-result" in rejected.stderr
+    assert not output_dir.exists()
+
+
+def test_legacy_case_with_a_result_creates_no_output(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    result_file = write_program_result(tmp_path / "input", {})
+
+    rejected = run_fixture(
+        *fixture_arguments(VALID_ONE_CASE, output_dir),
+        "--program-result",
+        str(result_file),
+    )
+
+    assert rejected.returncode == REJECTED_INPUT_EXIT_CODE
+    assert rejected.stderr.startswith(ERROR_PREFIX)
+    assert not output_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"release_tag": "other-tag"}, id="release-tag"),
+        pytest.param({"asset": "other.tar.gz"}, id="asset"),
+        pytest.param({"sha256": WRONG_DIGEST}, id="archive-digest"),
+        pytest.param({"source_revision": WRONG_REVISION}, id="source-revision"),
+        pytest.param({"signer_revision": WRONG_REVISION}, id="signer-revision"),
+        pytest.param({"bundle": "absent-bundle.jsonl"}, id="missing-bundle"),
+    ],
+)
+def test_program_result_that_differs_from_the_pinned_release_creates_no_output(
+    tmp_path: Path, overrides: JsonObject
+) -> None:
+    output_dir = tmp_path / "output"
+    result_file = write_program_result(tmp_path / "input", overrides)
+
+    rejected = run_fixture(
+        *fixture_arguments("program-valid", output_dir),
+        "--program-result",
+        str(result_file),
+    )
+
+    assert rejected.returncode == REJECTED_INPUT_EXIT_CODE
+    assert rejected.stderr.startswith(ERROR_PREFIX)
+    assert not output_dir.exists()
+
+
+def test_program_result_with_an_empty_bundle_creates_no_output(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    result_file = write_program_result(tmp_path / "input", {})
+    (tmp_path / "input" / "bundle.jsonl").write_bytes(b"")
+
+    rejected = run_fixture(
+        *fixture_arguments("program-valid", output_dir),
+        "--program-result",
+        str(result_file),
+    )
+
+    assert rejected.returncode == REJECTED_INPUT_EXIT_CODE
     assert rejected.stderr.startswith(ERROR_PREFIX)
     assert not output_dir.exists()
