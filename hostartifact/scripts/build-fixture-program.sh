@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Download and verify the opnsensectl release archive and its attestation bundle.
-# Write result.json in the work directory.
-# Run build-fixture-program.sh <work directory> with GH_TOKEN set.
 
 set -euo pipefail
 
