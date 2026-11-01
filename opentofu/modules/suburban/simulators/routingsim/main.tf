@@ -64,13 +64,31 @@ locals {
   tracker_settings = local.deploy_vars.testbed_routing_home_route_tracker
   networks         = var.routing_inventory.testbed_routing_networks
 
-  service_mapping_text = file("${var.repository_root}/ansible/inventory/group_vars/all/service_mapping.yml")
-  # Ansible renders testbed_routing_networks in file order. OpenTofu sorts object
-  # keys alphabetically. The unreachable route entries in the first interface file
-  # follow network order. The module reads the network key order from the text of
-  # service_mapping.yml.
-  networks_block = regex("(?s)\\ntestbed_routing_networks:\\n(.*?)\\n\\n", local.service_mapping_text)[0]
-  network_order  = [for match in regexall("(?m)^  ([a-z0-9_]+):$", local.networks_block) : match[0]]
+  # Ansible keeps the file order of testbed_routing_networks. yamldecode sorts keys
+  # and does not keep that order. Bridge names use vmbr followed by a number that
+  # increases in file order. The module sorts networks by that number to reproduce
+  # Ansible's file order. The render comparison against the Ansible templates detects
+  # differences in that order.
+  network_bridge_keys = sort([
+    for network_name, network in local.networks :
+    format("%06d:%s", tonumber(regex("^vmbr([0-9]+)$", network.bridge)[0]), network_name)
+  ])
+  network_order = [for bridge_key in local.network_bridge_keys : split(":", bridge_key)[1]]
+
+  # The module reads the literal prefix from the
+  # testbed_routing_management_unreachable_prefixes expression in prefixes.yml.
+  # The module compares the full expression with the shape it implements.
+  # A resource precondition fails the plan when prefixes.yml changes the rule.
+  unreachable_expression = yamldecode(
+    file("${local.routing_vars_dir}/prefixes.yml")
+  ).testbed_routing_management_unreachable_prefixes
+  extra_unreachable_prefix = regex(
+    "^\\{\\{ \\[testbed_routing_home_prefix, '([^']+)'\\] ",
+    local.unreachable_expression
+  )[0]
+  unreachable_expression_current = (
+    local.unreachable_expression == "{{ [testbed_routing_home_prefix, '${local.extra_unreachable_prefix}'] + (testbed_routing_networks | dict2items | rejectattr('key', 'equalto', 'management') | map(attribute='value.ipv4_net') | reject('equalto', '') | list) }}"
+  )
 
   node    = local.nodes[var.name]
   service = var.service_mapping[local.node.service]
@@ -309,7 +327,7 @@ locals {
   }
 
   unreachable_prefixes = concat(
-    [local.home_prefix, "2001:db8::/32"],
+    [local.home_prefix, local.extra_unreachable_prefix],
     [
       for network_name in local.network_order : local.networks[network_name].ipv4_net
       if network_name != "management" && local.networks[network_name].ipv4_net != ""
@@ -501,6 +519,11 @@ resource "pveguest_apt_packages" "routing" {
       condition     = local.node.service == var.guest_key && local.service.vmid == var.vmid
       error_message = "The testbed_routing_nodes entry ${var.name} must use the service ${var.guest_key} with the vmid ${var.vmid}."
     }
+
+    precondition {
+      condition     = local.unreachable_expression_current
+      error_message = "The testbed_routing_management_unreachable_prefixes rule in prefixes.yml changed. Update the routingsim module to match the new rule."
+    }
   }
 }
 
@@ -640,7 +663,9 @@ resource "pveguest_systemd_unit" "frr" {
     daemons = pveguest_file.frr_daemons["daemons"].write_id
   }
 
-  depends_on = [pveguest_apt_packages.routing]
+  # The units start after systemd-networkd.service. On a rebuilt guest, the tunnel
+  # interfaces exist before FRR and the route tracker use them.
+  depends_on = [pveguest_apt_packages.routing, pveguest_systemd_unit.networkd]
 }
 
 resource "pveguest_systemd_unit" "iperf3" {
@@ -698,5 +723,7 @@ resource "pveguest_systemd_unit" "tracker" {
     unit   = pveguest_file.tracker_unit[each.key].write_id
   }
 
-  depends_on = [pveguest_apt_packages.routing]
+  # The units start after systemd-networkd.service. On a rebuilt guest, the tunnel
+  # interfaces exist before FRR and the route tracker use them.
+  depends_on = [pveguest_apt_packages.routing, pveguest_systemd_unit.networkd]
 }
