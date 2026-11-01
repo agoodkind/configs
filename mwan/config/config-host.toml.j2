@@ -146,15 +146,3 @@ table_id = {{ mwan_reserved_tables.oob }}
 unit = "{{ mwan_ifmgr_cloudflared_tap_unit }}"
 downgrade_patterns = {{ mwan_ifmgr_cloudflared_tap_downgrade_patterns | to_json }}
 {% endif %}
-
-{% if mwan_ifmgr_wg_enabled | bool %}
-[ifmgr.modules.wg]
-ssh_host = "{{ mwan_ifmgr_wg_ssh_host }}"
-identity_file = "{{ mwan_ifmgr_wg_identity_file }}"
-iface = "{{ mwan_ifmgr_wg_iface }}"
-sudo = {{ mwan_ifmgr_wg_sudo | ternary('true', 'false') }}
-warn_handshake_age = "{{ mwan_ifmgr_wg_warn_handshake_age }}"
-error_handshake_age = "{{ mwan_ifmgr_wg_error_handshake_age }}"
-timeout = "{{ mwan_ifmgr_wg_timeout }}"
-ignore_peers = {{ mwan_ifmgr_wg_ignore_peers | to_json }}
-{% endif %}
