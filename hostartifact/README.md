@@ -167,7 +167,7 @@ All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hosta
 
 | Case | Purpose |
 |---|---|
-| `program-valid` | This case keeps the program entry unchanged, and the host installs the program. |
+| `program-valid` | The host installs the program. |
 | `program-wrong-source` | Only `source_revision` differs from the attested source revision, and the host rejects the program during verification. |
 | `program-wrong-signer` | Only `signer_revision` differs from the attested signer revision, and the host rejects the program during verification. |
 | `program-wrong-archive` | Only `sha256` differs from the SHA-256 of the downloaded release archive. The provider rejects the hash mismatch. |
