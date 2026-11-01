@@ -78,6 +78,19 @@ module "ispsim" {
   depends_on = [module.base]
 }
 
+# Ansible installs tcpdump, iperf3, and nftables on the Astound ISP simulator
+# for the routing acceptance checks. The ISP module already installs nftables.
+# This resource installs tcpdump and iperf3.
+resource "pveguest_apt_packages" "routing_acceptance_tools" {
+  node = local.guests["isp_astound_suburban"].node
+  vmid = local.guests["isp_astound_suburban"].vmid
+  kind = local.guests["isp_astound_suburban"].kind
+
+  packages = toset(["tcpdump", "iperf3"])
+
+  depends_on = [module.base]
+}
+
 module "suburban" {
   source = "../../../modules/suburban/simulators/astound"
 

@@ -64,6 +64,24 @@ module "base" {
   scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
 }
 
+module "routingsim" {
+  source = "../../../modules/suburban/simulators/routingsim"
+  for_each = {
+    isp_sonic = "isp_sonic_suburban"
+  }
+
+  node            = local.guests[each.value].node
+  vmid            = local.guests[each.value].vmid
+  repository_root = local.repository_root
+  name            = each.key
+  guest_key       = each.value
+
+  service_mapping   = local.service_mapping
+  routing_inventory = module.contracts.routing_inventory
+
+  depends_on = [module.base]
+}
+
 module "suburban" {
   source = "../../../modules/suburban/simulators/routing"
 
