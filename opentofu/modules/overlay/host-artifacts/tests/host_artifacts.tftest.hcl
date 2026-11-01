@@ -303,6 +303,16 @@ run "program_path_equals_secret_storage_path_of_same_target_fails" {
   expect_failures = [output.policies]
 }
 
+run "program_path_equals_owned_directory_of_same_target_fails" {
+  command = plan
+
+  variables {
+    workspaces = ["lab/prog-owned-collision"]
+  }
+
+  expect_failures = [output.policies]
+}
+
 run "two_programs_with_one_path_in_one_target_fail" {
   command = plan
 

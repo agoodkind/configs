@@ -202,14 +202,14 @@ locals {
     if length([for leaf in local.leaf_paths : leaf if leaf == path]) > 1
   ]
 
-  # local.shared_leaf_paths compares targets using each target's distinct paths.
-  # This check finds repeated program paths and paths that equal file destinations
-  # or secret storage paths within one target.
+  # local.shared_leaf_paths removes duplicate paths within each target.
+  # Check program path conflicts within a target separately, including paths
+  # that equal owned directories or inspect-only parent directories.
   same_target_program_paths = flatten([
     for workspace, paths in local.paths_of_target : [
       for path in paths.programs :
       "${path} (${workspace})"
-      if contains(paths.files, path) || contains(paths.secrets, path) || length([
+      if contains(paths.files, path) || contains(paths.secrets, path) || contains(paths.owned, path) || contains(paths.parents, path) || length([
         for entry in local.programs_of_workspace[workspace] : entry if entry.path == path
       ]) > 1
     ]
@@ -270,6 +270,6 @@ output "policies" {
 
   precondition {
     condition     = length(local.same_target_program_paths) == 0
-    error_message = "a target cannot repeat a program path or use it as a file destination or secret storage path: ${join("; ", local.same_target_program_paths)}"
+    error_message = "a target cannot repeat a program path or use it as a file destination, secret storage path, owned directory, or inspect-only parent directory: ${join("; ", local.same_target_program_paths)}"
   }
 }
