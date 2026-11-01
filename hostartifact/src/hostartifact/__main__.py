@@ -70,7 +70,7 @@ def load_program_results(paths: list[Path]) -> dict[str, ProgramResult]:
     for path in paths:
         try:
             result = ProgramResult.model_validate_json(path.read_text(encoding="utf-8"))
-        except (OSError, ValidationError) as error:
+        except (OSError, UnicodeDecodeError, ValidationError) as error:
             raise BuildError(
                 f"The build cannot read or validate program result {path}: {error}"
             ) from error

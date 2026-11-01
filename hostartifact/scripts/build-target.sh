@@ -18,6 +18,8 @@ readonly SHA1_PATTERN='^[0-9a-f]{40}$'
 readonly SHA256_PATTERN='^[0-9a-f]{64}$'
 readonly PROGRAM_CERT_IDENTITY='https://github.com/agoodkind/go-makefile/.github/workflows/_package.yml@refs/heads/main'
 readonly PROGRAM_SOURCE_REF='refs/heads/main'
+SUBJECT_CHECK="$(dirname "${BASH_SOURCE[0]}")/subject-check.jq"
+readonly SUBJECT_CHECK
 
 check_helper_path() {
   local directory
@@ -171,7 +173,7 @@ verify_program() {
   gh attestation verify "$destination/$asset" --bundle "$bundle" --repo "$repository" \
     --cert-identity "$PROGRAM_CERT_IDENTITY" --source-ref "$PROGRAM_SOURCE_REF" \
     --deny-self-hosted-runners --format json < /dev/null > "$verification"
-  if ! jq -e --arg asset "$asset" --arg sha256 "$sha256" 'length > 0 and all(.[]; .verificationResult.statement.subject | any(.[]; .name == $asset and .digest.sha256 == $sha256))' "$verification" > /dev/null; then
+  if ! jq -e --arg asset "$asset" --arg sha256 "$sha256" -f "$SUBJECT_CHECK" "$verification" > /dev/null; then
     echo "::error::A verified statement for program $name does not list $asset with SHA-256 $sha256"
     exit 1
   fi

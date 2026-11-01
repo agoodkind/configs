@@ -58,7 +58,7 @@ compare_programs() {
   fi
   while IFS=$'\t' read -r name asset sha256 member member_sha256; do
     echo "$sha256  $target/programs/$name/$asset" | sha256sum --check --strict
-    tar -xzf "$target/programs/$name/$asset" -O "$member" > "$target/programs/$name/member.bin"
+    tar -xzf "$target/programs/$name/$asset" -O --no-wildcards "$member" >"$target/programs/$name/member.bin"
     echo "$member_sha256  $target/programs/$name/member.bin" | sha256sum --check --strict
     bundle_asset="$(jq -er --arg name "$name" '.[$name].asset' "$bundles")"
     bundle_sha256="$(jq -er --arg name "$name" '.[$name].sha256' "$bundles")"
