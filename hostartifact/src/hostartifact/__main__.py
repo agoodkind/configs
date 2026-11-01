@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from hostartifact.pack import build_artifact
+from hostartifact.pack import ProgramResult, build_artifact, read_program_result
 from hostartifact.projection import BuildError, load_projection
 from hostartifact.targets import affected_targets
 
@@ -23,6 +23,7 @@ class Arguments(argparse.Namespace):
     repository_root: Path
     source_revision: str
     asset_root: list[str]
+    program_result: list[Path]
     output_dir: Path
     changed_files: Path
     workspace: list[str]
@@ -37,6 +38,7 @@ def parse_arguments(arguments: list[str]) -> Arguments:
     build.add_argument("--repository-root", type=Path, required=True)
     build.add_argument("--source-revision", required=True)
     build.add_argument("--asset-root", action="append", default=[])
+    build.add_argument("--program-result", type=Path, action="append", default=[])
     build.add_argument("--output-dir", type=Path, required=True)
     affected = commands.add_parser(AFFECTED_COMMAND)
     affected.add_argument("--repository-root", type=Path, required=True)
@@ -61,6 +63,18 @@ def parse_asset_roots(values: list[str]) -> dict[str, Path]:
     return roots
 
 
+def load_program_results(paths: list[Path]) -> dict[str, ProgramResult]:
+    results: dict[str, ProgramResult] = {}
+    for path in paths:
+        result = read_program_result(path)
+        if result.name in results:
+            raise BuildError(
+                f"The --program-result files specify program {result.name} more than once"
+            )
+        results[result.name] = result
+    return results
+
+
 def read_changed_paths(path: Path) -> set[str]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -75,6 +89,7 @@ def run_build(parsed: Arguments) -> str:
         repository_root=parsed.repository_root,
         source_revision=parsed.source_revision,
         asset_roots=parse_asset_roots(parsed.asset_root),
+        program_results=load_program_results(parsed.program_result),
         output_dir=parsed.output_dir,
     )
     return result.model_dump_json()

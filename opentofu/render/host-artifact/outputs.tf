@@ -11,6 +11,7 @@ output "projection" {
     service_mapping = module.targets.target.vars[local.service_mapping_key]
     directories     = module.targets.target.directories
     files           = module.targets.target.files
+    programs        = try(module.targets.target.programs, [])
   }
 
   precondition {

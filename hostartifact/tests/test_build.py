@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -11,9 +12,10 @@ import tarfile
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 import pytest
-from pydantic import JsonValue
+from pydantic import BaseModel, JsonValue
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RENDER_ROOT = "opentofu/render/host-artifact"
@@ -115,6 +117,34 @@ VAULT_EMAIL_LINE = 'mwan_email_from: "mwan@example.invalid"\n'
 SERVICE_MAPPING_FILE = "ansible/inventory/group_vars/all/service_mapping.yml"
 SHARED_GROUP_FILE = "ansible/inventory/group_vars/all/vars.yml"
 WATCHDOG_TEMPLATE = "proxmox/services/mwan-watchdog.service.j2"
+PROGRAM_REPOSITORY = "agoodkind/mwan"
+PROGRAM_ASSET = "mwan_linux_amd64.tar.gz"
+SHA256_LENGTH = 64
+PROGRAM_NAME = "mwan"
+PROGRAM_PATH = "/usr/local/bin/mwan"
+OTHER_PROGRAM_NAME = "mwan-agent"
+OTHER_PROGRAM_PATH = "/usr/local/bin/mwan-agent"
+PROGRAM_RELEASE_TAG = "202610291257-ff-c09e62f"
+PROGRAM_SOURCE_REVISION = "c09e62f7e0d61526c91183734bf28c6934accded"
+PROGRAM_SIGNER_REVISION = "4e9b31f5b944594bb74e316aefa49093b5abd865"
+PROGRAM_BUNDLE_TEXT = '{"mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json"}\n'
+PROGRAM_BUNDLES_FILE = "program-bundles.json"
+NOT_UTF8_BYTES = b"\xff\xfe\x00"
+PROGRAM_EXECUTABLE = b"synthetic program executable\n"
+PROGRAM_README = b"synthetic program readme\n"
+SCHEMA_ONE_MANIFEST_KEYS = [
+    "directories",
+    "environment",
+    "files",
+    "node",
+    "repository",
+    "schema_version",
+    "source_revision",
+    "workspace",
+]
+SCHEMA_ONE_ARCHIVE_SHA256 = (
+    "6bb99ed9508831c78e8f975f48456a1a38fd583b74fd2304f8d192614670f8c6"
+)
 FIXTURE_FILES = {
     VALIDATION_FILE: json.dumps(VALIDATION_POLICY),
     SERVICE_MAPPING_FILE: (
@@ -600,10 +630,16 @@ def write_assets(directory: Path, projection: JsonObject) -> list[str]:
 
 
 def run_build(
-    directory: Path, repository: Path, projection: JsonObject
+    directory: Path,
+    repository: Path,
+    projection: JsonObject,
+    program_results: tuple[Path, ...] = (),
 ) -> subprocess.CompletedProcess[str]:
     projection_file = directory / "projection.json"
     projection_file.write_text(json.dumps(projection), encoding="utf-8")
+    result_arguments: list[str] = []
+    for result_file in program_results:
+        result_arguments.extend(["--program-result", str(result_file)])
     command = [
         sys.executable,
         "-m",
@@ -616,6 +652,7 @@ def run_build(
         "--source-revision",
         SOURCE_REVISION,
         *write_assets(directory, projection),
+        *result_arguments,
         "--output-dir",
         str(directory / "output"),
     ]
@@ -716,6 +753,569 @@ def test_build_succeeds_while_another_target_is_broken(tmp_path: Path) -> None:
     )
     assert "smtp2go_api_key" not in opnsense_config["email"]
     assert opnsense_config == {"email": {"from": "mwan-testbed@example.invalid"}}
+
+
+def test_target_without_programs_keeps_schema_one_bytes(tmp_path: Path) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    projection = project(repository, SUBURBAN)
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 0, built.stderr
+    result = as_object(json.loads(built.stdout))
+    with tarfile.open(as_text(result["archive"]), mode="r:gz") as archive:
+        extracted = archive.extractfile(MANIFEST_MEMBER)
+        assert extracted is not None
+        manifest = as_object(json.loads(extracted.read()))
+    assert projection["programs"] == []
+    assert sorted(os.listdir(tmp_path / "output")) == [target_asset(SUBURBAN)]
+    assert result["sha256"] == SCHEMA_ONE_ARCHIVE_SHA256
+    assert manifest["schema_version"] == 1
+    assert sorted(manifest) == SCHEMA_ONE_MANIFEST_KEYS
+
+
+def add_descriptor_program(repository: Path) -> None:
+    path = descriptor_file(repository, SUBURBAN)
+    descriptor = as_object(json.loads(path.read_text(encoding="utf-8")))
+    descriptor["programs"] = [program_entry(PROGRAM_NAME, PROGRAM_PATH)]
+    path.write_text(json.dumps(descriptor), encoding="utf-8")
+
+
+def test_projection_includes_descriptor_programs(tmp_path: Path) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    add_descriptor_program(repository)
+
+    projection = project(repository, SUBURBAN)
+
+    assert projection["programs"] == [program_entry(PROGRAM_NAME, PROGRAM_PATH)]
+
+
+class FixtureMember(BaseModel):
+    name: str
+    content: bytes = b""
+    kind: Literal["file", "symlink", "hardlink"] = "file"
+    link_target: str = ""
+
+
+class ProgramBuild(BaseModel):
+    repository: Path
+    projection: JsonObject
+    results: tuple[Path, ...]
+
+
+def write_program_archive(path: Path, members: list[FixtureMember]) -> str:
+    with tarfile.open(path, mode="w:gz") as archive:
+        for member in members:
+            info = tarfile.TarInfo(member.name)
+            info.mode = 0o755
+            if member.kind == "file":
+                info.size = len(member.content)
+                archive.addfile(info, io.BytesIO(member.content))
+            elif member.kind == "symlink":
+                info.type = tarfile.SYMTYPE
+                info.linkname = member.link_target
+                archive.addfile(info)
+            else:
+                info.type = tarfile.LNKTYPE
+                info.linkname = member.link_target
+                archive.addfile(info)
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_program_result(
+    directory: Path, name: str, archive_sha256: str, asset: str = PROGRAM_ASSET
+) -> Path:
+    bundle = directory / f"{name}-bundle.jsonl"
+    bundle.write_text(PROGRAM_BUNDLE_TEXT, encoding="utf-8")
+    result = {
+        "name": name,
+        "release_tag": PROGRAM_RELEASE_TAG,
+        "asset": asset,
+        "sha256": archive_sha256,
+        "source_revision": PROGRAM_SOURCE_REVISION,
+        "signer_revision": PROGRAM_SIGNER_REVISION,
+        "archive": str(directory / f"{name}.tar.gz"),
+        "bundle": str(bundle),
+    }
+    result_file = directory / f"{name}-result.json"
+    result_file.write_text(json.dumps(result), encoding="utf-8")
+    return result_file
+
+
+def program_path(name: str) -> str:
+    return f"/usr/local/bin/{name}"
+
+
+def prepare_program_build(
+    directory: Path,
+    suburban_projection: JsonObject,
+    archives: dict[str, list[FixtureMember]],
+) -> ProgramBuild:
+    repository = fixture_repository(directory / "repository")
+    projection = copy.deepcopy(suburban_projection)
+    projection["programs"] = [
+        program_entry(name, program_path(name)) for name in archives
+    ]
+    results: list[Path] = []
+    for name, members in archives.items():
+        digest = write_program_archive(directory / f"{name}.tar.gz", members)
+        results.append(write_program_result(directory, name, digest))
+    return ProgramBuild(
+        repository=repository, projection=projection, results=tuple(results)
+    )
+
+
+def read_manifest(archive_path: str) -> JsonObject:
+    with tarfile.open(archive_path, mode="r:gz") as archive:
+        extracted = archive.extractfile(MANIFEST_MEMBER)
+        assert extracted is not None
+        return as_object(json.loads(extracted.read()))
+
+
+def test_build_records_the_selected_program_member_beside_a_readme(
+    tmp_path: Path, suburban_projection: JsonObject
+) -> None:
+    other_name = "opnsensectl"
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {
+            PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)],
+            other_name: [
+                FixtureMember(name="README.md", content=PROGRAM_README),
+                FixtureMember(name=other_name, content=PROGRAM_EXECUTABLE + b"other\n"),
+            ],
+        },
+    )
+
+    built = run_build(
+        tmp_path, prepared.repository, prepared.projection, prepared.results
+    )
+
+    assert built.returncode == 0, built.stderr
+    result = as_object(json.loads(built.stdout))
+    manifest = read_manifest(as_text(result["archive"]))
+    assert manifest["schema_version"] == 2
+    programs = [as_object(item) for item in as_list(manifest["programs"])]
+    assert [item["name"] for item in programs] == [PROGRAM_NAME, other_name]
+    other = programs[1]
+    assert other["member"] == other_name
+    assert (
+        other["member_sha256"]
+        == hashlib.sha256(PROGRAM_EXECUTABLE + b"other\n").hexdigest()
+    )
+    assert other["member_sha256"] != hashlib.sha256(PROGRAM_README).hexdigest()
+    assert (
+        other["sha256"]
+        == hashlib.sha256((tmp_path / f"{other_name}.tar.gz").read_bytes()).hexdigest()
+    )
+    assert other["path"] == program_path(other_name)
+    assert (other["mode"], other["owner"], other["group"]) == ("0755", "root", "root")
+    assert other["repository"] == PROGRAM_REPOSITORY
+    assert other["asset"] == PROGRAM_ASSET
+    assert other["release_tag"] == PROGRAM_RELEASE_TAG
+    assert other["source_revision"] == PROGRAM_SOURCE_REVISION
+    assert other["signer_revision"] == PROGRAM_SIGNER_REVISION
+    output = tmp_path / "output"
+    bundle_sha256 = hashlib.sha256(PROGRAM_BUNDLE_TEXT.encode()).hexdigest()
+    bundle_assets = {
+        name: f"hostconfig_program-{name}.sigstore.jsonl"
+        for name in (PROGRAM_NAME, other_name)
+    }
+    assert sorted(os.listdir(output)) == sorted(
+        [target_asset(SUBURBAN), PROGRAM_BUNDLES_FILE, *bundle_assets.values()]
+    )
+    index = json.loads((output / PROGRAM_BUNDLES_FILE).read_text(encoding="utf-8"))
+    assert index == {
+        name: {"asset": asset, "sha256": bundle_sha256}
+        for name, asset in bundle_assets.items()
+    }
+    for asset in bundle_assets.values():
+        assert (output / asset).read_text(encoding="utf-8") == PROGRAM_BUNDLE_TEXT
+
+
+@pytest.mark.parametrize(
+    ("members", "expected_text"),
+    [
+        pytest.param(
+            [FixtureMember(name="other", content=PROGRAM_EXECUTABLE)],
+            f"does not contain the member {PROGRAM_NAME}",
+            id="missing-member",
+        ),
+        pytest.param(
+            [
+                FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE),
+                FixtureMember(name=PROGRAM_NAME, content=PROGRAM_README),
+            ],
+            f"contains the member {PROGRAM_NAME} more than once",
+            id="duplicated-member",
+        ),
+        pytest.param(
+            [FixtureMember(name=PROGRAM_NAME, kind="symlink", link_target="/bin/true")],
+            "must be a regular file and must not be a link",
+            id="symbolic-link-member",
+        ),
+        pytest.param(
+            [
+                FixtureMember(name="other", content=PROGRAM_EXECUTABLE),
+                FixtureMember(name=PROGRAM_NAME, kind="hardlink", link_target="other"),
+            ],
+            "must be a regular file and must not be a link",
+            id="hard-link-member",
+        ),
+    ],
+)
+def test_build_rejects_a_program_archive_without_one_regular_member(
+    tmp_path: Path,
+    suburban_projection: JsonObject,
+    members: list[FixtureMember],
+    expected_text: str,
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path, suburban_projection, {PROGRAM_NAME: members}
+    )
+
+    built = run_build(
+        tmp_path, prepared.repository, prepared.projection, prepared.results
+    )
+
+    assert built.returncode == 1, built.stderr
+    assert expected_text in built.stderr
+    assert "Traceback" not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+def test_rebuild_without_programs_removes_only_previous_program_outputs(
+    tmp_path: Path, suburban_projection: JsonObject
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)]},
+    )
+    first = run_build(
+        tmp_path, prepared.repository, prepared.projection, prepared.results
+    )
+    assert first.returncode == 0, first.stderr
+    output = tmp_path / "output"
+    unrelated = output / "keep.txt"
+    unrelated.write_bytes(PROGRAM_README)
+    rejected = run_build(tmp_path, prepared.repository, prepared.projection)
+    assert rejected.returncode == 1, rejected.stderr
+    assert (output / PROGRAM_BUNDLES_FILE).is_file()
+    assert (output / f"hostconfig_program-{PROGRAM_NAME}.sigstore.jsonl").is_file()
+    projection = copy.deepcopy(prepared.projection)
+    projection["programs"] = []
+
+    rebuilt = run_build(tmp_path, prepared.repository, projection)
+
+    assert rebuilt.returncode == 0, rebuilt.stderr
+    assert sorted(path.name for path in output.iterdir()) == [
+        target_asset(SUBURBAN),
+        unrelated.name,
+    ]
+    assert unrelated.read_bytes() == PROGRAM_README
+
+
+@pytest.mark.parametrize(
+    "asset", ["../keep.txt", "keep.txt", "hostconfig_program-other.sigstore.jsonl"]
+)
+def test_build_rejects_an_unrecognized_prior_program_asset(
+    tmp_path: Path, suburban_projection: JsonObject, asset: str
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    output = tmp_path / "output"
+    output.mkdir()
+    index_path = output / PROGRAM_BUNDLES_FILE
+    index_path.write_text(
+        json.dumps({PROGRAM_NAME: {"asset": asset, "sha256": "0" * SHA256_LENGTH}}),
+        encoding="utf-8",
+    )
+    previous_index = index_path.read_bytes()
+    unrelated = tmp_path / "keep.txt"
+    unrelated.write_bytes(PROGRAM_README)
+
+    rejected = run_build(tmp_path, repository, suburban_projection)
+
+    assert rejected.returncode == 1, rejected.stderr
+    assert "unrecognized program asset" in rejected.stderr
+    assert str(index_path) in rejected.stderr
+    assert unrelated.read_bytes() == PROGRAM_README
+    assert index_path.read_bytes() == previous_index
+    assert list(output.iterdir()) == [index_path]
+
+
+def test_build_rejects_a_program_path_that_matches_a_directory(
+    tmp_path: Path, suburban_projection: JsonObject
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)]},
+    )
+    directory = as_object(as_list(prepared.projection["directories"])[0])
+    directory_path = as_text(directory["path"])
+    program = as_object(as_list(prepared.projection["programs"])[0])
+    program["path"] = directory_path
+
+    built = run_build(
+        tmp_path, prepared.repository, prepared.projection, prepared.results
+    )
+
+    assert built.returncode == 1, built.stderr
+    assert built.stdout == ""
+    assert (
+        f"hostartifact: the projection lists {directory_path} as both the path for "
+        f"program {PROGRAM_NAME} and a directory path\n"
+    ) == built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+def test_build_rejects_an_archive_that_differs_from_its_result(
+    tmp_path: Path, suburban_projection: JsonObject
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)]},
+    )
+    write_program_result(tmp_path, PROGRAM_NAME, "0" * SHA256_LENGTH)
+
+    built = run_build(
+        tmp_path, prepared.repository, prepared.projection, prepared.results
+    )
+
+    assert built.returncode == 1, built.stderr
+    assert f"but the result records {'0' * SHA256_LENGTH}" in built.stderr
+    assert "Traceback" not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+def test_build_rejects_a_result_for_another_asset(
+    tmp_path: Path, suburban_projection: JsonObject
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)]},
+    )
+    digest = hashlib.sha256(
+        (tmp_path / f"{PROGRAM_NAME}.tar.gz").read_bytes()
+    ).hexdigest()
+    write_program_result(tmp_path, PROGRAM_NAME, digest, asset="other_linux_amd64.tar.gz")
+
+    built = run_build(
+        tmp_path, prepared.repository, prepared.projection, prepared.results
+    )
+
+    assert built.returncode == 1, built.stderr
+    assert "the result records asset other_linux_amd64.tar.gz" in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize(
+    ("projection_names", "result_names", "expected_text"),
+    [
+        pytest.param(
+            [PROGRAM_NAME],
+            [],
+            f"programs [{PROGRAM_NAME}] do not have results, and results [] do not match",
+            id="missing-result",
+        ),
+        pytest.param(
+            [PROGRAM_NAME],
+            [PROGRAM_NAME, OTHER_PROGRAM_NAME],
+            f"programs [] do not have results, and results [{OTHER_PROGRAM_NAME}] do not "
+            "match any program",
+            id="result-without-program",
+        ),
+        pytest.param(
+            [PROGRAM_NAME],
+            [OTHER_PROGRAM_NAME],
+            f"programs [{PROGRAM_NAME}] do not have results, and results "
+            f"[{OTHER_PROGRAM_NAME}] do not match any program",
+            id="renamed-result",
+        ),
+        pytest.param(
+            [],
+            [PROGRAM_NAME],
+            f"programs [] do not have results, and results [{PROGRAM_NAME}] do not match "
+            "any program",
+            id="result-for-target-without-programs",
+        ),
+    ],
+)
+def test_build_rejects_program_results_that_differ_from_the_projection(
+    tmp_path: Path,
+    suburban_projection: JsonObject,
+    projection_names: list[str],
+    result_names: list[str],
+    expected_text: str,
+) -> None:
+    archives: dict[str, list[FixtureMember]] = {}
+    for name in sorted({*projection_names, *result_names}):
+        archives[name] = [FixtureMember(name=name, content=PROGRAM_EXECUTABLE)]
+    prepared = prepare_program_build(tmp_path, suburban_projection, archives)
+    projection = copy.deepcopy(prepared.projection)
+    projection["programs"] = [
+        program_entry(name, program_path(name)) for name in projection_names
+    ]
+    results = tuple(tmp_path / f"{name}-result.json" for name in result_names)
+
+    built = run_build(tmp_path, prepared.repository, projection, results)
+
+    assert built.returncode == 1, built.stderr
+    assert expected_text in built.stderr
+    assert "Traceback" not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+def test_build_rejects_two_results_for_one_program(
+    tmp_path: Path, suburban_projection: JsonObject
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)]},
+    )
+
+    built = run_build(
+        tmp_path,
+        prepared.repository,
+        prepared.projection,
+        (*prepared.results, *prepared.results),
+    )
+
+    assert built.returncode == 1, built.stderr
+    assert (
+        f"The --program-result files specify program {PROGRAM_NAME} more than once"
+        in built.stderr
+    )
+    assert not (tmp_path / "output").exists()
+
+
+def test_build_rejects_a_program_result_that_is_not_utf8(
+    tmp_path: Path, suburban_projection: JsonObject
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)]},
+    )
+    invalid_result = tmp_path / "invalid-result.json"
+    invalid_result.write_bytes(NOT_UTF8_BYTES)
+
+    built = run_build(
+        tmp_path, prepared.repository, prepared.projection, (invalid_result,)
+    )
+
+    assert built.returncode == 1, built.stderr
+    assert "The build cannot read or validate program result" in built.stderr
+    assert "Traceback" not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize(
+    ("override", "expected_text"),
+    [
+        pytest.param(
+            {"asset": "release/mwan.tar.gz"},
+            "asset 'release/mwan.tar.gz'",
+            id="asset-directory",
+        ),
+        pytest.param(
+            {"asset": ".hidden.tar.gz"}, "asset '.hidden.tar.gz'", id="asset-hidden"
+        ),
+        pytest.param({"member": "../mwan"}, "member '../mwan'", id="member-parent"),
+        pytest.param({"member": "/mwan"}, "member '/mwan'", id="member-absolute"),
+        pytest.param({"member": "./mwan"}, "member './mwan'", id="member-unnormalized"),
+        pytest.param({"member": ""}, "member ''", id="member-empty"),
+    ],
+)
+def test_build_rejects_an_invalid_program_asset_or_member(
+    tmp_path: Path,
+    suburban_projection: JsonObject,
+    override: JsonObject,
+    expected_text: str,
+) -> None:
+    prepared = prepare_program_build(
+        tmp_path,
+        suburban_projection,
+        {PROGRAM_NAME: [FixtureMember(name=PROGRAM_NAME, content=PROGRAM_EXECUTABLE)]},
+    )
+    projection = copy.deepcopy(prepared.projection)
+    projection["programs"] = [{**program_entry(PROGRAM_NAME, PROGRAM_PATH), **override}]
+
+    built = run_build(tmp_path, prepared.repository, projection, prepared.results)
+
+    assert built.returncode == 1, built.stderr
+    assert expected_text in built.stderr
+    assert "Traceback" not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize(
+    "program",
+    [
+        pytest.param({"name": "Mwan"}, id="uppercase-name"),
+        pytest.param({"name": "1mwan"}, id="leading-digit-name"),
+        pytest.param({"repository": "mwan"}, id="repository-without-owner"),
+        pytest.param({"path": "usr/local/bin/mwan"}, id="relative-path"),
+        pytest.param({"mode": "4755"}, id="special-mode"),
+        pytest.param({"owner": "Root"}, id="invalid-owner"),
+    ],
+)
+def test_build_rejects_an_invalid_program_entry(
+    tmp_path: Path, suburban_projection: JsonObject, program: JsonObject
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    projection = copy.deepcopy(suburban_projection)
+    projection["programs"] = [{**program_entry(PROGRAM_NAME, PROGRAM_PATH), **program}]
+
+    built = run_build(tmp_path, repository, projection)
+
+    assert built.returncode == 1, built.stderr
+    assert "Traceback" not in built.stderr
+    assert not (tmp_path / "output").exists()
+
+
+def test_affected_reads_a_descriptor_with_programs(tmp_path: Path) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    add_descriptor_program(repository)
+
+    selected = run_affected(tmp_path, repository, [SUBURBAN_GROUP_FILE])
+
+    assert affected_output(selected) == [SUBURBAN]
+    assert selected.stderr == ""
+
+
+def test_affected_selects_a_target_whose_descriptor_lists_parent_directories(
+    tmp_path: Path,
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    path = descriptor_file(repository, SUBURBAN)
+    descriptor = as_object(json.loads(path.read_text(encoding="utf-8")))
+    descriptor["parent_directories"] = [{"path": "/usr/local/bin"}]
+    path.write_text(json.dumps(descriptor), encoding="utf-8")
+
+    selected = run_affected(tmp_path, repository, [SUBURBAN_GROUP_FILE])
+
+    assert affected_output(selected) == [SUBURBAN]
+    assert selected.stderr == ""
+
+
+def test_affected_ignores_an_unrelated_descriptor_that_is_not_utf8(
+    tmp_path: Path,
+) -> None:
+    repository = fixture_repository(tmp_path / "repository")
+    descriptor_file(repository, VAULT).write_bytes(NOT_UTF8_BYTES)
+
+    selected = run_affected(tmp_path, repository, [SUBURBAN_GROUP_FILE])
+
+    assert selected.returncode == 0, selected.stderr
+    assert json.loads(selected.stdout) == [SUBURBAN]
+    assert VAULT in selected.stderr
+    assert "Traceback" not in selected.stderr
 
 
 def test_unknown_workspace_fails_with_known_selectors(suburban_repository: Path) -> None:
@@ -961,6 +1561,40 @@ def duplicate_destination(projection: JsonObject, repository: Path) -> None:
     files.append(copy.deepcopy(file_entry(projection, MWAN_CONFIG)))
 
 
+def program_entry(name: str, path: str) -> JsonObject:
+    return {
+        "name": name,
+        "repository": PROGRAM_REPOSITORY,
+        "asset": PROGRAM_ASSET,
+        "member": name,
+        "path": path,
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+    }
+
+
+def duplicate_program_name(projection: JsonObject, repository: Path) -> None:
+    del repository
+    projection["programs"] = [
+        program_entry(PROGRAM_NAME, PROGRAM_PATH),
+        program_entry(PROGRAM_NAME, OTHER_PROGRAM_PATH),
+    ]
+
+
+def duplicate_program_path(projection: JsonObject, repository: Path) -> None:
+    del repository
+    projection["programs"] = [
+        program_entry(PROGRAM_NAME, PROGRAM_PATH),
+        program_entry(OTHER_PROGRAM_NAME, PROGRAM_PATH),
+    ]
+
+
+def program_at_file_destination(projection: JsonObject, repository: Path) -> None:
+    del repository
+    projection["programs"] = [program_entry(PROGRAM_NAME, MWAN_CONFIG)]
+
+
 def duplicate_directory(projection: JsonObject, repository: Path) -> None:
     del repository
     directories = as_list(projection["directories"])
@@ -1077,6 +1711,24 @@ def render_secret_key(projection: JsonObject, repository: Path) -> None:
             duplicate_directory,
             "hostartifact: the projection lists directory /etc/mwan more than once\n",
             id="duplicate-directory",
+        ),
+        pytest.param(
+            duplicate_program_name,
+            f"hostartifact: the projection lists program name {PROGRAM_NAME} more than "
+            "once\n",
+            id="duplicate-program-name",
+        ),
+        pytest.param(
+            duplicate_program_path,
+            f"hostartifact: the projection lists program path {PROGRAM_PATH} more than "
+            "once\n",
+            id="duplicate-program-path",
+        ),
+        pytest.param(
+            program_at_file_destination,
+            f"hostartifact: the projection lists {MWAN_CONFIG} as both the path for "
+            f"program {PROGRAM_NAME} and a file destination\n",
+            id="program-at-file-destination",
         ),
         pytest.param(
             use_special_mode,
