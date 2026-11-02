@@ -101,9 +101,14 @@ tofu:
         suburban/213: mwan.suburban.goodkind.io
         suburban/216: mwan-failover.suburban.goodkind.io
       module_hosts:
+        module.mwan: suburban
+        module.mwan_failover: suburban
         module.suburban: suburban
       node_hosts:
         suburban: suburban
+      lock_free_types:
+        - mwan_network_config
+        - terraform_data
     opentofu/suburban/opnsense:
       module_hosts:
         module.suburban: suburban
