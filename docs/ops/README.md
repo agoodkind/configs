@@ -35,6 +35,28 @@ release in
 Use `--limit` on production so one command does not touch both hypervisors.
 Dry-run with `--check --diff` before a mutating run.
 
+## Replace the MWAN executable
+
+Use a clean checkout merged into `main`. This deployment replaces the gateway
+executable without changing configuration or restarting services. Existing
+daemon processes continue to run their current executable. The command saves
+the prior executable and prints its backup path when it replaces an existing
+file. Keep that path for rollback.
+
+1. Check and deploy the testbed gateway, then verify its command results:
+
+   ```bash
+   ./configsctl deploy deploy-mwan-binary --limit mwan_suburban_servers --check --diff
+   ./configsctl deploy deploy-mwan-binary --limit mwan_suburban_servers
+   ```
+
+2. Check and deploy the production gateway, then verify its command results:
+
+   ```bash
+   ./configsctl deploy deploy-mwan-binary --limit mwan_servers --check --diff
+   ./configsctl deploy deploy-mwan-binary --limit mwan_servers
+   ```
+
 ## Run logs
 
 Both commands write their output to a file in the host temp directory, under a
