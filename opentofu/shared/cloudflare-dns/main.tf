@@ -12,8 +12,8 @@ locals {
 }
 
 resource "cloudflare_dns_record" "static" {
-  provider = cloudflare.dns[each.value.zone]
-  for_each = local.cloudflare_static_dns_records
+  provider = cloudflare.dns
+  for_each = { for key, value in local.cloudflare_static_dns_records : key => value if value.zone == "goodkind.io" }
 
   zone_id  = local.cloudflare_zone_ids[each.value.zone]
   name     = each.value.name
@@ -29,6 +29,106 @@ resource "cloudflare_dns_record" "static" {
   lifecycle {
     prevent_destroy = true
   }
+}
+
+resource "cloudflare_dns_record" "static_silver" {
+  provider = cloudflare.dns_silver
+  for_each = { for key, value in local.cloudflare_static_dns_records : key => value if value.zone == "silver-flare.com" }
+
+  zone_id  = local.cloudflare_zone_ids[each.value.zone]
+  name     = each.value.name
+  type     = each.value.type
+  content  = each.value.content
+  ttl      = each.value.ttl
+  proxied  = each.value.proxied
+  priority = try(each.value.priority, null)
+  comment  = try(each.value.comment, null)
+  tags     = try(each.value.tags, null)
+  settings = try(each.value.settings, null)
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/AAAA/alexs-mba.silver-flare.com/3b598473"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/AAAA/alexs-mba.silver-flare.com/3b598473"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/alex-lm.silver-flare.com/ba0ae6b0"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/alex-lm.silver-flare.com/ba0ae6b0"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/clyde-adapter.silver-flare.com/ee0c9d35"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/clyde-adapter.silver-flare.com/ee0c9d35"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/cursor.silver-flare.com/59864e77"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/cursor.silver-flare.com/59864e77"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/darwin-gh-broker.silver-flare.com/cc9ff380"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/darwin-gh-broker.silver-flare.com/cc9ff380"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/pr-agent.goodkind.io.silver-flare.com/a9b69cc0"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/pr-agent.goodkind.io.silver-flare.com/a9b69cc0"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/pr-agent.silver-flare.com/8b38926a"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/pr-agent.silver-flare.com/8b38926a"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/mail.silver-flare.com/03c41bd6"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/mail.silver-flare.com/03c41bd6"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/mail.silver-flare.com/1a018f31"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/mail.silver-flare.com/1a018f31"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/mail.silver-flare.com/477ca396"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/mail.silver-flare.com/477ca396"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/silver-flare.com/34f6d277"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/silver-flare.com/34f6d277"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/silver-flare.com/f377f59c"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/silver-flare.com/f377f59c"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/silver-flare.com/f9eda4dc"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/silver-flare.com/f9eda4dc"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/TXT/cf2024-1._domainkey.silver-flare.com/253c2e5e"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/TXT/cf2024-1._domainkey.silver-flare.com/253c2e5e"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/TXT/mail.silver-flare.com/55c4ec31"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/TXT/mail.silver-flare.com/55c4ec31"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/TXT/silver-flare.com/87c80d96"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/TXT/silver-flare.com/87c80d96"]
 }
 
 # Cloudflare DNS records. Certificate automation manages ACME challenges separately.
@@ -753,8 +853,25 @@ locals {
 }
 
 resource "cloudflare_dns_record" "dynamic" {
-  provider = cloudflare.dns[each.value.zone]
-  for_each = local.cloudflare_dynamic_dns_records
+  provider = cloudflare.dns
+  for_each = { for key, value in local.cloudflare_dynamic_dns_records : key => value if value.zone == "goodkind.io" }
+
+  zone_id = local.cloudflare_zone_ids[each.value.zone]
+  name    = each.value.name
+  type    = each.value.type
+  content = each.value.content
+  ttl     = each.value.ttl
+  proxied = each.value.proxied
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [content]
+  }
+}
+
+resource "cloudflare_dns_record" "dynamic_silver" {
+  provider = cloudflare.dns_silver
+  for_each = { for key, value in local.cloudflare_dynamic_dns_records : key => value if value.zone == "silver-flare.com" }
 
   zone_id = local.cloudflare_zone_ids[each.value.zone]
   name    = each.value.name
