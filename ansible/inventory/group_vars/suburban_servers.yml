@@ -172,9 +172,8 @@ tack_search_proxy_ca: "{{ vault_tack_qa_search_ca }}"
 tack_search_proxy_certificate: "{{ vault_tack_qa_search_proxy_certificate }}"
 tack_search_proxy_private_key: "{{ vault_tack_qa_search_proxy_private_key }}"
 
-# suburban caps ZFS ARC at 1 GiB to leave host memory for the 3 GiB QA search
-# heap. The ARC used 1.923 GiB on 2026-10-02 with a 0.978 GiB floor.
-# MemAvailable does not count the ARC.
+# suburban caps ZFS ARC at 1 GiB. The ARC used 1.923 GiB on 2026-10-02
+# with a 0.978 GiB floor. MemAvailable does not count the ARC.
 proxmox_zfs_arc_max_bytes: 1073741824
 # The unmanaged installer file /etc/modprobe.d/zfs.conf on suburban sets
 # zfs_arc_max=3309305856 (read 2026-10-02). The rollback restores that value.
