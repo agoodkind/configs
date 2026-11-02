@@ -256,14 +256,6 @@ locals {
       ttl     = 1
       proxied = false
     }
-    "goodkind.io/AAAA/nas-jetkvm.goodkind.io/383f88d9" = {
-      zone    = "goodkind.io"
-      name    = "nas-jetkvm.goodkind.io"
-      type    = "AAAA"
-      content = "2607:f598:d3e0:131:3252:53ff:fe0d:6d08"
-      ttl     = 1
-      proxied = false
-    }
     "goodkind.io/AAAA/nas.home.goodkind.io/238d3f5c" = {
       zone    = "goodkind.io"
       name    = "nas.home.goodkind.io"
@@ -285,14 +277,6 @@ locals {
       name    = "unifi.home.goodkind.io"
       type    = "AAAA"
       content = "3d06:bad:b01::102"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/vault-jetkvm.goodkind.io/8d4b7e4f" = {
-      zone    = "goodkind.io"
-      name    = "vault-jetkvm.goodkind.io"
-      type    = "AAAA"
-      content = "2607:f598:d3e0:131:8234:28ff:fe66:5ed7"
       ttl     = 1
       proxied = false
     }
