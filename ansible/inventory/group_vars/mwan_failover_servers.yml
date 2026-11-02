@@ -20,6 +20,8 @@ mwan_failover_bgp_neighbors_v6:
 mwan_failover_ipv4_address: "10.250.250.4/29"
 mwan_failover_ipv6_address: "3d06:bad:b01:fe::4/64"
 mwan_failover_ipv4_return_route: "10.250.0.0/16 via 10.250.250.2 dev eth1"
+# Resetting IPv6 deletes addresses while the DHCPv6 client retains its lease.
+mwan_failover_ipv6_max_toggles_per_hour: 0
 # Source interface for outbound failover alert email (empty = default route).
 mwan_failover_email_bind_iface: ""
 

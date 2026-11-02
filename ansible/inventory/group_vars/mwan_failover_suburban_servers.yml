@@ -22,6 +22,7 @@ mwan_failover_ipv6_address: "{{ service_mapping.mwan_failover_suburban.ipv6_tran
 # because its ISPs cannot return private ranges. IPv6 return routes are
 # BGP-learned on every speaker.
 mwan_failover_ipv4_return_route: ""
+mwan_failover_ipv6_max_toggles_per_hour: 4
 # Source interface for outbound failover alert email (empty = default route).
 mwan_failover_email_bind_iface: ""
 
