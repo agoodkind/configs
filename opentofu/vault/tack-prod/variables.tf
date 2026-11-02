@@ -6,6 +6,13 @@ variable "proxmox_endpoint" {
 
 # `./configsctl tofu` sets each variable named vault_* from the Ansible vault key
 # with the same name.
+variable "vault_smtp2go_api_key" {
+  description = "SMTP2GO API key for the pveguest provider"
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
 variable "vault_proxmox_token_secret" {
   description = "Secret of the Proxmox API token for the production vault host"
   type        = string
