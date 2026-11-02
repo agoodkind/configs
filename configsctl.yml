@@ -224,6 +224,7 @@ tofu:
         remote_file.guest_network["uplink"]: vault
         terraform_data.guest_network_packages: vault
         terraform_data.guest_network_activate: vault
+        terraform_data.retire_opnsense: vault
     opentofu/vault/mc:
       module_hosts:
         module.vault: vault

@@ -254,14 +254,14 @@ service_mapping:
     # The inventory plugin reads ipv6 as its default ansible_host, so it
     # aliases the guest-segment address rather than repeating it.
     ipv6: *mwan_failover_suburban_vmnet_v6
-  # OPNsense (one logical machine per environment). The plugin uses ipv6 as
-  # ansible_host by default, which is correct for prod. Testbed targets the
-  # routed IPv6 address on the WAN/internal link.
+  # MWAN reads the production router metadata even when inventory excludes it.
   opnsense:
+    inventory: false
     hostname: router.home.goodkind.io
     vmid: 101
     kind: qemu
     ipv6: "3d06:bad:b01::1"
+  # Testbed inventory targets the routed IPv6 address on the WAN/internal link.
   opnsense_suburban:
     hostname: router.suburban.goodkind.io
     vmid: 201
