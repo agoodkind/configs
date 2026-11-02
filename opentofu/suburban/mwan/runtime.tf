@@ -61,36 +61,6 @@ locals {
   sonic_1_interface  = "ensonic1"
   sonic_2_interface  = "ensonic2"
   etheric_interface  = "enetheric0"
-
-  gateway_sysctl = {
-    "net.ipv4.ip_forward"                                 = "1"
-    "net.ipv6.conf.all.forwarding"                        = "1"
-    "net.ipv6.conf.default.forwarding"                    = "1"
-    "net.ipv6.conf.all.accept_ra"                         = "0"
-    "net.ipv6.conf.default.accept_ra"                     = "0"
-    "net.ipv6.conf.${local.internal_interface}.accept_ra" = "2"
-    "net.netfilter.nf_conntrack_max"                      = "262144"
-    "net.ipv4.conf.all.rp_filter"                         = "2"
-    "net.ipv4.conf.default.rp_filter"                     = "2"
-    "net.ipv4.conf.${local.webpass_interface}.rp_filter"  = "0"
-    "net.ipv4.conf.${local.att_interface}.rp_filter"      = "0"
-    "net.ipv6.conf.all.use_tempaddr"                      = "0"
-    "net.ipv6.conf.default.use_tempaddr"                  = "0"
-    "net.ipv4.tcp_fastopen"                               = "3"
-    "net.core.rmem_max"                                   = "134217728"
-    "net.core.wmem_max"                                   = "134217728"
-    "net.ipv4.tcp_rmem"                                   = "4096 87380 67108864"
-    "net.ipv4.tcp_wmem"                                   = "4096 65536 67108864"
-    "net.ipv4.tcp_ecn"                                    = "1"
-    "net.ipv4.tcp_syncookies"                             = "1"
-    "net.ipv4.tcp_max_syn_backlog"                        = "8192"
-  }
-
-  failover_sysctl = {
-    "net.ipv6.conf.all.forwarding" = "1"
-    "net.ipv6.conf.eth0.accept_ra" = "2"
-    "net.ipv4.ip_forward"          = "1"
-  }
 }
 
 locals {
@@ -1036,6 +1006,7 @@ locals {
   })
 }
 
+# Ansible configures each guest's existing sysctl file.
 module "mwan" {
   source = "../../modules/mwan"
 
@@ -1047,7 +1018,6 @@ module "mwan" {
   architecture    = local.mwan_arch
   release_version = local.mwan_release
   excluded_units  = local.excluded_units
-  sysctl_values   = local.gateway_sysctl
 
   network_json_content        = local.gateway_network_json
   network_json_mode           = "0600"
@@ -1066,7 +1036,6 @@ module "mwan_failover" {
   architecture    = local.mwan_arch
   release_version = local.mwan_release
   excluded_units  = local.excluded_units
-  sysctl_values   = local.failover_sysctl
 
   config_toml_content = local.failover_config
   config_toml_mode    = "0640"
