@@ -50,10 +50,8 @@ main() {
     done
 
     for service in "${SERVICES[@]}"; do
-        if read -r load_state < <(systemctl show --property=LoadState --value "$service"); then
-            wait "$!"
-        else
-            wait "$!"
+        load_state=$(systemctl show --property=LoadState --value "$service")
+        if [[ -z "$load_state" ]]; then
             printf 'systemctl did not return the LoadState for %s.\n' "$service" >&2
             return 1
         fi
