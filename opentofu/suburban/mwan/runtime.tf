@@ -1050,6 +1050,7 @@ module "mwan" {
   sysctl_values   = local.gateway_sysctl
 
   network_json_content        = local.gateway_network_json
+  network_json_mode           = "0600"
   config_toml_secret_content  = local.gateway_config_secret
   config_toml_content_version = local.gateway_config_version
 }
@@ -1068,6 +1069,7 @@ module "mwan_failover" {
   sysctl_values   = local.failover_sysctl
 
   config_toml_content = local.failover_config
+  config_toml_mode    = "0640"
 }
 
 # The absolute path after the kind starts with a slash. Each import ID has two

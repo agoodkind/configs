@@ -76,6 +76,28 @@ variable "config_toml_content_version" {
   default     = null
 }
 
+variable "config_toml_mode" {
+  description = "The value is the four-digit octal permission mode of /etc/mwan/config.toml."
+  type        = string
+  default     = "0600"
+
+  validation {
+    condition     = can(regex("^[0-7]{4}$", var.config_toml_mode))
+    error_message = "The config_toml_mode input must be four octal digits, for example 0600."
+  }
+}
+
+variable "network_json_mode" {
+  description = "The value is the four-digit octal permission mode of /etc/mwan/network.json."
+  type        = string
+  default     = "0644"
+
+  validation {
+    condition     = can(regex("^[0-7]{4}$", var.network_json_mode))
+    error_message = "The network_json_mode input must be four octal digits, for example 0600."
+  }
+}
+
 variable "kind" {
   description = "The kind input selects an LXC container or a QEMU virtual machine for the mwan gateway runtime."
   type        = string
@@ -567,6 +589,7 @@ resource "pveguest_file" "network" {
 
   path    = "/etc/mwan/network.json"
   content = data.mwan_network.gateway[0].canonical_content
+  mode    = var.network_json_mode
 
   validate = "/usr/local/bin/mwan deploy-gate check-network %s /usr/local/share/wanconfig/yang && /usr/local/bin/mwan deploy-gate check-firewall %s /usr/local/share/wanconfig/yang"
 
@@ -607,7 +630,7 @@ resource "pveguest_file" "runtime_config" {
 
   path    = "/etc/mwan/config.toml"
   content = local.config_toml_text
-  mode    = "0600"
+  mode    = var.config_toml_mode
 
   content_wo         = var.config_toml_secret_content
   content_wo_version = var.config_toml_content_version
