@@ -371,7 +371,7 @@
         dest: "{{ guest_debug_command_file }}"
         mode: "0755"
       when:
-        - prep_ct_service_effective | lower in ['adguard', 'traefik', 'powerdns']
+        - prep_ct_service_effective | lower in ['traefik', 'powerdns']
 
     - name: Install debug helper command (generic fallback)
       tags: [guest-debug]
@@ -379,7 +379,7 @@
         src: "{{ repo_root }}/ansible/templates/debug/debug-generic.sh.j2"
         dest: "{{ guest_debug_command_file }}"
         mode: "0755"
-      when: prep_ct_service_effective | lower not in ['adguard', 'traefik', 'powerdns']
+      when: prep_ct_service_effective | lower not in ['traefik', 'powerdns']
 
     - name: Configure auto-login for root (LXC only)
       ansible.builtin.blockinfile:

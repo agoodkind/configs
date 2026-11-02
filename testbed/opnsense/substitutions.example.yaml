@@ -119,6 +119,3 @@ text_literals:
   - name: "chaotic.dog domain literal"
     from: "chaotic.dog"
     to:   "suburban.goodkind.io"
-  - name: "v6 DNS forwarder"
-    from: "3d06:bad:b01:210::53"
-    to:   "2606:4700:4700::1111"

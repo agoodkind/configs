@@ -744,12 +744,12 @@
         <port>53</port>
         <not>0</not>
       </destination>
-      <target>adguard</target>
+      <target>::1</target>
       <local-port>53</local-port>
       <poolopts/>
       <log>1</log>
       <category/>
-      <descr>Redirect DNS to adguard</descr>
+      <descr>Redirect DNS to Unbound</descr>
       <tag/>
       <tagged/>
       <nosync>0</nosync>
@@ -764,86 +764,6 @@
       <updated>
         <username>agoodkind@3d06:bad:b01::110</username>
         <time>1769891626.76</time>
-        <description>/firewall_nat_edit.php made changes</description>
-      </updated>
-    </rule>
-    <rule uuid="1d5c7416-88a3-41ef-afef-f24d554b5a6b">
-      <sequence>500</sequence>
-      <disabled>0</disabled>
-      <nordr>0</nordr>
-      <interface>INTERNAL</interface>
-      <ipprotocol>inet46</ipprotocol>
-      <protocol>tcp</protocol>
-      <source>
-        <network>opt6</network>
-        <port/>
-        <not>1</not>
-      </source>
-      <destination>
-        <network>(self)</network>
-        <port>853</port>
-        <not>0</not>
-      </destination>
-      <target>adguard</target>
-      <local-port>853</local-port>
-      <poolopts/>
-      <log>1</log>
-      <category/>
-      <descr>Adguard Container Traffic 853 DNS-over-TLS</descr>
-      <tag/>
-      <tagged/>
-      <nosync>0</nosync>
-      <natreflection/>
-      <pass/>
-      <associated-rule-id/>
-      <created>
-        <username>agoodkind@3d06:bad:b01:10::8</username>
-        <time>1765754557.34</time>
-        <description>/firewall_nat_edit.php made changes</description>
-      </created>
-      <updated>
-        <username>agoodkind@3d06:bad:b01::110</username>
-        <time>1767290271.54</time>
-        <description>/firewall_nat_edit.php made changes</description>
-      </updated>
-    </rule>
-    <rule uuid="88c6c40e-e919-463c-b141-11392162aa08">
-      <sequence>600</sequence>
-      <disabled>0</disabled>
-      <nordr>0</nordr>
-      <interface>INTERNAL</interface>
-      <ipprotocol>inet46</ipprotocol>
-      <protocol>udp</protocol>
-      <source>
-        <network>opt6</network>
-        <port/>
-        <not>1</not>
-      </source>
-      <destination>
-        <network>(self)</network>
-        <port>784</port>
-        <not>0</not>
-      </destination>
-      <target>adguard</target>
-      <local-port>784</local-port>
-      <poolopts/>
-      <log>1</log>
-      <category/>
-      <descr>Adguard Container Traffic 784 DNS-over-QUIC</descr>
-      <tag/>
-      <tagged/>
-      <nosync>0</nosync>
-      <natreflection/>
-      <pass/>
-      <associated-rule-id/>
-      <created>
-        <username>agoodkind@3d06:bad:b01:10::8</username>
-        <time>1765754937.32</time>
-        <description>/firewall_nat_edit.php made changes</description>
-      </created>
-      <updated>
-        <username>agoodkind@3d06:bad:b01::110</username>
-        <time>1767290287.18</time>
         <description>/firewall_nat_edit.php made changes</description>
       </updated>
     </rule>
@@ -1765,54 +1685,6 @@
         <description>/firewall_rules_edit.php made changes</description>
       </created>
     </rule>
-    <rule uuid="1e0ab2fc-9762-451a-b9cb-eaad838f6b45">
-      <type>pass</type>
-      <associated-rule-id>nat_693f46bd525cc4.07985078</associated-rule-id>
-      <source>
-        <network>opt6</network>
-        <not>1</not>
-      </source>
-      <interface>INTERNAL</interface>
-      <statetype>keep state</statetype>
-      <protocol>tcp</protocol>
-      <ipprotocol>inet46</ipprotocol>
-      <destination>
-        <address>adguard</address>
-        <port>853</port>
-      </destination>
-      <log>1</log>
-      <descr>Adguard Container Traffic 853 DNS-over-TLS</descr>
-      <category/>
-      <created>
-        <username>agoodkind@3d06:bad:b01:10::8</username>
-        <time>1765754557.34</time>
-        <description>/firewall_nat_edit.php made changes</description>
-      </created>
-    </rule>
-    <rule uuid="adc10bdb-542c-4916-b0e4-0a91b415f27f">
-      <type>pass</type>
-      <associated-rule-id>nat_693f48394e6415.69758102</associated-rule-id>
-      <source>
-        <network>opt6</network>
-        <not>1</not>
-      </source>
-      <interface>INTERNAL</interface>
-      <statetype>keep state</statetype>
-      <protocol>udp</protocol>
-      <ipprotocol>inet46</ipprotocol>
-      <destination>
-        <address>adguard</address>
-        <port>784</port>
-      </destination>
-      <log>1</log>
-      <descr>Adguard Container Traffic 784 DNS-over-QUIC</descr>
-      <category/>
-      <created>
-        <username>agoodkind@3d06:bad:b01:10::8</username>
-        <time>1765754937.32</time>
-        <description>/firewall_nat_edit.php made changes</description>
-      </created>
-    </rule>
     <rule uuid="670b5e3b-c434-40fc-bc28-99070925e330">
       <type>pass</type>
       <interface>INTERNAL</interface>
@@ -1878,11 +1750,11 @@
       <protocol>udp</protocol>
       <ipprotocol>inet6</ipprotocol>
       <destination>
-        <address>adguard</address>
+        <address>::1</address>
         <port>53</port>
       </destination>
       <log>1</log>
-      <descr>Redirect DNS to adguard</descr>
+      <descr>Redirect DNS to Unbound</descr>
       <category/>
       <created>
         <username>agoodkind@3d06:bad:b01::110</username>
@@ -3638,23 +3510,6 @@ __opt6_network</content>
             <categories/>
             <description/>
           </alias>
-          <alias uuid="bbb8e709-7cae-4600-9668-7948bb2c5f0a">
-            <enabled>1</enabled>
-            <name>adguard</name>
-            <type>host</type>
-            <path_expression/>
-            <proto/>
-            <interface/>
-            <counters>1</counters>
-            <updatefreq/>
-            <content>3d06:bad:b01::53</content>
-            <password/>
-            <username/>
-            <authtype/>
-            <expire/>
-            <categories/>
-            <description/>
-          </alias>
           <alias uuid="880f859f-0b83-4bf7-8734-6d8ad859a5f6">
             <enabled>1</enabled>
             <name>debianct</name>
@@ -4474,11 +4329,11 @@ Subject: Router: Monitor Instance Changed</format>
       <dots>
         <dot uuid="fc675785-a6da-4190-adf3-e3baa95cc0c5">
           <enabled>1</enabled>
-          <type>forward</type>
+          <type>dot</type>
           <domain/>
-          <server>3d06:bad:b01::53</server>
-          <port>53</port>
-          <verify/>
+          <server>45.90.28.0</server>
+          <port>853</port>
+          <verify>7d698e.dns1.nextdns.io</verify>
           <forward_tcp_upstream>0</forward_tcp_upstream>
           <forward_first>0</forward_first>
           <description/>
@@ -4487,9 +4342,9 @@ Subject: Router: Monitor Instance Changed</format>
           <enabled>1</enabled>
           <type>dot</type>
           <domain/>
-          <server>3d06:bad:b01::53</server>
+          <server>45.90.30.0</server>
           <port>853</port>
-          <verify/>
+          <verify>7d698e.dns2.nextdns.io</verify>
           <forward_tcp_upstream>0</forward_tcp_upstream>
           <forward_first>0</forward_first>
           <description/>

@@ -9,7 +9,7 @@ stack at the deployed ref, and playbooks run through configsctl.
 ## Guest preparation and service deployment
 
 Guest preparation configures SSH access, base packages, locales, SMTP, and
-maintenance timers. MWAN, Tack, proxy, AdGuard, DNS64, and SeaweedFS service
+maintenance timers. MWAN, Tack, proxy, DNS64, and SeaweedFS service
 deploys require a completed preparation revision instead of repeating that
 configuration. A missing or outdated revision stops deployment before service
 configuration changes. The revision records successful preparation; it does
