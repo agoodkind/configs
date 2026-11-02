@@ -37,6 +37,9 @@ locals {
   # plain values and leaves the template strings unread.
   suburban_vars   = yamldecode(file("${local.group_vars_directory}/mwan_suburban_servers.yml"))
   internal_prefix = local.suburban_vars.mwan_internal_prefix
+  # ansible/inventory/group_vars/mwan_failover_suburban_servers.yml
+  failover_vars = yamldecode(file("${local.group_vars_directory}/mwan_failover_suburban_servers.yml"))
+
   suburban_providers = {
     for provider in local.suburban_vars.mwan_providers : provider.name => provider
   }
@@ -1043,6 +1046,7 @@ locals {
       email_bind_iface                          = ""
       email_min_level                           = local.alert_level
       email_cooldown                            = local.alert_cooldown
+      ipv6_max_toggles_per_hour                 = local.failover_vars.mwan_failover_ipv6_max_toggles_per_hour
       bgp_asn                                   = local.bgp_asn
       bgp_router_id                             = local.failover_map.ipv4_transit
       bgp_next_hop_v6                           = local.failover_map.ipv6_transit
