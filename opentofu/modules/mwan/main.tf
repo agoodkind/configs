@@ -34,32 +34,46 @@ variable "network_json_content" {
 }
 
 variable "config_toml_path" {
-  description = "The value is the path to the runtime configuration file the module writes to /etc/mwan/config.toml. A root sets this input or config_toml_content, not both."
+  description = "The value is the path to the runtime configuration file the module writes to /etc/mwan/config.toml. A root sets exactly one of this input, config_toml_content, or config_toml_secret_content."
   type        = string
   default     = null
 }
 
 variable "config_toml_content" {
-  description = "The value is the runtime configuration text the module writes to /etc/mwan/config.toml. A root sets this input or config_toml_path, not both."
+  description = "The value is the runtime configuration text the module writes to /etc/mwan/config.toml. The text contains no secrets. A root sets exactly one of this input, config_toml_path, or config_toml_secret_content."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.config_toml_content == null || var.config_toml_path == null
+    error_message = "Set config_toml_content or config_toml_path, not both."
+  }
+}
+
+variable "config_toml_secret_content" {
+  description = "The value is the runtime configuration text, with secrets, that the module writes to /etc/mwan/config.toml through the write-only content_wo attribute. OpenTofu keeps the text out of plans and state. A root sets exactly one of this input, config_toml_path, or config_toml_content, and sets config_toml_content_version with this input."
   type        = string
   default     = null
   sensitive   = true
+  ephemeral   = true
 
   validation {
-    condition     = (var.config_toml_content == null) != (var.config_toml_path == null)
-    error_message = "Set exactly one of config_toml_content or config_toml_path."
+    condition = length([
+      for source in [var.config_toml_path, var.config_toml_content, var.config_toml_secret_content] : source if source != null
+    ]) == 1
+    error_message = "Set exactly one of config_toml_path, config_toml_content, or config_toml_secret_content."
+  }
+
+  validation {
+    condition     = (var.config_toml_secret_content == null) == (var.config_toml_content_version == null)
+    error_message = "Set config_toml_content_version with config_toml_secret_content and not otherwise."
   }
 }
 
 variable "config_toml_content_version" {
-  description = "A non-null value writes config_toml_content through the write-only content_wo attribute, so OpenTofu keeps the text out of plans and state. A changed value writes the file again. A root sets this input only with config_toml_content."
+  description = "A changed value writes config_toml_secret_content to the guest again. A root sets this input only with config_toml_secret_content."
   type        = number
   default     = null
-
-  validation {
-    condition     = var.config_toml_content_version == null || var.config_toml_content != null
-    error_message = "Set config_toml_content_version only with config_toml_content."
-  }
 }
 
 variable "kind" {
@@ -595,7 +609,7 @@ resource "pveguest_file" "runtime_config" {
   content = local.config_toml_text
   mode    = "0600"
 
-  content_wo         = local.config_toml_write_only ? var.config_toml_content : null
+  content_wo         = var.config_toml_secret_content
   content_wo_version = var.config_toml_content_version
   owner              = "root"
   group              = "root"

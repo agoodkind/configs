@@ -1076,7 +1076,7 @@ module "mwan" {
   sysctl_values   = local.gateway_sysctl
 
   network_json_content        = local.gateway_network_json
-  config_toml_content         = local.gateway_config_secret
+  config_toml_secret_content  = local.gateway_config_secret
   config_toml_content_version = local.gateway_config_version
 }
 
