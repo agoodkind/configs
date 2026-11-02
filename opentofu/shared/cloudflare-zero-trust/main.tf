@@ -23,8 +23,6 @@ module "cloudflare" {
   account_id  = var.cloudflare_account_id
   owner_email = var.cloudflare_owner_email
 
-  router_routes_enabled = var.cloudflare_router_routes_enabled
-
   berylax_beacon_sockaddr = var.berylax_beacon_sockaddr
   berylax_beacon_sha256   = var.berylax_beacon_sha256
   poweredge_beacon        = var.poweredge_beacon
@@ -70,17 +68,6 @@ module "cloudflare" {
     { address = "10.240.0.0/16", description = "suburban-v4" },
     { host = "*.cloudflareaccess.com" },
   ]
-}
-
-output "cloudflare_router_tunnel_id" {
-  description = "Cloudflare tunnel ID for the OPNsense connector."
-  value       = module.cloudflare.router_tunnel_id
-}
-
-output "cloudflare_router_tunnel_token" {
-  description = "Tunnel token for the OPNsense Cloudflared plugin."
-  value       = module.cloudflare.router_tunnel_token
-  sensitive   = true
 }
 
 output "poweredge_tunnel_ids" {

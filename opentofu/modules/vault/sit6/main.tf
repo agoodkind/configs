@@ -1,20 +1,17 @@
-# 6in4 tunnel endpoint LXC on vault for Berylax. Privileged so the guest can
-# create its sit tunnel device; vault loads the sit module at boot. The only
-# NIC is on mwanbr, with the MWAN VM's transit addresses as default gateways.
+# The LXC uses the host gateway on the private guest network.
 resource "proxmox_virtual_environment_container" "sit6" {
   node_name = "vault"
   vm_id     = local.service_mapping.sit6.vmid
 
   initialization {
     hostname = local.service_mapping.sit6.hostname
+    dns {
+      servers = [local.service_mapping.dns64.ipv6]
+    }
     ip_config {
-      ipv4 {
-        address = "${local.service_mapping.sit6.ipv4}/29"
-        gateway = "10.250.250.3"
-      }
       ipv6 {
         address = "${local.service_mapping.sit6.ipv6}/64"
-        gateway = "3d06:bad:b01:fe::3"
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
     user_account {
@@ -22,13 +19,11 @@ resource "proxmox_virtual_environment_container" "sit6" {
     }
   }
 
-  # No features block. The tunnel, FRR, and nftables need no container
-  # features, and Proxmox refuses feature-flag writes from any actor but
-  # root@pam on a privileged container.
 
+  # Feature-flag writes on this privileged container require root@pam.
   network_interface {
     name        = "eth0"
-    bridge      = "mwanbr"
+    bridge      = "vmbr0"
     mac_address = "BC:24:11:5E:06:24"
   }
 

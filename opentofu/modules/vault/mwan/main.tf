@@ -1,22 +1,17 @@
-# BGP failover LXC on vault. eth0 rides the mbrains OOB bridge with DHCP;
-# eth1 holds the static transit addresses on mwanbr.
+# The LXC uses the host gateway on the private guest network.
 resource "proxmox_virtual_environment_container" "mwan_failover" {
   node_name = "vault"
   vm_id     = local.service_mapping.mwan_failover.vmid
 
   initialization {
     hostname = "mwan-failover"
-    ip_config {
-      ipv4 {
-        address = "dhcp"
-      }
+    dns {
+      servers = [local.service_mapping.dns64.ipv6]
     }
     ip_config {
-      ipv4 {
-        address = "10.250.250.4/29"
-      }
       ipv6 {
-        address = "${local.service_mapping.mwan_failover.ipv6}/64"
+        address = format("%s/64", local.service_mapping.mwan_failover.ipv6)
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
   }
@@ -27,14 +22,8 @@ resource "proxmox_virtual_environment_container" "mwan_failover" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "mbrains"
+    bridge      = "vmbr0"
     mac_address = "BC:24:11:A1:06:E9"
-  }
-
-  network_interface {
-    name        = "eth1"
-    bridge      = "mwanbr"
-    mac_address = "BC:24:11:E1:5C:F4"
   }
 
   disk {
@@ -75,104 +64,7 @@ resource "proxmox_virtual_environment_container" "mwan_failover" {
   }
 }
 
-resource "proxmox_virtual_environment_vm" "mwan" {
-  node_name = "vault"
-  vm_id     = local.service_mapping.mwan.vmid
-  name      = "mwan.home.goodkind.io"
-  tags      = ["legacyv4", "mwan", "network", "vm"]
-
-  machine         = "q35"
-  bios            = "ovmf"
-  scsi_hardware   = "virtio-scsi-pci"
-  on_boot         = true
-  started         = true
-  keyboard_layout = "en-us"
-
-  agent {
-    enabled = true
-  }
-
-  cpu {
-    type  = "host"
-    cores = 2
-  }
-
-  memory {
-    dedicated = 4096
-  }
-
-  operating_system {
-    type = "l26"
-  }
-
-  efi_disk {
-    datastore_id      = "local-lvm"
-    type              = "4m"
-    pre_enrolled_keys = true
-  }
-
-  disk {
-    datastore_id = "local-lvm"
-    interface    = "scsi0"
-    size         = 16
-  }
-
-  hostpci {
-    device = "hostpci0"
-    id     = "02:02.0"
-    rombar = true
-  }
-
-  hostpci {
-    device = "hostpci1"
-    id     = "06:00.0"
-    rombar = true
-  }
-
-  serial_device {
-    device = "socket"
-  }
-
-  vga {
-    type = "virtio"
-  }
-
-  network_device {
-    bridge      = "vmbr0"
-    model       = "virtio"
-    mac_address = "BC:24:11:25:62:39"
-  }
-
-  network_device {
-    bridge      = "mwanbr"
-    model       = "virtio"
-    mac_address = "BC:24:11:72:00:C1"
-  }
-
-  network_device {
-    bridge      = "mbrains"
-    model       = "virtio"
-    mac_address = "BC:24:11:E6:58:31"
-  }
-
-  # No initialization block: the VM carries no cloud-init drive or values.
-  # The guest configures its addresses statically via systemd-networkd, and
-  # inventory reads them from service_mapping (MWAN-204).
-
-  lifecycle {
-    prevent_destroy = true
-    ignore_changes = [
-      kvm_arguments,
-    ]
-  }
-}
-
 variable "service_mapping" { type = any }
-
-variable "ssh_keys" { type = string }
-
-variable "host_networks" { type = map(string) }
-
 locals { service_mapping = var.service_mapping }
 
 terraform {

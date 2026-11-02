@@ -47,25 +47,14 @@ service_mapping:
     vmid: 110
     ipv6: "3d06:bad:b01::110"
     ipv4: "10.250.0.110"
-  mwan:
-    hostname: mwan.home.goodkind.io
-    vmid: 113
-    kind: qemu
-    ipv6: "3d06:bad:b01::113"
   mwan_failover:
     hostname: mwan-failover.home.goodkind.io
     vmid: 116
-    # LXC BGP backup peer; eth1 on mwanbr (vault is on same bridge so
-    # this address is the natural Ansible SSH target). eth0 lives on mbrains
-    # for the upstream-ISP iface that mwan-ifmgr monitors.
-    ipv6: "3d06:bad:b01:fe::4"
+    ipv6: "3d06:bad:b01::116"
   sit6:
     hostname: sit6.home.goodkind.io
     vmid: 124
-    # 6in4 tunnel endpoint LXC; its only NIC is on mwanbr, the same bridge
-    # vault sits on, so this address is the natural Ansible SSH target.
-    ipv6: "3d06:bad:b01:fe::5"
-    ipv4: "10.250.250.5"
+    ipv6: "3d06:bad:b01::124"
   tack:
     hostname: tack.home.goodkind.io
     vmid: 117
@@ -254,14 +243,6 @@ service_mapping:
     # The inventory plugin reads ipv6 as its default ansible_host, so it
     # aliases the guest-segment address rather than repeating it.
     ipv6: *mwan_failover_suburban_vmnet_v6
-  # MWAN reads the production router metadata even when inventory excludes it.
-  opnsense:
-    inventory: false
-    hostname: router.home.goodkind.io
-    vmid: 101
-    kind: qemu
-    ipv6: "3d06:bad:b01::1"
-  # Testbed inventory targets the routed IPv6 address on the WAN/internal link.
   opnsense_suburban:
     hostname: router.suburban.goodkind.io
     vmid: 201
@@ -777,27 +758,16 @@ group_children:
     - tack_search1_servers
     - tack_search1_suburban_servers
   mwan_all:
-    - mwan_servers
     - mwan_suburban_servers
-  # One group per environment for the hosts that install released binaries:
-  # the gateway, the failover, the router, and the hypervisor. The hypervisor
-  # groups come from the static hosts file and merge by name. Each group's
-  # group_vars file pins the mwan and opnsensectl releases.
-  mwan_prod_all:
-    - mwan_servers
-    - mwan_failover_servers
-    - opnsense_servers
-    - vault_servers
+  # The testbed routing guests and host use common release versions.
   mwan_testbed_all:
     - mwan_suburban_servers
     - mwan_failover_suburban_servers
     - opnsense_suburban_servers
     - suburban_servers
   mwan_failover_all:
-    - mwan_failover_servers
     - mwan_failover_suburban_servers
   opnsense_all:
-    - opnsense_servers
     - opnsense_suburban_servers
   dns64_all:
     - dns64_servers

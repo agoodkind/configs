@@ -1,0 +1,8 @@
+[Unit]
+Description=Retire sit6 routing in the retained guest
+After=networking.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/retire-sit6-routing.sh

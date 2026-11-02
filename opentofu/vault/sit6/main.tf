@@ -19,6 +19,8 @@ module "vault" {
   ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping = local.service_mapping
   host_networks   = module.contracts.host_networks
+
+  depends_on = [pveguest_systemd_unit.routing_retired]
 }
 
 data "http" "github_ssh_keys" {

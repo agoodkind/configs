@@ -225,6 +225,7 @@ tofu:
         terraform_data.guest_network_packages: vault
         terraform_data.guest_network_activate: vault
         terraform_data.retire_opnsense: vault
+        terraform_data.retire_mwan: vault
     opentofu/vault/mc:
       module_hosts:
         module.vault: vault
@@ -245,6 +246,8 @@ tofu:
     opentofu/vault/sit6:
       module_hosts:
         module.vault: vault
+      guest_hosts:
+        vault/124: sit6.home.goodkind.io
     opentofu/vault/tack-prod:
       module_hosts:
         module.vault: vault

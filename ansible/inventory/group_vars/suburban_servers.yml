@@ -20,9 +20,7 @@ mwan_environment: "testbed"
 mwan_ifmgr_oob_ipv4_source_policy_enabled: false
 mwan_ifmgr_oob_ipv4_source: ""
 mwan_vmid: "{{ service_mapping.mwan_suburban.vmid }}"
-# The testbed router. Overrides the 101 in proxmox_servers.yml, which is vault's
-# production router, so the drainer's chardev path and the upgrade target both
-# follow the testbed guest rather than production's.
+# The router VMID selects the testbed drainer and upgrade target.
 mwan_opnsense_vmid: "{{ service_mapping.opnsense_suburban.vmid }}"
 mwan_proxmox_node: "hypervisor"
 mwan_internal_iface: "enmwanbr0"

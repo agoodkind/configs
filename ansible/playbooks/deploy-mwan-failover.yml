@@ -1,24 +1,10 @@
 ---
-# Configure the MWAN failover LXC.
+# Configure the Suburban MWAN failover LXC.
 #
-# Targets either mwan_failover_servers (prod LXC-116 on vault) or
-# mwan_failover_suburban_servers (testbed LXC-216 on suburban). Per-target
-# vars in inventory/group_vars/mwan_failover_servers.yml and
-# inventory/group_vars/mwan_failover_suburban_servers.yml carry every value
-# that differs between environments, so this play body is branchless on
-# inventory_hostname.
-#
-# Run examples:
-#   ./configsctl deploy deploy-mwan-failover \
-#     --limit mwan_failover_servers
-#   ./configsctl deploy deploy-mwan-failover \
-#     --limit mwan_failover_suburban_servers
+# Run ./configsctl deploy deploy-mwan-failover --limit mwan_failover_suburban_servers.
 
-# The release this playbook installs is pinned in the environment's group_vars.
-# This play pulls it onto the controller before the LXC is touched, so a bad
-# pin fails first. It opens no connection.
 - name: Pull the pinned mwan release onto the controller
-  hosts: mwan_failover_servers:mwan_failover_suburban_servers
+  hosts: mwan_failover_suburban_servers
   gather_facts: false
   become: false
   pre_tasks:
@@ -36,7 +22,7 @@
         release_var_prefix: mwan
 
 - name: Configure MWAN failover LXC
-  hosts: mwan_failover_servers:mwan_failover_suburban_servers
+  hosts: mwan_failover_suburban_servers
   become: false
   environment:
     DEBIAN_FRONTEND: noninteractive
