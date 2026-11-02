@@ -33,6 +33,8 @@ esac
 main() {
     local configuration
     local grep_status
+    local service
+    local load_state
     shopt -s nullglob
     for configuration in /etc/pve/qemu-server/*.conf; do
         if grep -Eq '^hostpci[0-9]+:[[:space:]]*(host=)?(0000:)?02:0a(\.0)?([,;[:space:]]|$)' "$configuration"; then
@@ -47,7 +49,20 @@ main() {
         fi
     done
 
-    systemctl disable --now "${SERVICES[@]}"
+    for service in "${SERVICES[@]}"; do
+        if read -r load_state < <(systemctl show --property=LoadState --value "$service"); then
+            wait "$!"
+        else
+            wait "$!"
+            printf 'systemctl did not return the LoadState for %s.\n' "$service" >&2
+            return 1
+        fi
+        if [[ "$load_state" == not-found ]]; then
+            printf '%s is not installed.\n' "$service"
+            continue
+        fi
+        systemctl disable --now "$service"
+    done
     if [[ "$VF_COUNT" -eq 1 ]]; then
         printf '0\n' >"$LAN_DEVICE/sriov_numvfs"
     fi
