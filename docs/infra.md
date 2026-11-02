@@ -1,8 +1,5 @@
 # Infrastructure overview
 
-The goodkind.io homelab runs on two Proxmox hypervisors. Vault, in San Francisco, carries production: the containers and virtual machines that sit behind the OPNsense router and serve the household every day. Suburban, in New Jersey, carries a testbed that mirrors production closely enough to rehearse a risky change before it reaches the real thing.
+Vault, in San Francisco, runs production LXCs. Its host provides the internal guest network and outbound translation over an ordinary upstream connection. Suburban, in New Jersey, runs the routing testbed.
 
-These pages are point-in-time snapshots, not a live feed, so trust the running host over any page here and read the host before you change production.
-
-The homelab meets the internet through Cloudflare, which fronts its public
-services with tunnels and answers DNS for the domain.
+Cloudflare tunnels provide private guest access and publish web services. Cloudflare hosts DNS for the domain.
