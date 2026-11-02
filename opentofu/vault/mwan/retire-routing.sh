@@ -1,42 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-stop_legacy_unit() {
-    local unit_name="$1"
-    local load_state
-
-    load_state=$(systemctl show --property=LoadState --value "$unit_name")
-    if [[ "$load_state" == "not-found" ]]; then
-        return
-    fi
-    systemctl disable --now "$unit_name"
-}
-
-process_owned_tables() {
-    local action="$1"
-    local table_listing
-    local declaration
-    local table_family
-    local table_name
-
-    table_listing=$(nft list tables)
-    while read -r declaration table_family table_name; do
-        if [[ -z "$declaration" ]]; then
-            continue
-        fi
-        case "$table_family:$table_name" in
-        ip:nat | ip6:nat) ;;
-        *)
-            printf 'Cannot stop nftables: table %s %s does not belong to MWAN failover.\n' \
-                "$table_family" "$table_name" >&2
-            return 1
-            ;;
-        esac
-        if [[ "$action" == "delete" ]]; then
-            nft delete table "$table_family" "$table_name"
-        fi
-    done <<<"$table_listing"
-}
+# shellcheck source=common/scripts/retire-routing-common.sh
+source /usr/local/lib/configs/retire-routing-common.sh
 
 main() {
     if [[ ! -f /etc/sysctl.d/99-client-network.conf ]]; then
@@ -45,7 +11,7 @@ main() {
     fi
 
     # nftables.service flushes every table during stop.
-    process_owned_tables check
+    process_owned_tables check "MWAN failover" ip:nat ip6:nat
     stop_legacy_unit mwan-agent.service
     stop_legacy_unit mwan-ifmgr.service
     stop_legacy_unit mwan-failover-dhcp6.service
@@ -55,7 +21,7 @@ main() {
         /sbin/dhclient -4 -r -pf /run/dhclient.eth0.pid \
             -lf /var/lib/dhcp/dhclient.eth0.leases eth0
     fi
-    process_owned_tables delete
+    process_owned_tables delete "MWAN failover" ip:nat ip6:nat
 
     # Proxmox assigns the replacement static IPv6 address to eth0.
     ip -4 address flush dev eth0 scope global

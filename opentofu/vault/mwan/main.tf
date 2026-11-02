@@ -17,6 +17,11 @@ locals {
     }
   }
   retirement_files = {
+    library = {
+      path    = "/usr/local/lib/configs/retire-routing-common.sh"
+      content = file("${local.repository_root}/common/scripts/retire-routing-common.sh")
+      mode    = "0644"
+    }
     script = {
       path    = "/usr/local/sbin/retire-mwan-routing.sh"
       content = file("${path.module}/retire-routing.sh")

@@ -1,42 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-stop_legacy_unit() {
-    local unit_name="$1"
-    local load_state
-
-    load_state=$(systemctl show --property=LoadState --value "$unit_name")
-    if [[ "$load_state" == "not-found" ]]; then
-        return
-    fi
-    systemctl disable --now "$unit_name"
-}
-
-process_owned_tables() {
-    local action="$1"
-    local table_listing
-    local declaration
-    local table_family
-    local table_name
-
-    table_listing=$(nft list tables)
-    while read -r declaration table_family table_name; do
-        if [[ -z "$declaration" ]]; then
-            continue
-        fi
-        case "$table_family:$table_name" in
-        inet:filter | ip:mangle | ip6:mangle) ;;
-        *)
-            printf 'Cannot stop nftables: table %s %s does not belong to sit6.\n' \
-                "$table_family" "$table_name" >&2
-            return 1
-            ;;
-        esac
-        if [[ "$action" == "delete" ]]; then
-            nft delete table "$table_family" "$table_name"
-        fi
-    done <<<"$table_listing"
-}
+# shellcheck source=common/scripts/retire-routing-common.sh
+source /usr/local/lib/configs/retire-routing-common.sh
 
 main() {
     local old_source_address
@@ -47,13 +13,13 @@ main() {
     fi
 
     # nftables.service flushes every table during stop.
-    process_owned_tables check
+    process_owned_tables check sit6 inet:filter ip:mangle ip6:mangle
     stop_legacy_unit sit6-tunnel-refresh.timer
     stop_legacy_unit sit6-tunnel-refresh.service
     stop_legacy_unit sit6-tunnel.service
     stop_legacy_unit frr.service
     stop_legacy_unit nftables.service
-    process_owned_tables delete
+    process_owned_tables delete sit6 inet:filter ip:mangle ip6:mangle
 
     # The legacy tunnel service does not remove its device when stopped.
     if [[ -e /sys/class/net/sit6 ]]; then
