@@ -67,6 +67,7 @@ resource "remote_file" "guest_network" {
 }
 
 # Stop the previous DHCP owner before systemd-networkd requests a lease.
+# activate.sh defines the complete runtime activation sequence.
 resource "terraform_data" "guest_network_activate" {
   triggers_replace = concat([
     terraform_data.guest_network_packages.id,

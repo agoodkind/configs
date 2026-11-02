@@ -119,13 +119,20 @@ wait_for_http() {
     local address="$2"
     local port="$3"
     local attempt
+    local curl_status
     for ((attempt = 1; attempt <= HTTP_START_ATTEMPTS; attempt++)); do
         if ip netns exec "$namespace" curl --noproxy '*' --fail --silent --show-error \
             --connect-timeout 1 --max-time 2 --output "$WORK_DIRECTORY/ready-response" \
             "http://$address:$port/before-v4"; then
             cmp "$WORK_DIRECTORY/expected-response" "$WORK_DIRECTORY/ready-response"
             return
+        else
+            curl_status=$?
         fi
+        case "$curl_status" in
+        7 | 28) ;;
+        *) fail "The HTTP readiness check in $namespace failed with curl status $curl_status." ;;
+        esac
         printf 'The HTTP server in %s was not ready on attempt %s.\n' "$namespace" "$attempt" >&2
         sleep 0.25
     done
