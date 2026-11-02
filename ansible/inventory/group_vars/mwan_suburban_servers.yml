@@ -247,8 +247,8 @@ mwan_enabled_services:
 
 # The Webpass link sits inside the testbed Webpass static block, as production
 # Webpass does, and the sim holds the block's gateway address.
-mwan_webpass_ipv4: "10.241.204.2/{{ service_mapping.isp_webpass_suburban.ipv4_prefix }}"
-mwan_webpass_ipv4_addr: "10.241.204.2"
+mwan_webpass_ipv4: "{{ service_mapping.mwan_suburban.ipv4_webpass }}/{{ service_mapping.isp_webpass_suburban.ipv4_prefix }}"
+mwan_webpass_ipv4_addr: "{{ service_mapping.mwan_suburban.ipv4_webpass }}"
 mwan_webpass_gateway: "{{ service_mapping.isp_webpass_suburban.ipv4 }}"
 mwan_att_ipv4: "10.240.205.2/24"
 mwan_att_ipv4_addr: "10.240.205.2"
@@ -257,7 +257,7 @@ mwan_monkeybrains_ipv4: "10.240.206.2/24"
 mwan_monkeybrains_gateway: "10.240.206.1"
 mwan_astound_ipv4: "{{ service_mapping.mwan_suburban.ipv4_astound }}/24"
 mwan_astound_gateway: "10.240.207.1"
-mwan_routed_ipv4: "10.240.208.2/24"
+mwan_routed_ipv4: "{{ service_mapping.mwan_suburban.ipv4_routed }}/24"
 mwan_routed_gateway: "{{ service_mapping.isp_routed_suburban.ipv4 }}"
 
 # DHCPv6 DUIDs (not needed for testbed, ISP LXCs don't check)
@@ -521,7 +521,7 @@ mwan_providers:
         mode: native
       forwarding: true
       accept_ra: false
-      address: "3d06:bad:b01:260::2/64"
+      address: "{{ service_mapping.mwan_suburban.ipv6_routed }}/64"
       gateway: "{{ service_mapping.isp_routed_suburban.ipv6 }}"
       route_metric: 6000
     table: 600

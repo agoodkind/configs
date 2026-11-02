@@ -30,7 +30,21 @@ locals {
   pve_token_id          = "root@pam!watchdog"
 
   # ansible/inventory/group_vars/testbed_routing_all/prefixes.yml
-  home_prefix = "3d06:bad:b01:210::/60"
+  routing_prefixes = yamldecode(file("${local.group_vars_directory}/testbed_routing_all/prefixes.yml"))
+  home_prefix      = local.routing_prefixes.testbed_routing_home_prefix
+
+  # ansible/inventory/group_vars/mwan_suburban_servers.yml. The decoder reads the
+  # plain values and leaves the template strings unread.
+  suburban_vars   = yamldecode(file("${local.group_vars_directory}/mwan_suburban_servers.yml"))
+  internal_prefix = local.suburban_vars.mwan_internal_prefix
+  suburban_providers = {
+    for provider in local.suburban_vars.mwan_providers : provider.name => provider
+  }
+
+  # Link prefix sizes of the routed simulator network, from mwan_routed_ipv4 and
+  # the routed provider entry in mwan_suburban_servers.yml.
+  routed_ipv4_prefix_size = 24
+  routed_ipv6_prefix_size = 64
 
   # Roles and units of the two guests.
   gateway_role     = "wan"
@@ -110,16 +124,18 @@ locals {
     cidrhost(local.router_map.transit_v4_net, 6),
   ]
 
+  # The external addresses come from the static mappings of the provider
+  # entries in mwan_suburban_servers.yml.
   att_mappings = [
     for index, host in local.static_internal_hosts : {
-      external = "10.241.205.${index + 2}"
+      external = local.suburban_providers.att.ipv4.translation.static_mappings[index].external
       internal = host
     }
   ]
 
   webpass_mappings = [
     for index, host in local.static_internal_hosts : {
-      external = "10.241.204.${index + 2}"
+      external = local.suburban_providers.webpass.ipv4.translation.static_mappings[index].external
       internal = host
       delivery = "local"
     }
@@ -179,7 +195,7 @@ locals {
     nptv6 = {
       "internal-prefix" = local.internal_prefix
       "external-source" = "delegated"
-      "expected-prefix" = "3d06:bad:b01:2300::/60"
+      "expected-prefix" = local.suburban_providers.att.ipv6.translation.nptv6.expected_prefix
     }
   }
 
@@ -188,11 +204,9 @@ locals {
     nptv6 = {
       "internal-prefix" = local.internal_prefix
       "external-source" = "delegated"
-      "expected-prefix" = "3d06:bad:b01:2200::/60"
+      "expected-prefix" = local.suburban_providers.webpass.ipv6.translation.nptv6.expected_prefix
     }
   }
-
-  internal_prefix = "3d06:bad:b01:210::/60"
 
   provider_att = {
     name                                   = local.att_interface
@@ -253,7 +267,7 @@ locals {
       "goodkind-mwan-steering:dhcp"         = false
       "goodkind-mwan-steering:gateway"      = local.isp_webpass.ipv4
       "goodkind-mwan-steering:route-metric" = 10
-      address                               = [{ ip = "10.241.204.2", "prefix-length" = local.isp_webpass.ipv4_prefix }]
+      address                               = [{ ip = local.gateway_map.ipv4_webpass, "prefix-length" = local.isp_webpass.ipv4_prefix }]
     }
     "ietf-ip:ipv6" = {
       "goodkind-mwan-steering:translation" = local.nptv6_translation_webpass
@@ -347,7 +361,7 @@ locals {
       "goodkind-mwan-steering:dhcp"         = false
       "goodkind-mwan-steering:gateway"      = local.isp_routed.ipv4
       "goodkind-mwan-steering:route-metric" = 6000
-      address                               = [{ ip = "10.240.208.2", "prefix-length" = 24 }]
+      address                               = [{ ip = local.gateway_map.ipv4_routed, "prefix-length" = local.routed_ipv4_prefix_size }]
     }
     "ietf-ip:ipv6" = {
       "goodkind-mwan-steering:translation"  = { mode = "native" }
@@ -355,7 +369,7 @@ locals {
       "goodkind-mwan-steering:gateway"      = local.isp_routed.ipv6
       "goodkind-mwan-steering:route-metric" = 6000
       "goodkind-mwan-steering:accept-ra"    = false
-      address                               = [{ ip = "3d06:bad:b01:260::2", "prefix-length" = 64 }]
+      address                               = [{ ip = local.gateway_map.ipv6_routed, "prefix-length" = local.routed_ipv6_prefix_size }]
     }
   }
 
@@ -836,11 +850,11 @@ locals {
       match = { "hardware-address" = local.gateway_macs.internal }
     }
     "ietf-ip:ipv4" = {
-      address    = [{ ip = local.gateway_map.ipv4_transit, "prefix-length" = 29 }]
+      address    = [{ ip = local.gateway_map.ipv4_transit, "prefix-length" = tonumber(split("/", local.router_map.transit_v4_net)[1]) }]
       forwarding = true
     }
     "ietf-ip:ipv6" = {
-      address                            = [{ ip = local.gateway_map.ipv6_transit, "prefix-length" = 64 }]
+      address                            = [{ ip = local.gateway_map.ipv6_transit, "prefix-length" = tonumber(split("/", local.router_map.transit_v6_net)[1]) }]
       forwarding                         = true
       "goodkind-mwan-steering:accept-ra" = false
       "goodkind-mwan-steering:route" = [{
