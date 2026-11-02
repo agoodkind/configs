@@ -64,14 +64,16 @@ module "base" {
   scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
 }
 
-# Ansible created the SMTP2GO user and /etc/msmtprc on each guest.
-# The pveguest provider imports the existing mail configuration and keeps the
-# SMTP2GO password. A new pveguest_mail_relay resource would rotate the
-# password.
+# Import the gateway's existing relay to preserve its SMTP2GO password.
+# Create the failover relay. Import requires an existing /etc/msmtprc.
+# Creation resets the password if its SMTP2GO user already exists.
 import {
-  for_each = module.guest_inputs.mail_relay_import_ids
-  to       = module.base[each.key].pveguest_mail_relay.smtp["smtp2go"]
-  id       = each.value
+  for_each = {
+    for name, id in module.guest_inputs.mail_relay_import_ids : name => id
+    if name != "mwan_failover_suburban"
+  }
+  to = module.base[each.key].pveguest_mail_relay.smtp["smtp2go"]
+  id = each.value
 }
 
 module "suburban" {

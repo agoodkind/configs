@@ -106,6 +106,7 @@
         mwan_installed_binary: /usr/local/bin/mwan
 
     - name: Deploy /etc/mwan/config.toml
+      tags: [mwan-failover-config]
       ansible.builtin.template:
         src: "{{ repo_root }}/mwan-failover/config.toml.j2"
         dest: /etc/mwan/config.toml

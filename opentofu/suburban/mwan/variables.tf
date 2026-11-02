@@ -4,15 +4,15 @@ variable "suburban_proxmox_endpoint" {
   default     = "https://[3d06:bad:b01:200::1]:8006/"
 }
 
-variable "vault_suburban_testbed_pve_token_secret" {
-  description = "Secret of the Proxmox API token for the suburban testbed host"
+variable "vault_smtp2go_api_key" {
+  description = "SMTP2GO API key for the pveguest provider and the gateway runtime configuration"
   type        = string
   sensitive   = true
   ephemeral   = true
 }
 
-variable "vault_smtp2go_api_key" {
-  description = "SMTP2GO API key that the gateway runtime configuration contains"
+variable "vault_suburban_testbed_pve_token_secret" {
+  description = "Secret of the Proxmox API token for the suburban testbed host"
   type        = string
   sensitive   = true
   ephemeral   = true

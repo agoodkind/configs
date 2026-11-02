@@ -220,7 +220,7 @@
     group: root
     mode: "0644"
     content: |
-      {% for resolver in cloudflared_oob_nextdns_resolvers %}
+      {% for resolver in cloudflared_oob_dns_resolvers %}
       nameserver {{ resolver }}
       {% endfor %}
       options timeout:2 attempts:2 rotate

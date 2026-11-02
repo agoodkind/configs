@@ -12,8 +12,8 @@ locals {
 }
 
 resource "cloudflare_dns_record" "static" {
-  provider = cloudflare.dns[each.value.zone]
-  for_each = local.cloudflare_static_dns_records
+  provider = cloudflare.dns
+  for_each = { for key, value in local.cloudflare_static_dns_records : key => value if value.zone == "goodkind.io" }
 
   zone_id  = local.cloudflare_zone_ids[each.value.zone]
   name     = each.value.name
@@ -31,6 +31,106 @@ resource "cloudflare_dns_record" "static" {
   }
 }
 
+resource "cloudflare_dns_record" "static_silver" {
+  provider = cloudflare.dns_silver
+  for_each = { for key, value in local.cloudflare_static_dns_records : key => value if value.zone == "silver-flare.com" }
+
+  zone_id  = local.cloudflare_zone_ids[each.value.zone]
+  name     = each.value.name
+  type     = each.value.type
+  content  = each.value.content
+  ttl      = each.value.ttl
+  proxied  = each.value.proxied
+  priority = try(each.value.priority, null)
+  comment  = try(each.value.comment, null)
+  tags     = try(each.value.tags, null)
+  settings = try(each.value.settings, null)
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/AAAA/alexs-mba.silver-flare.com/3b598473"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/AAAA/alexs-mba.silver-flare.com/3b598473"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/alex-lm.silver-flare.com/ba0ae6b0"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/alex-lm.silver-flare.com/ba0ae6b0"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/clyde-adapter.silver-flare.com/ee0c9d35"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/clyde-adapter.silver-flare.com/ee0c9d35"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/cursor.silver-flare.com/59864e77"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/cursor.silver-flare.com/59864e77"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/darwin-gh-broker.silver-flare.com/cc9ff380"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/darwin-gh-broker.silver-flare.com/cc9ff380"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/pr-agent.goodkind.io.silver-flare.com/a9b69cc0"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/pr-agent.goodkind.io.silver-flare.com/a9b69cc0"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/CNAME/pr-agent.silver-flare.com/8b38926a"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/CNAME/pr-agent.silver-flare.com/8b38926a"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/mail.silver-flare.com/03c41bd6"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/mail.silver-flare.com/03c41bd6"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/mail.silver-flare.com/1a018f31"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/mail.silver-flare.com/1a018f31"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/mail.silver-flare.com/477ca396"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/mail.silver-flare.com/477ca396"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/silver-flare.com/34f6d277"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/silver-flare.com/34f6d277"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/silver-flare.com/f377f59c"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/silver-flare.com/f377f59c"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/MX/silver-flare.com/f9eda4dc"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/MX/silver-flare.com/f9eda4dc"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/TXT/cf2024-1._domainkey.silver-flare.com/253c2e5e"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/TXT/cf2024-1._domainkey.silver-flare.com/253c2e5e"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/TXT/mail.silver-flare.com/55c4ec31"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/TXT/mail.silver-flare.com/55c4ec31"]
+}
+
+moved {
+  from = cloudflare_dns_record.static["silver-flare.com/TXT/silver-flare.com/87c80d96"]
+  to   = cloudflare_dns_record.static_silver["silver-flare.com/TXT/silver-flare.com/87c80d96"]
+}
+
 # Cloudflare DNS records. Certificate automation manages ACME challenges separately.
 locals {
 
@@ -43,22 +143,6 @@ locals {
       ttl     = 1
       proxied = false
       comment = "proxy"
-    }
-    "goodkind.io/A/att-1335.goodkind.io/ae3d1c1d" = {
-      zone    = "goodkind.io"
-      name    = "att-1335.goodkind.io"
-      type    = "A"
-      content = "104.57.226.193"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/A/att4-1335.goodkind.io/18f8e10d" = {
-      zone    = "goodkind.io"
-      name    = "att4-1335.goodkind.io"
-      type    = "A"
-      content = "104.57.226.193"
-      ttl     = 1
-      proxied = false
     }
     "goodkind.io/A/berylax.goodkind.io/96acbe4b" = {
       zone    = "goodkind.io"
@@ -124,35 +208,11 @@ locals {
       ttl     = 1
       proxied = false
     }
-    "goodkind.io/A/webpass-1335.goodkind.io/81d345af" = {
-      zone    = "goodkind.io"
-      name    = "webpass-1335.goodkind.io"
-      type    = "A"
-      content = "136.25.91.242"
-      ttl     = 1
-      proxied = false
-    }
     "goodkind.io/AAAA/*.home.goodkind.io/9b9c74a5" = {
       zone    = "goodkind.io"
       name    = "*.home.goodkind.io"
       type    = "AAAA"
       content = "3d06:bad:b01::110"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/att-1335.goodkind.io/faea80b5" = {
-      zone    = "goodkind.io"
-      name    = "att-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2600:1700:2f71:c80::1"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/att6-1335.goodkind.io/069a23bb" = {
-      zone    = "goodkind.io"
-      name    = "att6-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2600:1700:2f71:c80::1"
       ttl     = 1
       proxied = false
     }
@@ -188,27 +248,11 @@ locals {
       ttl     = 1
       proxied = false
     }
-    "goodkind.io/AAAA/mbrains6-1335.goodkind.io/dcd978bc" = {
-      zone    = "goodkind.io"
-      name    = "mbrains6-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2607:f598:d3e8:3100::1"
-      ttl     = 1
-      proxied = false
-    }
     "goodkind.io/AAAA/mini.home.goodkind.io/f55c5de8" = {
       zone    = "goodkind.io"
       name    = "mini.home.goodkind.io"
       type    = "AAAA"
       content = "3d06:bad:b01:1::2"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/nas-jetkvm.goodkind.io/383f88d9" = {
-      zone    = "goodkind.io"
-      name    = "nas-jetkvm.goodkind.io"
-      type    = "AAAA"
-      content = "2607:f598:d3e0:131:3252:53ff:fe0d:6d08"
       ttl     = 1
       proxied = false
     }
@@ -235,41 +279,6 @@ locals {
       content = "3d06:bad:b01::102"
       ttl     = 1
       proxied = false
-    }
-    "goodkind.io/AAAA/vault-jetkvm.goodkind.io/8d4b7e4f" = {
-      zone    = "goodkind.io"
-      name    = "vault-jetkvm.goodkind.io"
-      type    = "AAAA"
-      content = "2607:f598:d3e0:131:8234:28ff:fe66:5ed7"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/webpass-1335.goodkind.io/ad6aa736" = {
-      zone    = "goodkind.io"
-      name    = "webpass-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2604:5500:c271:be00::1"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/webpass6-1335.goodkind.io/01dc891f" = {
-      zone    = "goodkind.io"
-      name    = "webpass6-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2604:5500:c271:be00::1"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/CNAME/1335-sf.goodkind.io/a6e1c729" = {
-      zone    = "goodkind.io"
-      name    = "1335-sf.goodkind.io"
-      type    = "CNAME"
-      content = "lb-home.goodkind.io"
-      ttl     = 1
-      proxied = false
-      settings = {
-        flatten_cname = false
-      }
     }
     "goodkind.io/CNAME/66868087.goodkind.io/b29cef2e" = {
       zone    = "goodkind.io"
@@ -377,17 +386,6 @@ locals {
       content = "goodkind-io.pages.dev"
       ttl     = 1
       proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
-    "goodkind.io/CNAME/home.goodkind.io/da2d9a8d" = {
-      zone    = "goodkind.io"
-      name    = "home.goodkind.io"
-      type    = "CNAME"
-      content = "lb-home.goodkind.io"
-      ttl     = 1
-      proxied = false
       settings = {
         flatten_cname = false
       }
@@ -839,8 +837,25 @@ locals {
 }
 
 resource "cloudflare_dns_record" "dynamic" {
-  provider = cloudflare.dns[each.value.zone]
-  for_each = local.cloudflare_dynamic_dns_records
+  provider = cloudflare.dns
+  for_each = { for key, value in local.cloudflare_dynamic_dns_records : key => value if value.zone == "goodkind.io" }
+
+  zone_id = local.cloudflare_zone_ids[each.value.zone]
+  name    = each.value.name
+  type    = each.value.type
+  content = each.value.content
+  ttl     = each.value.ttl
+  proxied = each.value.proxied
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [content]
+  }
+}
+
+resource "cloudflare_dns_record" "dynamic_silver" {
+  provider = cloudflare.dns_silver
+  for_each = { for key, value in local.cloudflare_dynamic_dns_records : key => value if value.zone == "silver-flare.com" }
 
   zone_id = local.cloudflare_zone_ids[each.value.zone]
   name    = each.value.name

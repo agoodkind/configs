@@ -1,6 +1,6 @@
 # Prepare guests for service deployment
 
-Run guest preparation before the first MWAN, Tack, proxy, AdGuard, DNS64, or
+Run guest preparation before the first MWAN, Tack, proxy, DNS64, or
 SeaweedFS deploy on each guest. Existing guests also require a preparation run
 before their first service deploy with the revision check.
 

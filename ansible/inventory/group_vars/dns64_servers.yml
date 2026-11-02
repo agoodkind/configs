@@ -9,6 +9,5 @@ service_mac_address: "BC:24:11:00:00:64"
 # Prod DNS64 prefix matches the prod opnsense Tayga setup.
 dns64_prefix: "3d06:bad:b01:6464::/96"
 
-# Vault-side AdGuard. Reachable from the prod LXC over the vault VMNET segment
-# without crossing NAT or transit.
-dns64_upstream_dns: "3d06:bad:b01::53"
+# OPNsense forwards upstream queries to NextDNS over TLS.
+dns64_upstream_dns: "{{ service_mapping.opnsense.ipv6 }}"

@@ -64,7 +64,7 @@ iface = "eth0"
 degraded_after = "30s"
 escalate_after = "90s"
 alert_after = "300s"
-max_toggles_per_hour = 4
+max_toggles_per_hour = {{ mwan_failover_ipv6_max_toggles_per_hour }}
 probe_targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
 
 [ifmgr.modules.bridge_probe]

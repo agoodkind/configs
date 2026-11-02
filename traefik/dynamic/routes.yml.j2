@@ -58,17 +58,6 @@ http:
       tls:
         certResolver: letsencrypt
 
-    adguard-ingress:
-      rule: "Host(`adguard.{{ traefik_ingress_domain }}`)"
-      service: adguard-service
-      middlewares:
-        - secure-headers
-        - internal-only
-      entryPoints:
-        - websecure
-      tls:
-        certResolver: letsencrypt
-
     # NanoMDM - Apple MDM server (public via Cloudflare Tunnel)
     mdm-ingress:
       rule: "Host(`mdm.{{ traefik_ingress_domain }}`)"
@@ -143,12 +132,6 @@ http:
       loadBalancer:
         servers:
           - url: "http://nas.home.goodkind.io:3923"
-
-    adguard-service:
-      loadBalancer:
-        servers:
-          - url: "https://[3d06:bad:b01::53]"
-        serversTransport: insecure-transport
 
     mdm-service:
       loadBalancer:

@@ -73,7 +73,7 @@ doubt.
 - configsctl runs the play from [ansible/](../../../ansible/) so `ansible.cfg`
   and dynamic inventory resolve.
 - The vault password file is `~/.config/ansible/vault.pass`.
-- For a single deploy of a non-MWAN service, such as proxy, adguard, ddns, or
+- For a single deploy of a non-MWAN service, such as proxy, dns64, ddns, or
   tack, pass the matching `deploy-<service>` stem to the helper.
 
 ## Debugging Failures

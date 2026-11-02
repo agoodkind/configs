@@ -46,10 +46,6 @@ service_mapping:
     vmid: 110
     ipv6: "3d06:bad:b01::110"
     ipv4: "10.250.0.110"
-  adguard:
-    hostname: adguard.home.goodkind.io
-    vmid: 112
-    ipv6: "3d06:bad:b01::53"
   mwan:
     hostname: mwan.home.goodkind.io
     vmid: 113
