@@ -72,6 +72,16 @@ provider "registry.opentofu.org/hashicorp/http" {
   ]
 }
 
+provider "tofu.home.arpa/agoodkind/mwan" {
+  version     = "0.1.1"
+  constraints = "0.1.1"
+  hashes = [
+    "h1:4EijqrkucsTO646GBvV4RGzj9v1+5m8OScSGMI+z8y0=",
+    "h1:JAhl5o5UOhL6LwwobacEbieGXQmXpCiOacPYGjAm0bY=",
+    "h1:SC5oqtbpqejXOEKWI1YZDLiGJpl7LuTBl/NLi2Vyahg=",
+  ]
+}
+
 provider "tofu.home.arpa/agoodkind/pveguest" {
   version     = "0.1.3"
   constraints = ">= 0.1.1, 0.1.3"

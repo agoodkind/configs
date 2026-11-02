@@ -2,11 +2,11 @@ terraform {
   required_providers {
     pveguest = {
       source  = "tofu.home.arpa/agoodkind/pveguest"
-      version = "0.1.1"
+      version = ">= 0.1.1"
     }
     mwan = {
       source  = "tofu.home.arpa/agoodkind/mwan"
-      version = "0.1.0"
+      version = ">= 0.1.0"
     }
   }
 }
