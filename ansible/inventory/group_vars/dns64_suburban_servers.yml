@@ -10,7 +10,8 @@ service_mac_address: "BC:24:11:04:64:00"
 # (3d06:bad:b01:264::ffff:1 tun endpoint, route in opnsense pf to nat64).
 dns64_prefix: "3d06:bad:b01:2664::/96"
 
-# DNS64 uses the router's Unbound resolver.
+# DNS64 forwards to the router's Unbound over native IPv6, as in production.
+# This connection does not depend on NAT64.
 dns64_upstream_dns: "3d06:bad:b01:210::1"
 
 # dns64_force_synth stays at the dns64_all.yml default of false. The override
