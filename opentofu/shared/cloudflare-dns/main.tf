@@ -131,6 +131,19 @@ moved {
   to   = cloudflare_dns_record.static_silver["silver-flare.com/TXT/silver-flare.com/87c80d96"]
 }
 
+moved {
+  from = cloudflare_dns_record.static["goodkind.io/A/berylax.goodkind.io/96acbe4b"]
+  to   = cloudflare_dns_record.berylax_ddns
+}
+
+removed {
+  from = cloudflare_dns_record.berylax_ddns
+
+  lifecycle {
+    destroy = false
+  }
+}
+
 # Cloudflare DNS records. Certificate automation manages ACME challenges separately.
 locals {
 
@@ -143,14 +156,6 @@ locals {
       ttl     = 1
       proxied = false
       comment = "proxy"
-    }
-    "goodkind.io/A/berylax.goodkind.io/96acbe4b" = {
-      zone    = "goodkind.io"
-      name    = "berylax.goodkind.io"
-      type    = "A"
-      content = "23.93.85.109"
-      ttl     = 60
-      proxied = false
     }
     "goodkind.io/A/hypervisor.home.goodkind.io/9f586dc5" = {
       zone    = "goodkind.io"
