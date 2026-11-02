@@ -84,14 +84,10 @@ main() {
         /etc/systemd/system/mwan-opnsense-drain.service \
         /etc/systemd/system/sriov-vf-lan.service \
         /etc/mwan/config.toml \
-        /etc/mwan/config.toml.bak-* \
-        /etc/mwan/config.toml.before-* \
-        /etc/mwan/config.toml.backup* \
         /etc/mwan/secrets.env \
         /etc/mwan-watchdog/network.toml \
         /etc/opnsensectl/config.toml \
         /usr/local/bin/mwan \
-        /usr/local/bin/mwan.* \
         /usr/local/sbin/sriov-vf-lan.sh \
         /etc/sysctl.d/60-mbrains.conf \
         /etc/sysctl.d/99-ha-forwarding.conf \
