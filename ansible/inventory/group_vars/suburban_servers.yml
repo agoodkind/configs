@@ -172,15 +172,8 @@ tack_search_proxy_ca: "{{ vault_tack_qa_search_ca }}"
 tack_search_proxy_certificate: "{{ vault_tack_qa_search_proxy_certificate }}"
 tack_search_proxy_private_key: "{{ vault_tack_qa_search_proxy_private_key }}"
 
-# The QA search workload needs at least this much available suburban host
-# memory, in GiB. The search render spec checks the value, and no playbook
-# task enforces it. The sparse-model workload used about 3.4 GiB after it
-# finished. No measurement recorded its peak.
-tack_search_qa_host_min_available_gib: 6.26
-
-# The ZFS ARC on suburban is capped at 1 GiB to keep the available-memory gate
-# above with the 3 GiB QA search heap. The ARC used 1.923 GiB on 2026-10-02
-# with a 0.978 GiB floor, and MemAvailable does not count it.
+# suburban caps ZFS ARC at 1 GiB. The ARC used 1.923 GiB on 2026-10-02
+# with a 0.978 GiB floor. MemAvailable does not count the ARC.
 proxmox_zfs_arc_max_bytes: 1073741824
 # The unmanaged installer file /etc/modprobe.d/zfs.conf on suburban sets
 # zfs_arc_max=3309305856 (read 2026-10-02). The rollback restores that value.
