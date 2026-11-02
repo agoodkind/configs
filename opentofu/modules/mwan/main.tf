@@ -12,14 +12,38 @@ terraform {
 }
 
 variable "network_json_path" {
-  description = "The wan role requires this path to network.json, and other roles may omit it to skip WANCONFIG deployment."
+  description = "The wan role requires this path to network.json or network_json_content, and other roles may omit both to skip WANCONFIG deployment."
   type        = string
   default     = null
 }
 
-variable "config_toml_path" {
-  description = "The value is the path to the runtime configuration file the module writes to /etc/mwan/config.toml."
+variable "network_json_content" {
+  description = "The value is the network.json document text. A root sets this input or network_json_path, not both."
   type        = string
+  default     = null
+
+  validation {
+    condition     = var.network_json_content == null || var.network_json_path == null
+    error_message = "Set network_json_content or network_json_path, not both."
+  }
+}
+
+variable "config_toml_path" {
+  description = "The value is the path to the runtime configuration file the module writes to /etc/mwan/config.toml. A root sets this input or config_toml_content, not both."
+  type        = string
+  default     = null
+}
+
+variable "config_toml_content" {
+  description = "The value is the runtime configuration text the module writes to /etc/mwan/config.toml. A root sets this input or config_toml_path, not both."
+  type        = string
+  default     = null
+  sensitive   = true
+
+  validation {
+    condition     = (var.config_toml_content == null) != (var.config_toml_path == null)
+    error_message = "Set exactly one of config_toml_content or config_toml_path."
+  }
 }
 
 variable "kind" {
@@ -91,7 +115,12 @@ data "mwan_role" "this" {
 
 locals {
   stack_dir   = "/var/cache/mwan/stack"
-  has_network = var.network_json_path != null
+  has_network = var.network_json_path != null || var.network_json_content != null
+
+  network_json_text = var.network_json_content != null ? var.network_json_content : (
+    var.network_json_path != null ? file(var.network_json_path) : null
+  )
+  config_toml_text = var.config_toml_content != null ? var.config_toml_content : file(var.config_toml_path)
 
   architecture = data.mwan_release.this.architectures[var.architecture]
 
@@ -190,7 +219,7 @@ locals {
 data "mwan_network" "gateway" {
   count = local.has_network ? 1 : 0
 
-  content = file(var.network_json_path)
+  content = local.network_json_text
 }
 
 resource "terraform_data" "gateway_host" {
@@ -544,7 +573,7 @@ resource "pveguest_file" "runtime_config" {
   kind = var.kind
 
   path    = "/etc/mwan/config.toml"
-  content = file(var.config_toml_path)
+  content = local.config_toml_text
   mode    = "0600"
   owner   = "root"
   group   = "root"
