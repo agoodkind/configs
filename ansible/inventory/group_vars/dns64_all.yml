@@ -12,7 +12,6 @@ service_cores: "1"
 service_disk_size: "4"
 service_tags: "lxc,dns,dns64"
 
-# Force DNS64 synthesis even when upstream returns native AAAA. Off in both
-# environments: a dual-stack name should return its real AAAA and reach it
-# natively, and NAT64 stays for the IPv4-only names that need it.
+# Environments with an IPv4-only uplink synthesize external AAAA records.
 dns64_force_synth: false
+dns64_native_ipv6_prefixes: []

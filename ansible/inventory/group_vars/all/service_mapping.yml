@@ -32,6 +32,7 @@ service_mapping:
     hostname: dns64.home.goodkind.io
     vmid: 103
     ipv6: "3d06:bad:b01::64"
+    ipv4: "10.250.0.103"
   freebsd_dev_home:
     hostname: freebsd-dev.home.goodkind.io
     vmid: 108
@@ -299,6 +300,7 @@ service_mapping:
   # Monkeybrains tunnel stays reachable while the household WAN reboots.
   vault_hypervisor:
     inventory: false
+    ipv4: "10.250.0.254"
     ipv6: "3d06:bad:b01::254"
     ipv6_oob: "3d06:bad:b01:ff::1"
 

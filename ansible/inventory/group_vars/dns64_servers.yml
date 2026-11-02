@@ -6,11 +6,11 @@ service_hostname: "{{ service_mapping.dns64.hostname }}"
 service_ipv6_address: "{{ service_mapping.dns64.ipv6 }}/64"
 service_mac_address: "BC:24:11:00:00:64"
 
-# Prod DNS64 prefix matches the prod opnsense Tayga setup.
+# The host translator uses this prefix for guest IPv4 destinations.
 dns64_prefix: "3d06:bad:b01:6464::/96"
 
-# OPNsense forwards upstream queries to NextDNS over TLS.
-dns64_upstream_dns: "{{ service_mapping.opnsense.ipv6 }}"
+# The existing local resolver queries NextDNS over IPv4 with TLS.
+dns64_upstream_dns: "127.0.0.54"
 dns64_force_synth: true
 dns64_native_ipv6_prefixes:
   - "3d06:bad:b01::/56"

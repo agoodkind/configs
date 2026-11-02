@@ -7,12 +7,12 @@ resource "proxmox_virtual_environment_container" "proxy" {
     hostname = "proxy.home.goodkind.io"
     ip_config {
       ipv4 {
-        address = "${local.service_mapping.proxy.ipv4}/32"
-        gateway = "10.250.0.1"
+        address = "${local.service_mapping.proxy.ipv4}/24"
+        gateway = local.service_mapping.vault_hypervisor.ipv4
       }
       ipv6 {
         address = "${local.service_mapping.proxy.ipv6}/64"
-        gateway = "3d06:bad:b01::1"
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
   }

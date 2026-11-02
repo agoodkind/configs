@@ -621,3 +621,8 @@ resource "remote_file" "network_interfaces" {
   content     = file(var.network_interfaces_file)
   permissions = "0644"
 }
+
+output "network_interfaces_sha256" {
+  description = "SHA-256 of the managed network interfaces file, or null when this module does not manage it."
+  value       = var.network_interfaces_file == null ? null : sha256(remote_file.network_interfaces[0].content)
+}

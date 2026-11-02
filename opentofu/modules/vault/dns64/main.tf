@@ -6,9 +6,13 @@ resource "proxmox_virtual_environment_container" "dns64" {
   initialization {
     hostname = "dns64.home.goodkind.io"
     ip_config {
+      ipv4 {
+        address = "${local.service_mapping.dns64.ipv4}/24"
+        gateway = local.service_mapping.vault_hypervisor.ipv4
+      }
       ipv6 {
         address = "${local.service_mapping.dns64.ipv6}/64"
-        gateway = "3d06:bad:b01::1"
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
   }

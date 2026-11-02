@@ -1,0 +1,28 @@
+auto lo
+iface lo inet loopback
+
+iface enp3s0 inet manual
+iface enp4s0 inet manual
+iface enp5s0 inet manual
+iface enp6s0 inet manual
+iface enp2s0f0np0 inet manual
+iface enp2s0f1np1 inet manual
+iface enp2s0f0v0 inet manual
+
+auto vmbr0
+iface vmbr0 inet static
+    address 10.250.0.254/24
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0
+
+iface vmbr0 inet6 static
+    address 3d06:bad:b01::254/64
+
+auto mwanbr
+iface mwanbr inet manual
+    bridge-ports none
+    bridge-stp off
+    bridge-fd 0
+
+source /etc/network/interfaces.d/*

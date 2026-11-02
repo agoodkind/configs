@@ -214,6 +214,9 @@ tofu:
         proxmox_acme_account.vault: vault
         proxmox_acme_certificate.vault: vault
         proxmox_acme_dns_plugin.vault: vault
+        remote_file.guest_network: vault
+        terraform_data.guest_network_packages: vault
+        terraform_data.guest_network_activate: vault
     opentofu/vault/mc:
       module_hosts:
         module.vault: vault

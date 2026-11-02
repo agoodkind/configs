@@ -48,6 +48,9 @@ mwan_email_cooldown: "5m"
 # mwan-ifmgr service on the host. Vault owns the OOB tunnel, reached over its
 # own mbrains link, so it is the one host that enables the OOB modules.
 mwan_ifmgr_role: "oob"
+proxmox_mwan_host_role_enabled: false
+mwan_ifmgr_enabled: false
+mwan_watchdog_enabled: false
 mwan_ifmgr_oob_enabled: true
 mwan_ifmgr_oob_ipv4_source_policy_enabled: true
 mwan_ifmgr_oob_ipv4_source: "158.247.70.47/32"
@@ -69,9 +72,10 @@ cloudflared_oob_enabled: true
 cloudflared_oob_tunnel_id: "88f11d0d-6148-4670-891d-72c0286ca48d"
 cloudflared_oob_edge_ip_version: "auto"
 cloudflared_oob_warp_routing_enabled: true
+cloudflared_oob_ssh_address: "{{ service_mapping.vault_hypervisor.ipv6_oob }}"
 cloudflared_oob_ingress:
   - hostname: "vault-oob.goodkind.io"
-    service: "ssh://[{{ mwan_ifmgr_policy_from_v6 }}]:22022"
+    service: "ssh://[{{ cloudflared_oob_ssh_address }}]:22022"
   - service: "http_status:404"
 cloudflared_oob_dns_resolvers:
   - "1.1.1.1"

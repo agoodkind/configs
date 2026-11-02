@@ -23,10 +23,13 @@ options {
         clients { any; };
         break-dnssec yes;
 {% if dns64_force_synth | bool %}
-        // Force synthesis even when the upstream returns a native AAAA. Used
-        // on segments where native IPv6 to the public internet does not
-        // work, so every name has to route through the NAT64 translator.
-        exclude { any; };
+        // Preserve internal IPv6 records and synthesize external destinations.
+        exclude {
+{% for prefix in dns64_native_ipv6_prefixes %}
+            !{{ prefix }};
+{% endfor %}
+            any;
+        };
 {% endif %}
     };
 };

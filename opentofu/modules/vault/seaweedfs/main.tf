@@ -12,7 +12,7 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
     ip_config {
       ipv6 {
         address = "3d06:bad:b01::118/64"
-        gateway = "3d06:bad:b01::1"
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
     user_account {
