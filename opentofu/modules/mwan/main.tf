@@ -46,6 +46,17 @@ variable "config_toml_content" {
   }
 }
 
+variable "config_toml_content_version" {
+  description = "A non-null value writes config_toml_content through the write-only content_wo attribute, so OpenTofu keeps the text out of plans and state. A changed value writes the file again. A root sets this input only with config_toml_content."
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.config_toml_content_version == null || var.config_toml_content != null
+    error_message = "Set config_toml_content_version only with config_toml_content."
+  }
+}
+
 variable "kind" {
   description = "The kind input selects an LXC container or a QEMU virtual machine for the mwan gateway runtime."
   type        = string
@@ -120,7 +131,10 @@ locals {
   network_json_text = var.network_json_content != null ? var.network_json_content : (
     var.network_json_path != null ? file(var.network_json_path) : null
   )
-  config_toml_text = var.config_toml_content != null ? var.config_toml_content : file(var.config_toml_path)
+  config_toml_write_only = var.config_toml_content_version != null
+  config_toml_text = local.config_toml_write_only ? null : (
+    var.config_toml_content != null ? var.config_toml_content : file(var.config_toml_path)
+  )
 
   architecture = data.mwan_release.this.architectures[var.architecture]
 
@@ -575,8 +589,11 @@ resource "pveguest_file" "runtime_config" {
   path    = "/etc/mwan/config.toml"
   content = local.config_toml_text
   mode    = "0600"
-  owner   = "root"
-  group   = "root"
+
+  content_wo         = local.config_toml_write_only ? var.config_toml_content : null
+  content_wo_version = var.config_toml_content_version
+  owner              = "root"
+  group              = "root"
 
   lifecycle {
     precondition {
