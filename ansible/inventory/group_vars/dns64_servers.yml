@@ -11,3 +11,6 @@ dns64_prefix: "3d06:bad:b01:6464::/96"
 
 # OPNsense forwards upstream queries to NextDNS over TLS.
 dns64_upstream_dns: "{{ service_mapping.opnsense.ipv6 }}"
+dns64_force_synth: true
+dns64_native_ipv6_prefixes:
+  - "3d06:bad:b01::/56"

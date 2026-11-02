@@ -1,26 +1,15 @@
 ---
-# Deploy bind9 with DNS64 synthesis on dns64 LXCs in either environment.
-# Container creation is owned by OpenTofu (opentofu/vault/ for prod,
-# opentofu/suburban/ for the testbed). This playbook runs after the LXC
-# is provisioned and reachable via SSH.
-#
-# Usage:
-#   # Production (vault):
-#   ./configsctl deploy deploy-dns64 --limit dns64_servers
-#
-#   # Suburban testbed:
-#   ./configsctl deploy deploy-dns64 --limit dns64_suburban_servers
-#
-#   # Both at once:
-#   ./configsctl deploy deploy-dns64 --limit dns64_all
+# Configure BIND DNS64 on the Suburban testbed.
+# OpenTofu manages the production resolver in vault/dns64.
+# Run ./configsctl deploy deploy-dns64 --limit dns64_suburban_servers.
 
 - name: Verify DNS64 guest preparation
   ansible.builtin.import_playbook: require-prepared-guests.yml
   vars:
-    target_hosts: dns64_servers:dns64_suburban_servers
+    target_hosts: dns64_suburban_servers
 
 - name: Configure DNS64 Service
-  hosts: dns64_servers:dns64_suburban_servers
+  hosts: dns64_suburban_servers
   become: true
   environment:
     DEBIAN_FRONTEND: noninteractive
