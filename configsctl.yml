@@ -203,6 +203,8 @@ tofu:
     opentofu/vault/dns64:
       module_hosts:
         module.vault: vault
+      guest_hosts:
+        vault/103: dns64.home.goodkind.io
     opentofu/vault/freebsd-dev:
       module_hosts:
         module.vault: vault
