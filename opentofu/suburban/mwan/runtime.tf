@@ -1,9 +1,3 @@
-# Gateway and failover MWAN runtime for the Suburban testbed.
-#
-# Each local below ports a value from the Ansible inventory that the Ansible
-# playbooks read today. The comment above each group lists the source file. Guest
-# identifiers and addresses come from the service mapping.
-
 locals {
   group_vars_directory = "${local.repository_root}/ansible/inventory/group_vars"
 
@@ -20,7 +14,6 @@ locals {
 
   gateway_macs = module.suburban.mwan_suburban_mac_addresses
 
-  # ansible/inventory/group_vars/all/vars.yml
   bgp_keepalive_seconds = 10
   bgp_hold_seconds      = 30
   status_push_port      = 50053
