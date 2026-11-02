@@ -22,7 +22,6 @@ locals {
   resolver_state_file   = "/var/lib/mwan/owned-resolver.json"
   pve_token_id          = "root@pam!watchdog"
 
-  # ansible/inventory/group_vars/testbed_routing_all/prefixes.yml
   routing_prefixes = yamldecode(file("${local.group_vars_directory}/testbed_routing_all/prefixes.yml"))
   home_prefix      = local.routing_prefixes.testbed_routing_home_prefix
 
@@ -30,8 +29,7 @@ locals {
   # plain values and does not decode template strings.
   suburban_vars   = yamldecode(file("${local.group_vars_directory}/mwan_suburban_servers.yml"))
   internal_prefix = local.suburban_vars.mwan_internal_prefix
-  # ansible/inventory/group_vars/mwan_failover_suburban_servers.yml
-  failover_vars = yamldecode(file("${local.group_vars_directory}/mwan_failover_suburban_servers.yml"))
+  failover_vars   = yamldecode(file("${local.group_vars_directory}/mwan_failover_suburban_servers.yml"))
 
   suburban_providers = {
     for provider in local.suburban_vars.mwan_providers : provider.name => provider
@@ -40,8 +38,8 @@ locals {
   # Link prefix sizes of the routed simulator network. Each size is the part
   # after the slash of mwan_routed_ipv4 and of the routed provider IPv6 address
   # in mwan_suburban_servers.yml.
-  routed_ipv4_prefix_size = tonumber(split("/", local.suburban_vars.mwan_routed_ipv4)[1])
-  routed_ipv6_prefix_size = tonumber(split("/", local.suburban_providers.routed.ipv6.address)[1])
+  routed_ipv4_prefix_size = tonumber(regex("^[^/]+/([0-9]+)$", local.suburban_vars.mwan_routed_ipv4)[0])
+  routed_ipv6_prefix_size = tonumber(regex("^[^/]+/([0-9]+)$", local.suburban_providers.routed.ipv6.address)[0])
 
   # Roles and units of the two guests.
   gateway_role     = "wan"
@@ -58,9 +56,6 @@ locals {
   alert_cooldown  = "5m"
 }
 
-# ansible/inventory/group_vars/mwan_suburban_servers.yml and
-# mwan/config/sysctl-mwan.conf.j2 supply the gateway sysctl values. The interface
-# names come from the same group variables.
 locals {
   internal_interface = "enmwanbr0"
   management_iface   = "enmgmt0"
@@ -97,7 +92,6 @@ locals {
     "net.ipv4.tcp_max_syn_backlog"                        = "8192"
   }
 
-  # mwan-failover/sysctl.conf
   failover_sysctl = {
     "net.ipv6.conf.all.forwarding" = "1"
     "net.ipv6.conf.eth0.accept_ra" = "2"
@@ -105,7 +99,6 @@ locals {
   }
 }
 
-# Provider constants from ansible/inventory/group_vars/mwan_suburban_servers.yml.
 locals {
   health_targets_v4 = ["1.1.1.1", "8.8.8.8"]
   health_targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
@@ -148,7 +141,6 @@ locals {
   static_sim   = local.service_mapping.routing_tunnel_static_vps_suburban
   astound_sim  = local.service_mapping.routing_astound_static_endpoint_suburban
 
-  # ansible/inventory/group_vars/testbed_routing_all/connections.yml
   mwan_sonic_1_ipv4 = local.gateway_map.routing_interfaces.sonic_1.ipv4
   mwan_sonic_2_ipv4 = local.gateway_map.routing_interfaces.sonic_2.ipv4
   mwan_etheric_ipv4 = local.gateway_map.routing_interfaces.etheric.ipv4
@@ -184,8 +176,6 @@ locals {
   }
 }
 
-# One entry per provider, in the order of mwan_providers. Each entry is the
-# object that mwan/config/network.json.j2 builds for that provider.
 locals {
   nptv6_translation_att = {
     mode = "ietf-nat:nptv6"
@@ -473,8 +463,6 @@ locals {
   }
 }
 
-# The BGP sessions and tunnels of the providers, ported from
-# ansible/inventory/group_vars/testbed_routing_all/scenario_*.yml.
 locals {
   etheric_remote_net  = local.routing_networks.etheric_native_remote.ipv6_net
   upstream_remote_net = local.routing_networks.tunnel_upstream_remote.ipv6_net
@@ -1094,9 +1082,9 @@ module "mwan_failover" {
   config_toml_content = local.failover_config
 }
 
-# Ansible wrote these files on the hosts before this root managed them. The
-# provider imports the file hash without rewriting the file. The import ID
-# is node/vmid/kind/absolute-path, and the absolute path starts with a slash.
+# The provider imports the hash of each existing file without rewriting the
+# file. The import ID is node/vmid/kind/absolute-path, and the absolute path
+# starts with a slash.
 import {
   to = module.mwan.pveguest_file.runtime_config
   id = "${local.guests["mwan_suburban"].node}/${local.guests["mwan_suburban"].vmid}/${local.guests["mwan_suburban"].kind}//etc/mwan/config.toml"
