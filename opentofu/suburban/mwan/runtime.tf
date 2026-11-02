@@ -34,7 +34,7 @@ locals {
   home_prefix      = local.routing_prefixes.testbed_routing_home_prefix
 
   # ansible/inventory/group_vars/mwan_suburban_servers.yml. The decoder reads the
-  # plain values and leaves the template strings unread.
+  # plain values and does not decode template strings.
   suburban_vars   = yamldecode(file("${local.group_vars_directory}/mwan_suburban_servers.yml"))
   internal_prefix = local.suburban_vars.mwan_internal_prefix
   # ansible/inventory/group_vars/mwan_failover_suburban_servers.yml
@@ -44,10 +44,11 @@ locals {
     for provider in local.suburban_vars.mwan_providers : provider.name => provider
   }
 
-  # Link prefix sizes of the routed simulator network, from mwan_routed_ipv4 and
-  # the routed provider entry in mwan_suburban_servers.yml.
-  routed_ipv4_prefix_size = 24
-  routed_ipv6_prefix_size = 64
+  # Link prefix sizes of the routed simulator network. Each size is the part
+  # after the slash of mwan_routed_ipv4 and of the routed provider IPv6 address
+  # in mwan_suburban_servers.yml.
+  routed_ipv4_prefix_size = tonumber(split("/", local.suburban_vars.mwan_routed_ipv4)[1])
+  routed_ipv6_prefix_size = tonumber(split("/", local.suburban_providers.routed.ipv6.address)[1])
 
   # Roles and units of the two guests.
   gateway_role     = "wan"
