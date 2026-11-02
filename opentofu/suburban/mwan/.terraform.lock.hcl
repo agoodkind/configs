@@ -76,9 +76,9 @@ provider "tofu.home.arpa/agoodkind/mwan" {
   version     = "0.1.1"
   constraints = ">= 0.1.0, 0.1.1"
   hashes = [
-    "h1:4EijqrkucsTO646GBvV4RGzj9v1+5m8OScSGMI+z8y0=",
-    "h1:JAhl5o5UOhL6LwwobacEbieGXQmXpCiOacPYGjAm0bY=",
-    "h1:SC5oqtbpqejXOEKWI1YZDLiGJpl7LuTBl/NLi2Vyahg=",
+    "h1:27tJjj2hjdCVEO4mXMJkqyFsO4tbPG7vIy3EewTUOvQ=",
+    "h1:mqDq3a0zaMQQGdrY/gJmtEAX6FF77m3bMXovUxyZfRU=",
+    "h1:rA3WXt/EnOaeiX0JNymfbNdZ7NVADrro78bvoG45jfE=",
   ]
 }
 
