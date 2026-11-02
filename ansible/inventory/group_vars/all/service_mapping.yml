@@ -215,6 +215,10 @@ service_mapping:
     # The Astound DHCP reservation and the gateway configuration read this
     # address.
     ipv4_astound: "10.240.207.2"
+    # The gateway addresses on the Webpass and routed simulator links.
+    ipv4_webpass: "10.241.204.2"
+    ipv4_routed: "10.240.208.2"
+    ipv6_routed: "3d06:bad:b01:260::2"
     routing_interfaces:
       sonic_1:
         network: sonic_1

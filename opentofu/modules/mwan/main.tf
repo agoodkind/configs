@@ -2,24 +2,100 @@ terraform {
   required_providers {
     pveguest = {
       source  = "tofu.home.arpa/agoodkind/pveguest"
-      version = "0.1.1"
+      version = ">= 0.1.1"
     }
     mwan = {
       source  = "tofu.home.arpa/agoodkind/mwan"
-      version = "0.1.0"
+      version = ">= 0.1.0"
     }
   }
 }
 
 variable "network_json_path" {
-  description = "The wan role requires this path to network.json, and other roles may omit it to skip WANCONFIG deployment."
+  description = "The wan role requires this path to network.json or network_json_content, and other roles may omit both to skip WANCONFIG deployment."
   type        = string
   default     = null
 }
 
-variable "config_toml_path" {
-  description = "The value is the path to the runtime configuration file the module writes to /etc/mwan/config.toml."
+variable "network_json_content" {
+  description = "The value is the network.json document text. A root sets this input or network_json_path, not both, and the wan role requires one of them. The document contains addresses and DHCP identifiers and no secrets. The input is not sensitive."
   type        = string
+  default     = null
+
+  validation {
+    condition     = var.network_json_content == null || var.network_json_path == null
+    error_message = "Set network_json_content or network_json_path, not both."
+  }
+
+  validation {
+    condition     = var.role != "wan" || var.network_json_content != null || var.network_json_path != null
+    error_message = "The wan role requires exactly one of network_json_content or network_json_path."
+  }
+}
+
+variable "config_toml_path" {
+  description = "The value is the path to the runtime configuration file the module writes to /etc/mwan/config.toml. A root sets exactly one of this input, config_toml_content, or config_toml_secret_content."
+  type        = string
+  default     = null
+}
+
+variable "config_toml_content" {
+  description = "The value is the runtime configuration text the module writes to /etc/mwan/config.toml. The text contains no secrets. A root sets exactly one of this input, config_toml_path, or config_toml_secret_content."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.config_toml_content == null || var.config_toml_path == null
+    error_message = "Set config_toml_content or config_toml_path, not both."
+  }
+}
+
+variable "config_toml_secret_content" {
+  description = "The value is the runtime configuration text, with secrets, that the module writes to /etc/mwan/config.toml through the write-only content_wo attribute. OpenTofu keeps the text out of plans and state. A root sets exactly one of this input, config_toml_path, or config_toml_content, and sets config_toml_content_version with this input."
+  type        = string
+  default     = null
+  sensitive   = true
+  ephemeral   = true
+
+  validation {
+    condition = length([
+      for source in [var.config_toml_path, var.config_toml_content, var.config_toml_secret_content] : source if source != null
+    ]) == 1
+    error_message = "Set exactly one of config_toml_path, config_toml_content, or config_toml_secret_content."
+  }
+
+  validation {
+    condition     = (var.config_toml_secret_content == null) == (var.config_toml_content_version == null)
+    error_message = "Set config_toml_content_version with config_toml_secret_content and not otherwise."
+  }
+}
+
+variable "config_toml_content_version" {
+  description = "A changed value writes config_toml_secret_content to the guest again. A root sets this input only with config_toml_secret_content."
+  type        = number
+  default     = null
+}
+
+variable "config_toml_mode" {
+  description = "The value is the four-digit octal permission mode of /etc/mwan/config.toml."
+  type        = string
+  default     = "0600"
+
+  validation {
+    condition     = can(regex("^[0-7]{4}$", var.config_toml_mode))
+    error_message = "The config_toml_mode input must be four octal digits, for example 0600."
+  }
+}
+
+variable "network_json_mode" {
+  description = "The value is the four-digit octal permission mode of /etc/mwan/network.json."
+  type        = string
+  default     = "0644"
+
+  validation {
+    condition     = can(regex("^[0-7]{4}$", var.network_json_mode))
+    error_message = "The network_json_mode input must be four octal digits, for example 0600."
+  }
 }
 
 variable "kind" {
@@ -91,7 +167,15 @@ data "mwan_role" "this" {
 
 locals {
   stack_dir   = "/var/cache/mwan/stack"
-  has_network = var.network_json_path != null
+  has_network = var.network_json_path != null || var.network_json_content != null
+
+  network_json_text = var.network_json_content != null ? var.network_json_content : (
+    var.network_json_path != null ? file(var.network_json_path) : null
+  )
+  config_toml_write_only = var.config_toml_content_version != null
+  config_toml_text = local.config_toml_write_only ? null : (
+    var.config_toml_content != null ? var.config_toml_content : file(var.config_toml_path)
+  )
 
   architecture = data.mwan_release.this.architectures[var.architecture]
 
@@ -190,7 +274,7 @@ locals {
 data "mwan_network" "gateway" {
   count = local.has_network ? 1 : 0
 
-  content = file(var.network_json_path)
+  content = local.network_json_text
 }
 
 resource "terraform_data" "gateway_host" {
@@ -505,6 +589,7 @@ resource "pveguest_file" "network" {
 
   path    = "/etc/mwan/network.json"
   content = data.mwan_network.gateway[0].canonical_content
+  mode    = var.network_json_mode
 
   validate = "/usr/local/bin/mwan deploy-gate check-network %s /usr/local/share/wanconfig/yang && /usr/local/bin/mwan deploy-gate check-firewall %s /usr/local/share/wanconfig/yang"
 
@@ -544,15 +629,18 @@ resource "pveguest_file" "runtime_config" {
   kind = var.kind
 
   path    = "/etc/mwan/config.toml"
-  content = file(var.config_toml_path)
-  mode    = "0600"
-  owner   = "root"
-  group   = "root"
+  content = local.config_toml_text
+  mode    = var.config_toml_mode
+
+  content_wo         = var.config_toml_secret_content
+  content_wo_version = var.config_toml_content_version
+  owner              = "root"
+  group              = "root"
 
   lifecycle {
     precondition {
       condition     = var.role != "wan" || local.has_network
-      error_message = "The wan role requires network_json_path."
+      error_message = "The wan role requires network_json_path or network_json_content."
     }
 
     precondition {
