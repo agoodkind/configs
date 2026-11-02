@@ -1,7 +1,7 @@
 ---
 # Configure BIND DNS64 on the Suburban testbed.
-# OpenTofu manages the production resolver in vault/dns64.
 # Run ./configsctl deploy deploy-dns64 --limit dns64_suburban_servers.
+# Deploy production with ./configsctl tofu vault/dns64 apply.
 
 - name: Verify DNS64 guest preparation
   ansible.builtin.import_playbook: require-prepared-guests.yml
