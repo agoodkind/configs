@@ -18,13 +18,18 @@ variable "network_json_path" {
 }
 
 variable "network_json_content" {
-  description = "The value is the network.json document text. A root sets this input or network_json_path, not both."
+  description = "The value is the network.json document text. A root sets this input or network_json_path, not both, and the wan role requires one of them. The document contains addresses and DHCP identifiers and no secrets. The input is not sensitive."
   type        = string
   default     = null
 
   validation {
     condition     = var.network_json_content == null || var.network_json_path == null
     error_message = "Set network_json_content or network_json_path, not both."
+  }
+
+  validation {
+    condition     = var.role != "wan" || var.network_json_content != null || var.network_json_path != null
+    error_message = "The wan role requires exactly one of network_json_content or network_json_path."
   }
 }
 
@@ -598,7 +603,7 @@ resource "pveguest_file" "runtime_config" {
   lifecycle {
     precondition {
       condition     = var.role != "wan" || local.has_network
-      error_message = "The wan role requires network_json_path."
+      error_message = "The wan role requires network_json_path or network_json_content."
     }
 
     precondition {
