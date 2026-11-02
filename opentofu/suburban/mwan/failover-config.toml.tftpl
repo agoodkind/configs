@@ -1,6 +1,9 @@
 hostname = "${c.hostname}"
 
-# SMTP2GO_API_KEY comes from /etc/mwan/secrets.env via systemd EnvironmentFile.
+# The daemon reads the SMTP2GO key from the SMTP2GO_API_KEY environment variable.
+# The mwan-agent and mwan-ifmgr units load it with
+# EnvironmentFile=-/etc/mwan/secrets.env. The Ansible failover playbook writes
+# that file.
 [email]
 alert_email = "${c.email_recipient}"
 from = "${c.email_from}"
