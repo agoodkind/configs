@@ -156,43 +156,43 @@ resource "proxmox_virtual_environment_vm" "mwan_suburban" {
   network_device {
     bridge      = var.host_networks.trunk_suburban
     model       = "virtio"
-    mac_address = "BC:24:11:B3:9E:46"
+    mac_address = local.mwan_suburban_mac_addresses.management
   }
 
   network_device {
     bridge      = var.host_networks.mwan_suburban
     model       = "virtio"
-    mac_address = "BC:24:11:49:5D:94"
+    mac_address = local.mwan_suburban_mac_addresses.internal
   }
 
   network_device {
     bridge      = var.host_networks.isp_webpass_suburban
     model       = "virtio"
-    mac_address = "BC:24:11:BE:8E:B4"
+    mac_address = local.mwan_suburban_mac_addresses.webpass
   }
 
   network_device {
     bridge      = var.host_networks.isp_att_suburban
     model       = "virtio"
-    mac_address = "BC:24:11:C0:D7:60"
+    mac_address = local.mwan_suburban_mac_addresses.att
   }
 
   network_device {
     bridge      = var.host_networks.isp_mbrains_suburban
     model       = "virtio"
-    mac_address = "BC:24:11:3D:CE:CC"
+    mac_address = local.mwan_suburban_mac_addresses.monkeybrains
   }
 
   network_device {
     bridge      = var.host_networks.isp_astound_suburban
     model       = "virtio"
-    mac_address = "BC:24:11:A5:70:06"
+    mac_address = local.mwan_suburban_mac_addresses.astound
   }
 
   network_device {
     bridge      = var.host_networks.isp_routed_suburban
     model       = "virtio"
-    mac_address = "BC:24:11:A5:70:08"
+    mac_address = local.mwan_suburban_mac_addresses.routed
   }
 
   # Proxmox numbers these devices in key order after the seven devices above.
@@ -223,6 +223,20 @@ resource "proxmox_virtual_environment_vm" "mwan_suburban" {
 
 locals { routing_bridge_names = var.host_networks }
 
+# The MWAN VM keeps these addresses for the non-routing network devices. The
+# gateway network document matches each link by the same address.
+locals {
+  mwan_suburban_mac_addresses = {
+    management   = "BC:24:11:B3:9E:46"
+    internal     = "BC:24:11:49:5D:94"
+    webpass      = "BC:24:11:BE:8E:B4"
+    att          = "BC:24:11:C0:D7:60"
+    monkeybrains = "BC:24:11:3D:CE:CC"
+    astound      = "BC:24:11:A5:70:06"
+    routed       = "BC:24:11:A5:70:08"
+  }
+}
+
 variable "service_mapping" { type = any }
 
 variable "ssh_keys" { type = string }
@@ -239,6 +253,11 @@ terraform {
 
     }
   }
+}
+
+output "mwan_suburban_mac_addresses" {
+  description = "MAC addresses of the suburban MWAN VM network devices, keyed by link role."
+  value       = local.mwan_suburban_mac_addresses
 }
 
 output "mwan_suburban_vmid" {

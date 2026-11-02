@@ -1,0 +1,82 @@
+hostname = "${c.hostname}"
+
+# SMTP2GO_API_KEY comes from /etc/mwan/secrets.env via systemd EnvironmentFile.
+[email]
+alert_email = "${c.email_recipient}"
+from = "${c.email_from}"
+subject_prefix = "${c.email_subject_prefix}"
+bind_iface = "${c.email_bind_iface}"
+min_level = "${c.email_min_level}"
+cooldown = "${c.email_cooldown}"
+
+[agent]
+vsock_port = 0
+tcp_addr = "[::]:50052"
+deploy_file = "/var/lib/mwan/last-deploy"
+deploy_expected = true
+log_file = "/var/log/mwan-agent.log"
+debug = false
+
+[bgp]
+enabled = true
+use_wanconfig = false
+asn = ${c.bgp_asn}
+router_id = "${c.bgp_router_id}"
+next_hop_v6 = "${c.bgp_next_hop_v6}"
+keepalive_seconds = ${c.bgp_keepalive_seconds}
+hold_seconds = ${c.bgp_hold_seconds}
+listen_port = ${c.bgp_listen_port}
+learned_route_iface = "${c.bgp_learned_route_iface}"
+dynamic_neighbors = ${jsonencode(c.bgp_dynamic_neighbors)}
+
+%{ for neighbor in c.bgp_neighbors ~}
+[[bgp.neighbors]]
+address = "${neighbor}"
+
+%{ endfor ~}
+%{ for neighbor in c.bgp_neighbors_v6 ~}
+[[bgp.neighbors_v6]]
+address = "${neighbor}"
+
+%{ endfor ~}
+[bgp.announce]
+ipv4 = ${jsonencode(c.bgp_announce_ipv4)}
+ipv6 = ${jsonencode(c.bgp_announce_ipv6)}
+
+[bgp.graceful_restart]
+enabled = ${c.bgp_graceful_restart_enabled}
+restart_time = ${c.bgp_graceful_restart_time_seconds}
+notification_enabled = ${c.bgp_graceful_restart_notification_enabled}
+
+[ifmgr]
+role = "failover"
+reconcile_interval = "60s"
+log_file = "/var/log/mwan-ifmgr.log"
+json_log_file = "/var/log/mwan-ifmgr.jsonl"
+
+[ifmgr.iface.eth0]
+name = "eth0"
+dhcp_v4 = false
+ra_solicit = true
+
+[ifmgr.modules.slaac_health]
+iface = "eth0"
+degraded_after = "30s"
+escalate_after = "90s"
+alert_after = "300s"
+max_toggles_per_hour = 4
+probe_targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+
+[ifmgr.modules.bridge_probe]
+iface = "eth0"
+no_signal_alert_after = "120s"
+
+[ifmgr.modules.connectivity_probe]
+iface = "eth0"
+targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
+timeout = "2s"
+unhealthy_after = "10s"
+
+[ifmgr.modules.ra_lost]
+iface = "eth0"
+ra_lost_alert_after = "5m"
