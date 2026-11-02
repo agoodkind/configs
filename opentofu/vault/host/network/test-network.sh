@@ -119,7 +119,7 @@ wait_for_http() {
     local address="$2"
     local port="$3"
     local attempt
-    for ((attempt = 1; attempt <= 20; attempt++)); do
+    for ((attempt = 1; attempt <= HTTP_START_ATTEMPTS; attempt++)); do
         if ip netns exec "$namespace" curl --noproxy '*' --fail --silent --show-error \
             --connect-timeout 1 --max-time 2 --output "$WORK_DIRECTORY/ready-response" \
             "http://$address:$port/before-v4"; then
@@ -189,6 +189,8 @@ readonly UPSTREAM_GATEWAY="192.0.2.1"
 readonly UPSTREAM_SERVICE="203.0.113.10"
 readonly UPSTREAM_PORT=18080
 readonly GUEST_PORT=18081
+readonly OOB_PORT=18082
+readonly HTTP_START_ATTEMPTS=60
 
 WORK_DIRECTORY_CREATED=false
 TUN_CREATED=false
@@ -207,8 +209,11 @@ trap 'exit 143' TERM
 main() {
     local required_file dependency request_path config_line directive value
     local service_line namespace port service_command
+    local uplink_key uplink_value
+    local oob_address=""
+    local oob_host
 
-    for required_file in guest-network.nft tayga.conf tayga.service forwarding.conf; do
+    for required_file in guest-network.nft tayga.conf tayga.service forwarding.conf uplink.network; do
         if [[ ! -r "$CONFIG_DIRECTORY/$required_file" ]]; then
             fail "The production input is missing or unreadable: $CONFIG_DIRECTORY/$required_file"
         fi
@@ -249,6 +254,16 @@ main() {
         fail 'The production configuration must provide a compressed /96 NAT64 prefix for this test vector.'
     fi
     readonly NAT64_DESTINATION="${NAT64_PREFIX%/96}cb00:710a"
+
+    while IFS='=' read -r uplink_key uplink_value; do
+        if [[ "$uplink_key" == "Address" ]]; then
+            oob_address="$uplink_value"
+        fi
+    done <"$CONFIG_DIRECTORY/uplink.network"
+    if [[ -z "$oob_address" ]]; then
+        fail 'The production uplink configuration must declare the OOB IPv6 address.'
+    fi
+    oob_host="${oob_address%/*}"
 
     while IFS= read -r service_line; do
         case "$service_line" in
@@ -295,7 +310,9 @@ main() {
     ip -n "$UPSTREAM_NAMESPACE" address add "$UPSTREAM_GATEWAY/24" dev eth0
     ip -n "$UPSTREAM_NAMESPACE" address add "$UPSTREAM_SERVICE/32" dev lo
     ip -n "$UPSTREAM_NAMESPACE" link set eth0 up
+    ip netns exec "$ROUTER_NAMESPACE" sysctl -w net.ipv6.conf.mbrains.disable_ipv6=1
     ip netns exec "$ROUTER_NAMESPACE" sysctl --load "$CONFIG_DIRECTORY/forwarding.conf"
+    ip -n "$ROUTER_NAMESPACE" -6 address add "$oob_address" dev mbrains nodad
 
     for service_command in "${SERVICE_PRE_COMMANDS[@]}"; do
         prepare_service_command "$service_command"
@@ -312,8 +329,13 @@ main() {
     ip netns exec "$GUEST4_NAMESPACE" python3 -m http.server "$GUEST_PORT" \
         --bind 0.0.0.0 --directory "$WORK_DIRECTORY/http" >"$WORK_DIRECTORY/guest4.log" 2>&1 &
     PROCESS_IDS+=("$!")
+    ip netns exec "$ROUTER_NAMESPACE" python3 -m http.server "$OOB_PORT" \
+        --bind "$oob_host" --directory "$WORK_DIRECTORY/http" >"$WORK_DIRECTORY/oob.log" 2>&1 &
+    PROCESS_IDS+=("$!")
     wait_for_http "$UPSTREAM_NAMESPACE" "$UPSTREAM_SERVICE" "$UPSTREAM_PORT"
     wait_for_http "$ROUTER_NAMESPACE" "$GUEST_IPV4" "$GUEST_PORT"
+    wait_for_http "$GUEST6_NAMESPACE" "[$oob_host]" "$OOB_PORT"
+    printf 'PASS: The production OOB IPv6 address accepted HTTP after IPv6 recovery.\n'
 
     probe_outbound "$GUEST6_NAMESPACE" -6 "[$NAT64_DESTINATION]" before-v6 "$UPLINK_BEFORE"
     probe_outbound "$GUEST4_NAMESPACE" -4 "$UPSTREAM_SERVICE" before-v4 "$UPLINK_BEFORE"

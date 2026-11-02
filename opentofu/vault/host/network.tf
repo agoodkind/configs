@@ -1,5 +1,9 @@
 locals {
   guest_network_files = {
+    private_tunnel_unit = {
+      path   = "/etc/systemd/system/cloudflared.service"
+      source = "cloudflared.service"
+    }
     bridge = {
       path   = "/etc/network/interfaces.d/mbrains"
       source = "mbrains"
@@ -32,6 +36,8 @@ locals {
 }
 
 resource "terraform_data" "guest_network_packages" {
+  triggers_replace = [filesha256("${path.module}/network/install-packages.sh")]
+
   connection {
     type  = "ssh"
     host  = local.overlay_hosts.vault.ssh_host
@@ -40,7 +46,7 @@ resource "terraform_data" "guest_network_packages" {
   }
 
   provisioner "remote-exec" {
-    inline = ["apt-get install --yes tayga nftables"]
+    script = "${path.module}/network/install-packages.sh"
   }
 }
 
@@ -63,6 +69,7 @@ resource "remote_file" "guest_network" {
 # Stop the previous DHCP owner before systemd-networkd requests a lease.
 resource "terraform_data" "guest_network_activate" {
   triggers_replace = concat([
+    terraform_data.guest_network_packages.id,
     module.overlay["vault"].network_interfaces_sha256,
     filesha256("${path.module}/network/activate.sh"),
     ], [
