@@ -67,15 +67,15 @@ mwan_ifmgr_cloudflared_oob_user: "cloudflared-oob"
 # secret in credentials.json comes from vault_cloudflared_oob_credentials_json.
 cloudflared_oob_enabled: true
 cloudflared_oob_tunnel_id: "88f11d0d-6148-4670-891d-72c0286ca48d"
-cloudflared_oob_edge_ip_version: "6"
+cloudflared_oob_edge_ip_version: "auto"
 cloudflared_oob_warp_routing_enabled: true
 cloudflared_oob_ingress:
   - hostname: "vault-oob.goodkind.io"
-    service: "ssh://localhost:22022"
+    service: "ssh://[{{ mwan_ifmgr_policy_from_v6 }}]:22022"
   - service: "http_status:404"
-cloudflared_oob_nextdns_resolvers:
-  - "2a07:a8c0::7d:698e"
-  - "2a07:a8c1::7d:698e"
+cloudflared_oob_dns_resolvers:
+  - "1.1.1.1"
+  - "1.0.0.1"
 
 # Tack guest disk reclamation (TACK-498). Vault runs the production tack
 # guests, whose nightly export and restore drill leave tens of gigabytes
