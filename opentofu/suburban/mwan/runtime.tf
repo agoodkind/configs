@@ -1,7 +1,6 @@
 locals {
   group_vars_directory = "${local.repository_root}/ansible/inventory/group_vars"
 
-  # ansible/inventory/group_vars/mwan_testbed_all.yml pins the release.
   testbed_release = yamldecode(file("${local.group_vars_directory}/mwan_testbed_all.yml"))
   mwan_release    = local.testbed_release.mwan_release_tag
   mwan_arch       = "amd64"
@@ -25,8 +24,7 @@ locals {
   routing_prefixes = yamldecode(file("${local.group_vars_directory}/testbed_routing_all/prefixes.yml"))
   home_prefix      = local.routing_prefixes.testbed_routing_home_prefix
 
-  # ansible/inventory/group_vars/mwan_suburban_servers.yml. The decoder reads the
-  # plain values and does not decode template strings.
+  # The decoder reads plain values and does not decode template strings.
   suburban_vars   = yamldecode(file("${local.group_vars_directory}/mwan_suburban_servers.yml"))
   internal_prefix = local.suburban_vars.mwan_internal_prefix
   failover_vars   = yamldecode(file("${local.group_vars_directory}/mwan_failover_suburban_servers.yml"))
@@ -35,13 +33,9 @@ locals {
     for provider in local.suburban_vars.mwan_providers : provider.name => provider
   }
 
-  # Link prefix sizes of the routed simulator network. Each size is the part
-  # after the slash of mwan_routed_ipv4 and of the routed provider IPv6 address
-  # in mwan_suburban_servers.yml.
   routed_ipv4_prefix_size = tonumber(regex("^[^/]+/([0-9]+)$", local.suburban_vars.mwan_routed_ipv4)[0])
   routed_ipv6_prefix_size = tonumber(regex("^[^/]+/([0-9]+)$", local.suburban_providers.routed.ipv6.address)[0])
 
-  # Roles and units of the two guests.
   gateway_role     = "wan"
   failover_role    = "failover"
   excluded_units   = toset([])
@@ -114,8 +108,6 @@ locals {
     cidrhost(local.router_map.transit_v4_net, 6),
   ]
 
-  # The external addresses come from the static mappings of the provider
-  # entries in mwan_suburban_servers.yml.
   att_mappings = [
     for index, host in local.static_internal_hosts : {
       external = local.suburban_providers.att.ipv4.translation.static_mappings[index].external
@@ -165,7 +157,6 @@ locals {
     "http-urls"          = local.health_http_urls
   }
 
-  # The tunnel and underlay providers share this health shape. The targets differ.
   link_health = {
     enabled              = true
     "ping-count"         = 3
@@ -824,7 +815,6 @@ locals {
   }
 }
 
-# Links the daemon owns that are not providers.
 locals {
   internal_connection = {
     name                                   = local.internal_interface
@@ -928,8 +918,6 @@ locals {
   gateway_network_json = jsonencode(local.network_document)
 }
 
-# Runtime configuration text of the gateway and the failover. The gateway text
-# contains secrets. The module writes it through the write-only attribute.
 locals {
   gateway_config_values = {
     hostname                = "suburban-testbed"
@@ -1082,9 +1070,8 @@ module "mwan_failover" {
   config_toml_content = local.failover_config
 }
 
-# The provider imports the hash of each existing file without rewriting the
-# file. The import ID is node/vmid/kind/absolute-path, and the absolute path
-# starts with a slash.
+# The absolute path after the kind starts with a slash. Each import ID has two
+# consecutive slashes before "etc".
 import {
   to = module.mwan.pveguest_file.runtime_config
   id = "${local.guests["mwan_suburban"].node}/${local.guests["mwan_suburban"].vmid}/${local.guests["mwan_suburban"].kind}//etc/mwan/config.toml"
