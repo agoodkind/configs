@@ -1,0 +1,15 @@
+[Unit]
+Description=Ensure LAN SR-IOV VF exists with correct MAC
+DefaultDependencies=no
+After=systemd-udev-trigger.service
+Before=network-pre.target pve-guests.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sriov-vf-lan.sh
+ExecStartPost=/usr/sbin/ip link set dev enp2s0f1np1 up
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

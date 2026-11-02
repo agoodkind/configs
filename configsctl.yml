@@ -207,6 +207,8 @@ tofu:
         proxmox_acme_account.vault: vault
         proxmox_acme_certificate.vault: vault
         proxmox_acme_dns_plugin.vault: vault
+        remote_file.vault_lan_sriov: vault
+        terraform_data.vault_lan_sriov_reload: vault
     opentofu/vault/mc:
       module_hosts:
         module.vault: vault
