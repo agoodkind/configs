@@ -17,4 +17,3 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_route" "home_guests" {
   virtual_network_id = "8a034fb6-d06e-4c08-a567-7860e351635e"
   comment            = "Home VMNET IPv6"
 }
-

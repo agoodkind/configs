@@ -15,4 +15,3 @@ output "beacon_sockaddr" {
   description = "Host and port the client probes to detect the Berylax LAN."
   value       = cloudflare_zero_trust_device_managed_networks.berylax_lan.config.tls_sockaddr
 }
-

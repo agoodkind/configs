@@ -40,23 +40,23 @@ systemctl daemon-reload
 nft --check --file /etc/vault-guest-network.nft
 systemd-analyze verify /etc/systemd/system/tayga.service /etc/systemd/system/vault-guest-network.service
 stop_legacy_networking() {
-	local legacy_unit
-	local load_state
-	for legacy_unit in mwan-ifmgr.service mwan-watchdog.service; do
-		load_state=$(systemctl show --property=LoadState --value "$legacy_unit")
-		# Retirement removes these unit files.
-		if [[ "$load_state" == "not-found" ]]; then
-			continue
-		fi
-		systemctl disable --now "$legacy_unit"
-		if [[ "$legacy_unit" == "mwan-ifmgr.service" ]]; then
-			# The former interface manager installed these routing rules.
-			ip -4 rule flush priority 5
-			ip -4 rule flush priority 6
-			ip -6 rule flush priority 5
-			ip -6 rule flush priority 6
-		fi
-	done
+    local legacy_unit
+    local load_state
+    for legacy_unit in mwan-ifmgr.service mwan-watchdog.service; do
+        load_state=$(systemctl show --property=LoadState --value "$legacy_unit")
+        # Retirement removes these unit files.
+        if [[ "$load_state" == "not-found" ]]; then
+            continue
+        fi
+        systemctl disable --now "$legacy_unit"
+        if [[ "$legacy_unit" == "mwan-ifmgr.service" ]]; then
+            # The former interface manager installed these routing rules.
+            ip -4 rule flush priority 5
+            ip -4 rule flush priority 6
+            ip -6 rule flush priority 5
+            ip -6 rule flush priority 6
+        fi
+    done
 }
 stop_legacy_networking
 ifreload --all
