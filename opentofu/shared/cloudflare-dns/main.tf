@@ -44,22 +44,6 @@ locals {
       proxied = false
       comment = "proxy"
     }
-    "goodkind.io/A/att-1335.goodkind.io/ae3d1c1d" = {
-      zone    = "goodkind.io"
-      name    = "att-1335.goodkind.io"
-      type    = "A"
-      content = "104.57.226.193"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/A/att4-1335.goodkind.io/18f8e10d" = {
-      zone    = "goodkind.io"
-      name    = "att4-1335.goodkind.io"
-      type    = "A"
-      content = "104.57.226.193"
-      ttl     = 1
-      proxied = false
-    }
     "goodkind.io/A/berylax.goodkind.io/96acbe4b" = {
       zone    = "goodkind.io"
       name    = "berylax.goodkind.io"
@@ -124,35 +108,11 @@ locals {
       ttl     = 1
       proxied = false
     }
-    "goodkind.io/A/webpass-1335.goodkind.io/81d345af" = {
-      zone    = "goodkind.io"
-      name    = "webpass-1335.goodkind.io"
-      type    = "A"
-      content = "136.25.91.242"
-      ttl     = 1
-      proxied = false
-    }
     "goodkind.io/AAAA/*.home.goodkind.io/9b9c74a5" = {
       zone    = "goodkind.io"
       name    = "*.home.goodkind.io"
       type    = "AAAA"
       content = "3d06:bad:b01::110"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/att-1335.goodkind.io/faea80b5" = {
-      zone    = "goodkind.io"
-      name    = "att-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2600:1700:2f71:c80::1"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/att6-1335.goodkind.io/069a23bb" = {
-      zone    = "goodkind.io"
-      name    = "att6-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2600:1700:2f71:c80::1"
       ttl     = 1
       proxied = false
     }
@@ -185,14 +145,6 @@ locals {
       name    = "hypervisor.suburban.goodkind.io"
       type    = "AAAA"
       content = "3d06:bad:b01:200::1"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/mbrains6-1335.goodkind.io/dcd978bc" = {
-      zone    = "goodkind.io"
-      name    = "mbrains6-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2607:f598:d3e8:3100::1"
       ttl     = 1
       proxied = false
     }
@@ -243,33 +195,6 @@ locals {
       content = "2607:f598:d3e0:131:8234:28ff:fe66:5ed7"
       ttl     = 1
       proxied = false
-    }
-    "goodkind.io/AAAA/webpass-1335.goodkind.io/ad6aa736" = {
-      zone    = "goodkind.io"
-      name    = "webpass-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2604:5500:c271:be00::1"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/webpass6-1335.goodkind.io/01dc891f" = {
-      zone    = "goodkind.io"
-      name    = "webpass6-1335.goodkind.io"
-      type    = "AAAA"
-      content = "2604:5500:c271:be00::1"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/CNAME/1335-sf.goodkind.io/a6e1c729" = {
-      zone    = "goodkind.io"
-      name    = "1335-sf.goodkind.io"
-      type    = "CNAME"
-      content = "lb-home.goodkind.io"
-      ttl     = 1
-      proxied = false
-      settings = {
-        flatten_cname = false
-      }
     }
     "goodkind.io/CNAME/66868087.goodkind.io/b29cef2e" = {
       zone    = "goodkind.io"
@@ -377,17 +302,6 @@ locals {
       content = "goodkind-io.pages.dev"
       ttl     = 1
       proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
-    "goodkind.io/CNAME/home.goodkind.io/da2d9a8d" = {
-      zone    = "goodkind.io"
-      name    = "home.goodkind.io"
-      type    = "CNAME"
-      content = "lb-home.goodkind.io"
-      ttl     = 1
-      proxied = false
       settings = {
         flatten_cname = false
       }
