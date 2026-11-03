@@ -66,23 +66,28 @@ resource "remote_file" "guest_network" {
   depends_on = [terraform_data.guest_network_packages]
 }
 
-# Stop the previous DHCP owner before systemd-networkd requests a lease.
-# activate.sh defines the complete runtime activation sequence.
-resource "terraform_data" "guest_network_activate" {
-  triggers_replace = concat([
+locals {
+  guest_network_activation_revision = sha256(jsonencode(concat([
     terraform_data.guest_network_packages.id,
     module.overlay["vault"].network_interfaces_sha256,
     filesha256("${path.module}/network/activate.sh"),
     ], [
     for name in sort(keys(remote_file.guest_network)) :
     sha256(remote_file.guest_network[name].content)
-  ])
+  ])))
+}
+
+# Stop the previous DHCP owner before systemd-networkd requests a lease.
+# activate.sh defines the complete runtime activation sequence.
+resource "terraform_data" "guest_network_activate" {
+  triggers_replace = [local.guest_network_activation_revision]
 
   connection {
-    type  = "ssh"
-    host  = local.overlay_hosts.vault.ssh_host
-    user  = "root"
-    agent = true
+    type        = "ssh"
+    host        = local.overlay_hosts.vault.ssh_host
+    user        = "root"
+    agent       = true
+    script_path = "/tmp/vault-network-${local.guest_network_activation_revision}.sh"
   }
 
   provisioner "remote-exec" {
