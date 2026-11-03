@@ -31,8 +31,6 @@
   register: package_updater_timer
 
 - name: Enable package-updater timer
-  # Under --check the timer file is not written, and systemd fails on a
-  # missing unit.
   when: not (ansible_check_mode and package_updater_timer.changed)
   ansible.builtin.systemd:
     name: package-updater.timer
