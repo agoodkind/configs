@@ -6,6 +6,7 @@ Reads service_mapping from group_vars/all/service_mapping.yml and creates:
   - A group named {service}_servers containing that host
   - Host vars: ansible_host (IPv6), service_ipv4 (if defined), service_vmid
     (if the entry defines vmid)
+  - Proxmox node, VMID, and guest kind for entries with proxmox_node
   - Optional parent groups declared under top-level `group_children`. A child
     may be a group this plugin creates or a group another inventory source
     declares, such as the hypervisor groups in the static hosts file. All
@@ -137,6 +138,28 @@ class InventoryModule(BaseInventoryPlugin):
             if service_data.get("inventory", True) is False:
                 continue
 
+            if "proxmox_node" in service_data:
+                node = service_data["proxmox_node"]
+                if not isinstance(node, str) or not node.strip():
+                    raise AnsibleParserError(
+                        f"Service '{service_name}' requires a nonempty proxmox_node"
+                    )
+                if not hostname or not ipv6:
+                    raise AnsibleParserError(
+                        f"Service '{service_name}' with proxmox_node requires "
+                        "hostname and ipv6"
+                    )
+                if isinstance(vmid, bool) or not isinstance(vmid, int) or vmid <= 0:
+                    raise AnsibleParserError(
+                        f"Service '{service_name}' with proxmox_node requires "
+                        "a positive integer vmid"
+                    )
+                if service_data.get("kind") not in ("lxc", "qemu"):
+                    raise AnsibleParserError(
+                        f"Service '{service_name}' with proxmox_node requires "
+                        "kind: lxc or kind: qemu"
+                    )
+
             if not hostname:
                 self.display.warning(
                     f"Service '{service_name}' has no hostname, skipping"
@@ -169,6 +192,13 @@ class InventoryModule(BaseInventoryPlugin):
 
             if vmid is not None:
                 self.inventory.set_variable(hostname, "service_vmid", int(vmid))
+
+            if "proxmox_node" in service_data:
+                self.inventory.set_variable(
+                    hostname, "ansible_proxmox_host", service_data["proxmox_node"]
+                )
+                self.inventory.set_variable(hostname, "ansible_proxmox_vmid", vmid)
+                self.inventory.set_variable(hostname, "proxmox_vmtype", service_data["kind"])
 
             # Add to all_services group
             if create_all_group:

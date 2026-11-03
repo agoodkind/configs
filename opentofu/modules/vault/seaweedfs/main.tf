@@ -8,7 +8,10 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
   vm_id     = local.service_mapping.seaweedfs.vmid
 
   initialization {
-    hostname = "seaweedfs.home.goodkind.io"
+    hostname = split(".", local.service_mapping.seaweedfs.hostname)[0]
+    dns {
+      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.seaweedfs.hostname)[0]
+    }
     ip_config {
       ipv6 {
         address = "3d06:bad:b01::118/64"

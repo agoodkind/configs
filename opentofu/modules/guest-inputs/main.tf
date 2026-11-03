@@ -32,6 +32,7 @@ locals {
   # fail.
   site_nodes = {
     home     = "vault"
+    vault    = "vault"
     suburban = "suburban"
   }
 
@@ -120,10 +121,16 @@ locals {
 
   mail_relays = {
     for name in local.mail_relay_guests : name => {
-      username = "host-${trim(replace(lower(local.service_mapping[name].hostname), "/[^a-z0-9]+/", "-"), "-")}"
-      host     = local.shared_vars.smtp_host
-      port     = tonumber(local.shared_vars.smtp_port)
-      from     = "${split(".", local.service_mapping[name].hostname)[0]}@${local.shared_vars.smtp_from_domain}"
+      username = try(
+        local.service_mapping[name].mail_username,
+        "host-${trim(replace(lower(local.service_mapping[name].hostname), "/[^a-z0-9]+/", "-"), "-")}",
+      )
+      host = local.shared_vars.smtp_host
+      port = tonumber(local.shared_vars.smtp_port)
+      from = try(
+        local.service_mapping[name].mail_from,
+        "${split(".", local.service_mapping[name].hostname)[0]}@${local.shared_vars.smtp_from_domain}",
+      )
       password_version = try(
         local.service_mapping[name].mail_password_version,
         local.default_mail_password_version,

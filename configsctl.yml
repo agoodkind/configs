@@ -238,4 +238,5 @@ deploy:
   # names in ansible_proxmox_host.
   absent_guest_nodes:
     home: vault
+    vault: vault
     suburban: hypervisor
