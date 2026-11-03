@@ -214,7 +214,14 @@ tofu:
         proxmox_acme_account.vault: vault
         proxmox_acme_certificate.vault: vault
         proxmox_acme_dns_plugin.vault: vault
-        remote_file.guest_network: vault
+        remote_file.guest_network["bridge"]: vault
+        remote_file.guest_network["firewall"]: vault
+        remote_file.guest_network["firewall_unit"]: vault
+        remote_file.guest_network["forwarding"]: vault
+        remote_file.guest_network["private_tunnel_unit"]: vault
+        remote_file.guest_network["translator"]: vault
+        remote_file.guest_network["translator_unit"]: vault
+        remote_file.guest_network["uplink"]: vault
         terraform_data.guest_network_packages: vault
         terraform_data.guest_network_activate: vault
     opentofu/vault/mc:
