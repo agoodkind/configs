@@ -23,34 +23,11 @@ service_mapping:
     hostname: debianct.home.goodkind.io
     vmid: 100
     ipv6: "3d06:bad:b01::100"
-  unifi:
-    hostname: unifi.home.goodkind.io
-    vmid: 102
-    ipv6: "3d06:bad:b01::102"
-    ipv4: "10.250.0.102"
-  dns64:
-    hostname: dns64.home.goodkind.io
-    vmid: 103
-    ipv6: "3d06:bad:b01::64"
-    ipv4: "10.250.0.103"
-  freebsd_dev_home:
-    hostname: freebsd-dev.home.goodkind.io
-    vmid: 108
-    kind: qemu
-    ipv6: "3d06:bad:b01::108"
-  mc:
-    hostname: mc.home.goodkind.io
-    vmid: 109
-    ipv6: "3d06:bad:b01::109"
   proxy:
     hostname: proxy.home.goodkind.io
     vmid: 110
     ipv6: "3d06:bad:b01::110"
     ipv4: "10.250.0.110"
-  mwan_failover:
-    hostname: mwan-failover.home.goodkind.io
-    vmid: 116
-    ipv6: "3d06:bad:b01::116"
   tack:
     hostname: tack.home.goodkind.io
     vmid: 117
@@ -766,7 +743,6 @@ group_children:
   opnsense_all:
     - opnsense_suburban_servers
   dns64_all:
-    - dns64_servers
     - dns64_suburban_servers
   seaweedfs_all:
     - seaweedfs_servers

@@ -2,7 +2,7 @@ destroy table ip vault_guests
 table ip vault_guests {
     chain postrouting {
         type nat hook postrouting priority srcnat; policy accept;
-        oifname "mbrains" ip saddr { 10.250.0.0/24, 10.250.64.0/24 } masquerade
+        oifname "mbrains" ip saddr 10.250.0.0/24 masquerade
     }
 }
 
@@ -12,7 +12,5 @@ table inet vault_guests {
         type filter hook forward priority filter; policy accept;
         iifname "mbrains" oifname "vmbr0" ct state established,related accept
         iifname "mbrains" oifname "vmbr0" drop
-        iifname "mbrains" oifname "nat64" ct state established,related accept
-        iifname "mbrains" oifname "nat64" drop
     }
 }

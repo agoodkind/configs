@@ -12,14 +12,6 @@ locals {
       path   = "/etc/systemd/network/20-vault-uplink.network"
       source = "uplink.network"
     }
-    translator = {
-      path   = "/etc/tayga.conf"
-      source = "tayga.conf"
-    }
-    translator_unit = {
-      path   = "/etc/systemd/system/tayga.service"
-      source = "tayga.service"
-    }
     firewall = {
       path   = "/etc/vault-guest-network.nft"
       source = "guest-network.nft"

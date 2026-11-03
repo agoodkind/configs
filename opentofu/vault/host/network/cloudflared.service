@@ -6,7 +6,10 @@ Wants=network-online.target
 [Service]
 TimeoutStartSec=15
 Type=notify
-ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel run --token-file /etc/cloudflared/home-vault.token
+ExecStart=/usr/bin/cloudflared --no-autoupdate tunnel --edge-ip-version auto run \
+    --dns-resolver-addrs 1.1.1.1:53 \
+    --dns-resolver-addrs [2606:4700:4700::1111]:53 \
+    --token-file /etc/cloudflared/home-vault.token
 Restart=on-failure
 RestartSec=5s
 

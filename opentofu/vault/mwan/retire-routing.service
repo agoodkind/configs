@@ -1,8 +1,0 @@
-[Unit]
-Description=Retire MWAN failover routing in the retained guest
-After=networking.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/local/sbin/retire-mwan-routing.sh
