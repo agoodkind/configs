@@ -115,6 +115,7 @@
       notify: Restart cloudflared
 
     - name: Deploy masquerade sourced file
+      tags: ["testbed-masquerade"]
       ansible.builtin.copy:
         src: "{{ repo_root }}/testbed/suburban-interfaces.d-testbed-masquerade.conf"
         dest: /etc/network/interfaces.d/testbed-masquerade.conf
