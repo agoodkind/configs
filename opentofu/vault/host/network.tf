@@ -69,10 +69,10 @@ locals {
   ])))
 }
 
-# Stop the previous DHCP owner before systemd-networkd requests a lease.
-# activate.sh defines the complete runtime activation sequence.
+# Run activation locally because uplink changes can interrupt SSH.
 resource "terraform_data" "guest_network_activate" {
   triggers_replace = [local.guest_network_activation_revision]
+  depends_on       = [proxmox_virtual_environment_dns.vault]
 
   connection {
     type        = "ssh"
