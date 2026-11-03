@@ -3,7 +3,10 @@ resource "proxmox_virtual_environment_container" "tack" {
   vm_id     = local.service_mapping.tack.vmid
 
   initialization {
-    hostname = "tack.home.goodkind.io"
+    hostname = split(".", local.service_mapping.tack.hostname)[0]
+    dns {
+      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack.hostname)[0]
+    }
     ip_config {
       ipv6 {
         address = "3d06:bad:b01::117/64"
@@ -75,7 +78,10 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
   vm_id     = local.service_mapping.tack_app2.vmid
 
   initialization {
-    hostname = local.service_mapping.tack_app2.hostname
+    hostname = split(".", local.service_mapping.tack_app2.hostname)[0]
+    dns {
+      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_app2.hostname)[0]
+    }
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_app2.ipv6}/64"
@@ -138,7 +144,10 @@ resource "proxmox_virtual_environment_container" "tack_data1" {
   vm_id     = local.service_mapping.tack_data1.vmid
 
   initialization {
-    hostname = local.service_mapping.tack_data1.hostname
+    hostname = split(".", local.service_mapping.tack_data1.hostname)[0]
+    dns {
+      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_data1.hostname)[0]
+    }
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_data1.ipv6}/64"
@@ -201,7 +210,10 @@ resource "proxmox_virtual_environment_container" "tack_data2" {
   vm_id     = local.service_mapping.tack_data2.vmid
 
   initialization {
-    hostname = local.service_mapping.tack_data2.hostname
+    hostname = split(".", local.service_mapping.tack_data2.hostname)[0]
+    dns {
+      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_data2.hostname)[0]
+    }
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_data2.ipv6}/64"
@@ -264,7 +276,10 @@ resource "proxmox_virtual_environment_container" "tack_data3" {
   vm_id     = local.service_mapping.tack_data3.vmid
 
   initialization {
-    hostname = local.service_mapping.tack_data3.hostname
+    hostname = split(".", local.service_mapping.tack_data3.hostname)[0]
+    dns {
+      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_data3.hostname)[0]
+    }
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_data3.ipv6}/64"
@@ -327,7 +342,10 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
   vm_id     = local.service_mapping.tack_search1.vmid
 
   initialization {
-    hostname = local.service_mapping.tack_search1.hostname
+    hostname = split(".", local.service_mapping.tack_search1.hostname)[0]
+    dns {
+      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_search1.hostname)[0]
+    }
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_search1.ipv6}/64"
