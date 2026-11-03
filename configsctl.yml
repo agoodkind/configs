@@ -194,18 +194,7 @@ tofu:
         module.suburban: suburban
       node_hosts:
         suburban: suburban
-    opentofu/vault/adguard:
-      module_hosts:
-        module.vault: vault
     opentofu/vault/debianct:
-      module_hosts:
-        module.vault: vault
-    opentofu/vault/dns64:
-      module_hosts:
-        module.vault: vault
-      guest_hosts:
-        vault/103: dns64.home.goodkind.io
-    opentofu/vault/freebsd-dev:
       module_hosts:
         module.vault: vault
     opentofu/vault/host:
@@ -214,30 +203,22 @@ tofu:
         proxmox_acme_account.vault: vault
         proxmox_acme_certificate.vault: vault
         proxmox_acme_dns_plugin.vault: vault
-    opentofu/vault/mc:
-      module_hosts:
-        module.vault: vault
-    opentofu/vault/mwan:
-      module_hosts:
-        module.vault: vault
-      node_hosts:
-        vault: vault
-    opentofu/vault/opnsense:
-      module_hosts:
-        module.vault: vault
+        proxmox_virtual_environment_dns.vault: vault
+        remote_file.guest_network["bridge"]: vault
+        remote_file.guest_network["firewall"]: vault
+        remote_file.guest_network["firewall_unit"]: vault
+        remote_file.guest_network["forwarding"]: vault
+        remote_file.guest_network["private_tunnel_unit"]: vault
+        remote_file.guest_network["uplink"]: vault
+        terraform_data.guest_network_packages: vault
+        terraform_data.guest_network_activate: vault
     opentofu/vault/proxy:
       module_hosts:
         module.vault: vault
     opentofu/vault/seaweedfs:
       module_hosts:
         module.vault: vault
-    opentofu/vault/sit6:
-      module_hosts:
-        module.vault: vault
     opentofu/vault/tack-prod:
-      module_hosts:
-        module.vault: vault
-    opentofu/vault/unifi:
       module_hosts:
         module.vault: vault
   guest_modules:

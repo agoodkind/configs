@@ -8,7 +8,7 @@ resource "proxmox_virtual_environment_container" "debianct" {
     ip_config {
       ipv6 {
         address = "${local.service_mapping.debianct.ipv6}/64"
-        gateway = "3d06:bad:b01::1"
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
   }

@@ -34,6 +34,7 @@
         owner: root
         group: bind
         mode: "0644"
+        validate: /usr/bin/named-checkconf %s
       notify: Restart Bind9
 
     - name: Ensure Bind9 is enabled and started

@@ -49,6 +49,7 @@
     - name: Pull the pinned mwan release
       ansible.builtin.import_tasks: tasks/github-release.yml
       tags: [mwan-host]
+      when: proxmox_mwan_host_role_enabled | bool
       vars:
         release_repo: "{{ mwan_release_repo }}"
         release_tag: "{{ mwan_release_tag }}"
@@ -59,6 +60,7 @@
 
     - name: Pull the pinned opnsensectl release
       ansible.builtin.import_tasks: tasks/github-release.yml
+      when: proxmox_mwan_host_role_enabled | bool
       vars:
         release_repo: "{{ opnsensectl_release_repo }}"
         release_tag: "{{ opnsensectl_release_tag }}"
@@ -101,7 +103,9 @@
         enabled: true
         state: restarted
         daemon_reload: true
-      when: opnsensectl_host_restart_safe | bool
+      when:
+        - proxmox_mwan_host_role_enabled | bool
+        - opnsensectl_host_restart_safe | bool
 
     - name: Restart mwan-opnsense-host
       ansible.builtin.systemd:
@@ -109,7 +113,9 @@
         enabled: true
         state: restarted
         daemon_reload: true
-      when: opnsensectl_host_restart_safe | bool
+      when:
+        - proxmox_mwan_host_role_enabled | bool
+        - opnsensectl_host_restart_safe | bool
 
     - name: Restart tack-search-proxy
       ansible.builtin.systemd:

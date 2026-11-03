@@ -59,7 +59,7 @@ locals {
     container_options = null
 
     grub_cmdline_linux_default = null
-    network_interfaces_file    = null
+    network_interfaces_file    = "${path.module}/network/interfaces"
   } }
 }
 

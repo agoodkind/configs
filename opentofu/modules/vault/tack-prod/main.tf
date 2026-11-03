@@ -7,7 +7,7 @@ resource "proxmox_virtual_environment_container" "tack" {
     ip_config {
       ipv6 {
         address = "3d06:bad:b01::117/64"
-        gateway = "3d06:bad:b01::1"
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
     user_account {
@@ -79,7 +79,7 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_app2.ipv6}/64"
-        gateway = local.service_mapping.opnsense.ipv6
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
     user_account {
@@ -142,7 +142,7 @@ resource "proxmox_virtual_environment_container" "tack_data1" {
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_data1.ipv6}/64"
-        gateway = local.service_mapping.opnsense.ipv6
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
     user_account {
@@ -205,7 +205,7 @@ resource "proxmox_virtual_environment_container" "tack_data2" {
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_data2.ipv6}/64"
-        gateway = local.service_mapping.opnsense.ipv6
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
     user_account {
@@ -268,7 +268,7 @@ resource "proxmox_virtual_environment_container" "tack_data3" {
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_data3.ipv6}/64"
-        gateway = local.service_mapping.opnsense.ipv6
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
     user_account {
@@ -331,7 +331,7 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
     ip_config {
       ipv6 {
         address = "${local.service_mapping.tack_search1.ipv6}/64"
-        gateway = local.service_mapping.opnsense.ipv6
+        gateway = local.service_mapping.vault_hypervisor.ipv6
       }
     }
     user_account {

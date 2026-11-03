@@ -22,12 +22,6 @@ variable "cloudflare_owner_email" {
   default     = "alex@goodkind.io"
 }
 
-variable "cloudflare_router_routes_enabled" {
-  description = "Create the WireGuard client routes after the home-router connector reports healthy."
-  type        = bool
-  default     = true
-}
-
 variable "poweredge_beacon" {
   description = "TLS endpoint and public certificate fingerprint for the PowerEdge LAN beacon."
   type = object({
