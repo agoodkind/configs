@@ -1,5 +1,6 @@
 ---
 # Configure the Suburban MWAN failover LXC.
+# Inventory variables provide the target settings. Vault no longer runs this LXC.
 #
 # Run ./configsctl deploy deploy-mwan-failover --limit mwan_failover_suburban_servers.
 
