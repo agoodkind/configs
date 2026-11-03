@@ -51,9 +51,14 @@ enabled = ${c.bgp_graceful_restart_enabled}
 restart_time = ${c.bgp_graceful_restart_time_seconds}
 notification_enabled = ${c.bgp_graceful_restart_notification_enabled}
 
+[bgp.forwarding_readiness]
+socket_path = "${c.bgp_forwarding_readiness_socket_path}"
+poll_interval_milliseconds = ${c.bgp_forwarding_readiness_poll_interval_milliseconds}
+read_timeout_milliseconds = ${c.bgp_forwarding_readiness_read_timeout_milliseconds}
+
 [ifmgr]
 role = "failover"
-reconcile_interval = "60s"
+reconcile_interval = "${c.reconcile_interval}"
 log_file = "/var/log/mwan-ifmgr.log"
 json_log_file = "/var/log/mwan-ifmgr.jsonl"
 
@@ -76,6 +81,7 @@ no_signal_alert_after = "120s"
 
 [ifmgr.modules.connectivity_probe]
 iface = "eth0"
+targets_v4 = ${jsonencode(c.connectivity_targets_v4)}
 targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
 timeout = "2s"
 unhealthy_after = "10s"

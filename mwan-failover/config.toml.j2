@@ -48,9 +48,16 @@ enabled = {{ mwan_bgp_graceful_restart_enabled | ternary('true', 'false') }}
 restart_time = {{ mwan_bgp_graceful_restart_time_seconds }}
 notification_enabled = {{ mwan_bgp_graceful_restart_notification_enabled | ternary('true', 'false') }}
 
+{% if mwan_bgp_forwarding_readiness_socket_path %}
+[bgp.forwarding_readiness]
+socket_path = "{{ mwan_bgp_forwarding_readiness_socket_path }}"
+poll_interval_milliseconds = {{ mwan_bgp_forwarding_readiness_poll_interval_milliseconds }}
+read_timeout_milliseconds = {{ mwan_bgp_forwarding_readiness_read_timeout_milliseconds }}
+
+{% endif %}
 [ifmgr]
 role = "failover"
-reconcile_interval = "60s"
+reconcile_interval = "{{ mwan_failover_reconcile_interval }}"
 log_file = "/var/log/mwan-ifmgr.log"
 json_log_file = "/var/log/mwan-ifmgr.jsonl"
 
@@ -73,6 +80,9 @@ no_signal_alert_after = "120s"
 
 [ifmgr.modules.connectivity_probe]
 iface = "eth0"
+{% if mwan_failover_connectivity_targets_v4 %}
+targets_v4 = {{ mwan_failover_connectivity_targets_v4 | to_json }}
+{% endif %}
 targets_v6 = ["2606:4700:4700::1111", "2001:4860:4860::8888"]
 timeout = "2s"
 unhealthy_after = "10s"
