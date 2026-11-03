@@ -30,14 +30,6 @@ main() {
     ip -6 route flush dev eth0 proto ra
     ip -6 route flush default via fe80::f61e:57ff:fe06:4983 dev eth0
 
-    if [[ -e /sys/class/net/eth1 ]]; then
-        ip -4 address flush dev eth1 scope global
-        ip -6 address flush dev eth1 scope global
-        ip -4 route flush dev eth1
-        ip -6 route flush dev eth1
-        ip link set dev eth1 down
-    fi
-
     rm -f /etc/systemd/system/mwan-agent.service \
         /etc/systemd/system/mwan-ifmgr.service \
         /etc/systemd/system/mwan-ifmgr.service.d/lxc-failover.conf \

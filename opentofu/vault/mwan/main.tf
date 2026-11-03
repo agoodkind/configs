@@ -81,7 +81,7 @@ removed {
   lifecycle { destroy = true }
 }
 
-# The retirement unit stops the old client and removes its configuration.
+# Forget these resources after the retirement unit removes their files.
 removed {
   from = pveguest_file.failover_dhcp6
   lifecycle { destroy = false }

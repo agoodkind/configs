@@ -20,7 +20,8 @@ mwan_environment: "testbed"
 mwan_ifmgr_oob_ipv4_source_policy_enabled: false
 mwan_ifmgr_oob_ipv4_source: ""
 mwan_vmid: "{{ service_mapping.mwan_suburban.vmid }}"
-# The router VMID selects the testbed drainer and upgrade target.
+# The drainer's serial device and the router upgrade command use this VMID.
+# The router must run on mwan_proxmox_node.
 mwan_opnsense_vmid: "{{ service_mapping.opnsense_suburban.vmid }}"
 mwan_proxmox_node: "hypervisor"
 mwan_internal_iface: "enmwanbr0"

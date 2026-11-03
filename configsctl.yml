@@ -246,8 +246,8 @@ tofu:
     opentofu/vault/sit6:
       module_hosts:
         module.vault: vault
-      guest_hosts:
-        vault/124: sit6.home.goodkind.io
+      node_hosts:
+        vault: vault
     opentofu/vault/tack-prod:
       module_hosts:
         module.vault: vault
