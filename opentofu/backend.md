@@ -173,8 +173,6 @@ The provider has these expected readback gaps:
   plugged with `pct set`. The provider can make neither change without
   replacing the guest, so those containers ignore `disk[0].datastore_id` or
   `mount_point`.
-- Ansible owns `/etc/network/interfaces.d/testbed-masquerade.conf` and the extra
-  routable IPv6 address on `vmbr1`.
 - A container state `id` contains only the VMID. Match a container by both
   `node_name` and `id` when inspecting state across hypervisors. A VMID alone
   does not identify its hypervisor.

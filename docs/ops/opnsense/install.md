@@ -153,18 +153,6 @@ curl -k -u "$KEY:$SECRET" "https://$LAN_IP/api/core/firmware/status"
 
 ## Install the daemon
 
-The daemon binary is a published opnsensectl release, not a local build. The
-deploy pulls the release the testbed pins, verifies its GitHub attestation, and
-unpacks it under `.make/releases/opnsensectl/<tag>/`:
-
-```bash
-./configsctl deploy deploy-opnsense --limit opnsense_suburban_servers --check
-```
-
-The check run stages the release without touching the guest. Copy
-`.make/releases/opnsensectl/<tag>/freebsd_amd64/opnsensectl` onto the guest as
-`/usr/local/sbin/mwan-opnsense.current`.
-
 Write the service files, symlink the active slot, and start the daemon. `install`
 writes the rc.d script, the run shim, the loader entry, the rc.conf.d settings,
 and `/usr/local/etc/opnsensectl.conf`, whose defaults point the daemon at the

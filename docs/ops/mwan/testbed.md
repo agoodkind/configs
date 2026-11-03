@@ -69,19 +69,12 @@ prefix, and NPT does not translate a prefix for it.
 
 ## Production vs testbed
 
-Every deploy playbook serves both environments; the `--limit` group selects
-which one, and the matching group vars carry each side's values.
-
 | Component      | Production (vault)             | Testbed (suburban)                 |
 | -------------- | ------------------------------ | ---------------------------------- |
 | MWAN VM        | mwan.home.goodkind.io          | mwan.suburban.goodkind.io          |
 | Failover LXC   | mwan-failover.home.goodkind.io | mwan-failover.suburban.goodkind.io |
 | OPNsense       | router.home.goodkind.io        | router.suburban.goodkind.io        |
 | Hypervisor     | vault                          | suburban                           |
-| MWAN limit     | `mwan_servers`                 | `mwan_suburban_servers`            |
-| Failover limit | `mwan_failover_servers`        | `mwan_failover_suburban_servers`   |
-| OPNsense limit | `opnsense_servers`             | `opnsense_suburban_servers`        |
-| Extras limit   | n/a                            | `suburban` (deploy-testbed)        |
 
 ## Testbed-only infrastructure
 

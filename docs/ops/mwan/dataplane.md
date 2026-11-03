@@ -96,7 +96,6 @@ Trace ID sources:
 
 - `mwan-trace-boot.service` writes `/run/mwan-trace-id` and
   `/var/lib/mwan/trace-id` at boot.
-- The deploy playbook writes the same files at the start of deploy.
 
 Quick check on MWAN:
 

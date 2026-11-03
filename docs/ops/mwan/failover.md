@@ -59,47 +59,6 @@ neighbor, but the mwan agent's embedded speaker does not participate yet, so no
 BFD session forms; fast WAN failure detection relies on the watchdog gRPC
 withdraw path.
 
-## Deploy operation
-
-The MWAN VM deploy changes the running gateway only at a reboot. A deployment
-operation on the Proxmox host restores the gateway when that reboot breaks
-connectivity.
-
-The deploy validates the rendered network document and firewall with the
-released binary on the Proxmox host before it creates a snapshot. The deploy
-then creates the `pre-deploy-<trace id>` snapshot and runs
-`mwan deploy-gate arm`. The arm command verifies the gateway's installed
-files, the snapshot, and the inbound and downstream application checks from
-the configured observers. The arm command then writes the operation record
-and starts a watch unit on the Proxmox host. The watch repeats the application
-checks until the operation status is committed or recovered.
-
-The deploy writes the release and the gateway configuration after the arm
-command succeeds. The running daemon does not read any of those files. The deploy
-then reboots the gateway, and the reboot starts every unit from the written
-files. After the gateway reports a new boot ID, `mwan deploy-gate commit`
-verifies the written files and the application checks and sets the operation
-status to committed.
-
-A failure after the arm command succeeds runs `mwan deploy-gate recover`. The
-recover command stops the gateway, restores the snapshot, starts the gateway,
-and waits for the previous files and the application checks. The watch runs
-the same recovery when the application checks fail repeatedly or the
-operation deadline passes. The watchdog runs the same recovery for an
-unresolved record with no running watch.
-
-A failure before the arm command succeeds does not run recovery, because the
-gateway has not changed. The deploy removes the snapshot when the Proxmox host
-does not have a record for the operation or has a record with status disarmed. The
-deploy does not remove the snapshot of a record with any other status, because the
-watchdog restores that snapshot for the record. The next arm command succeeds
-only after the record status is recovered, committed, or disarmed. The deploy
-also does not remove the snapshot when the status read fails for any reason
-other than a record for another operation.
-
-A bootstrap deploy does not create a snapshot or arm an operation. A check run
-does not create a snapshot or arm an operation and ends before the reboot.
-
 ## Watchdog rollback design
 
 The watchdog runs on the Proxmox host. It bases the rollback decision on
