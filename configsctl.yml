@@ -227,15 +227,3 @@ tofu:
     suburban/mwan: module.base
     suburban/seaweedfs: module.base
     suburban/tack-qa: module.base
-deploy:
-  # For non-check deploys, `./configsctl deploy` reads each declared variable
-  # on each play host and locks the named inventory host with the play hosts.
-  lock_host_variables:
-    deploy-mwan: [mwan_proxmox_delegate]
-    deploy-tack: [tack_service_secret_source]
-    tack-ops: [tack_ops_lock_app_guest]
-  # Keys are the second label of a guest host name. Values are the Proxmox node
-  # names in ansible_proxmox_host.
-  absent_guest_nodes:
-    home: vault
-    suburban: hypervisor
