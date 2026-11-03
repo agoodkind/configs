@@ -1,13 +1,13 @@
 # Retire Vault router VMs
 
-The retirement plans delete VM101 and VM113, including their disks. Complete
+The retirement plans delete VM101, VM113, and CT124, including their disks. Complete
 their backups and verify current application backups before starting. Confirm
 working serial console and out-of-band access, and keep both available through
 the cutover and first reboot.
 
 Run commands from the repository root. Initialize each selected workspace with
 the [backend instructions](../../../opentofu/backend.md). Review fresh plans
-before each apply. Plans must preserve every LXC and application IPv6 address,
+before each apply. Plans must preserve every other LXC and application IPv6 address,
 and must not include unrelated ACME or permission changes, or changes to Suburban
 or PowerEdge. Keep existing permissions and tokens until the network layout and
 configuration pass verification.
@@ -67,10 +67,11 @@ configuration pass verification.
    ./configsctl tofu vault/host apply -target=terraform_data.retire_opnsense
    ```
 
-6. Advance to the merged MWAN retirement layer. Update CT124 in place, then
-   apply the MWAN workspace. Its plan destroys only VM113, updates CT116 in
-   place, and forgets two former DHCPv6 resource records. It must not destroy
-   either retained container.
+6. Advance to the merged MWAN retirement layer. Delete CT124 through the sit6
+   workspace. Its plan must destroy only CT124 and forget its former routing
+   configuration records. Then apply the MWAN workspace. Its plan destroys only
+   VM113, updates CT116 in place, and forgets two former DHCPv6 resource records.
+   It must preserve CT116 and every other LXC.
 
    ```bash
    ./configsctl tofu vault/sit6 plan

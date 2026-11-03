@@ -51,10 +51,6 @@ service_mapping:
     hostname: mwan-failover.home.goodkind.io
     vmid: 116
     ipv6: "3d06:bad:b01::116"
-  sit6:
-    hostname: sit6.home.goodkind.io
-    vmid: 124
-    ipv6: "3d06:bad:b01::124"
   tack:
     hostname: tack.home.goodkind.io
     vmid: 117
