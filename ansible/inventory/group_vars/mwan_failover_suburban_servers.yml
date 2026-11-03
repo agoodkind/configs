@@ -24,6 +24,13 @@ mwan_failover_ipv6_address: "{{ service_mapping.mwan_failover_suburban.ipv6_tran
 mwan_failover_ipv4_return_route: ""
 # Resetting IPv6 deletes addresses while the DHCPv6 client retains its lease.
 mwan_failover_ipv6_max_toggles_per_hour: 0
+mwan_failover_reconcile_interval: "20s"
+mwan_failover_connectivity_targets_v4:
+  - "1.1.1.1"
+  - "8.8.8.8"
+mwan_bgp_forwarding_readiness_socket_path: "/run/mwan-forwarding-ready.sock"
+mwan_bgp_forwarding_readiness_poll_interval_milliseconds: 1000
+mwan_bgp_forwarding_readiness_read_timeout_milliseconds: 500
 # Source interface for outbound failover alert email (empty = default route).
 mwan_failover_email_bind_iface: ""
 

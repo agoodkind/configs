@@ -979,29 +979,34 @@ locals {
 
   failover_config = templatefile("${path.module}/failover-config.toml.tftpl", {
     c = {
-      hostname                                  = split(".", local.failover_map.hostname)[0]
-      email_recipient                           = local.alert_recipient
-      email_from                                = "mwan-testbed@goodkind.io"
-      email_subject_prefix                      = "[MWAN-suburban-failover]"
-      email_bind_iface                          = ""
-      email_min_level                           = local.alert_level
-      email_cooldown                            = local.alert_cooldown
-      ipv6_max_toggles_per_hour                 = local.failover_vars.mwan_failover_ipv6_max_toggles_per_hour
-      bgp_asn                                   = local.bgp_asn
-      bgp_router_id                             = local.failover_map.ipv4_transit
-      bgp_next_hop_v6                           = local.failover_map.ipv6_transit
-      bgp_keepalive_seconds                     = local.bgp_keepalive_seconds
-      bgp_hold_seconds                          = local.bgp_hold_seconds
-      bgp_listen_port                           = local.bgp_listen_port
-      bgp_learned_route_iface                   = "eth1"
-      bgp_dynamic_neighbors                     = local.transit_networks
-      bgp_neighbors                             = [local.router_map.ipv4_transit]
-      bgp_neighbors_v6                          = [local.router_map.ipv6_transit]
-      bgp_announce_ipv4                         = local.bgp_announce_v4
-      bgp_announce_ipv6                         = local.bgp_announce_v6
-      bgp_graceful_restart_enabled              = true
-      bgp_graceful_restart_time_seconds         = 30
-      bgp_graceful_restart_notification_enabled = true
+      hostname                                            = split(".", local.failover_map.hostname)[0]
+      email_recipient                                     = local.alert_recipient
+      email_from                                          = "mwan-testbed@goodkind.io"
+      email_subject_prefix                                = "[MWAN-suburban-failover]"
+      email_bind_iface                                    = ""
+      email_min_level                                     = local.alert_level
+      email_cooldown                                      = local.alert_cooldown
+      ipv6_max_toggles_per_hour                           = local.failover_vars.mwan_failover_ipv6_max_toggles_per_hour
+      reconcile_interval                                  = local.failover_vars.mwan_failover_reconcile_interval
+      connectivity_targets_v4                             = local.failover_vars.mwan_failover_connectivity_targets_v4
+      bgp_forwarding_readiness_socket_path                = local.failover_vars.mwan_bgp_forwarding_readiness_socket_path
+      bgp_forwarding_readiness_poll_interval_milliseconds = local.failover_vars.mwan_bgp_forwarding_readiness_poll_interval_milliseconds
+      bgp_forwarding_readiness_read_timeout_milliseconds  = local.failover_vars.mwan_bgp_forwarding_readiness_read_timeout_milliseconds
+      bgp_asn                                             = local.bgp_asn
+      bgp_router_id                                       = local.failover_map.ipv4_transit
+      bgp_next_hop_v6                                     = local.failover_map.ipv6_transit
+      bgp_keepalive_seconds                               = local.bgp_keepalive_seconds
+      bgp_hold_seconds                                    = local.bgp_hold_seconds
+      bgp_listen_port                                     = local.bgp_listen_port
+      bgp_learned_route_iface                             = "eth1"
+      bgp_dynamic_neighbors                               = local.transit_networks
+      bgp_neighbors                                       = [local.router_map.ipv4_transit]
+      bgp_neighbors_v6                                    = [local.router_map.ipv6_transit]
+      bgp_announce_ipv4                                   = local.bgp_announce_v4
+      bgp_announce_ipv6                                   = local.bgp_announce_v6
+      bgp_graceful_restart_enabled                        = true
+      bgp_graceful_restart_time_seconds                   = 30
+      bgp_graceful_restart_notification_enabled           = true
     }
   })
 }
