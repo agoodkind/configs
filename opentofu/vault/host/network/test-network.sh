@@ -240,7 +240,7 @@ main() {
     prepare_tayga
     mkdir "$WORK_DIRECTORY/tayga-state" "$WORK_DIRECTORY/http"
     printf '%s\n' 'vault-native-network-response' >"$WORK_DIRECTORY/expected-response"
-    for request_path in before-v4 before-v6 after-v4 after-v6; do
+    for request_path in before-v4 before-v6 before-host-v6 after-v4 after-v6 after-host-v6; do
         cp "$WORK_DIRECTORY/expected-response" "$WORK_DIRECTORY/http/$request_path"
     done
 
@@ -349,12 +349,14 @@ main() {
 
     probe_outbound "$GUEST6_NAMESPACE" -6 "[$NAT64_DESTINATION]" before-v6 "$UPLINK_BEFORE"
     probe_outbound "$GUEST4_NAMESPACE" -4 "$UPSTREAM_SERVICE" before-v4 "$UPLINK_BEFORE"
+    probe_outbound "$ROUTER_NAMESPACE" -6 "[$NAT64_DESTINATION]" before-host-v6 "$UPLINK_BEFORE"
 
     ip -n "$ROUTER_NAMESPACE" address delete "$UPLINK_BEFORE/24" dev mbrains
     ip -n "$ROUTER_NAMESPACE" address add "$UPLINK_AFTER/24" dev mbrains
     ip -n "$ROUTER_NAMESPACE" route replace default via "$UPSTREAM_GATEWAY"
     probe_outbound "$GUEST6_NAMESPACE" -6 "[$NAT64_DESTINATION]" after-v6 "$UPLINK_AFTER"
     probe_outbound "$GUEST4_NAMESPACE" -4 "$UPSTREAM_SERVICE" after-v4 "$UPLINK_AFTER"
+    probe_outbound "$ROUTER_NAMESPACE" -6 "[$NAT64_DESTINATION]" after-host-v6 "$UPLINK_AFTER"
 
     ip -n "$UPSTREAM_NAMESPACE" route add 10.250.0.0/24 via "$UPLINK_AFTER"
     expect_rejected
