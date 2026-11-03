@@ -165,6 +165,9 @@ expect_rejected() {
         fail 'The production firewall accepted an unsolicited upstream connection.'
     else
         curl_status=$?
+        if [[ "$curl_status" -ne 28 ]]; then
+            fail "The unsolicited request returned curl status $curl_status. The firewall DROP check requires timeout status 28."
+        fi
         printf 'PASS: The production firewall rejected the unsolicited connection; curl returned %s.\n' "$curl_status"
     fi
 }
