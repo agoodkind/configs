@@ -34,8 +34,3 @@ opnsensectl config --help
 
 The [OPNsense serial daemon](../daemon.md) defines the channel's operating and
 recovery limits.
-
-## Escalate when the channel is unavailable
-
-Use the serial-console path in the same access guide. Repair the guest
-endpoint with the [OPNsense installation guide](../install.md).

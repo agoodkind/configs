@@ -58,5 +58,3 @@ Prefer the gRPC transport for the upgrade so the control path survives a routing
 ### Recover a wedged channel
 
 The daemon can wedge under a heavy command or a large input payload. Recover in order of least disruption. First retry the wedging operation over SSH or the serial console, which do not share the daemon's state. Then reset the guest, which recovers the guest agent and usually the daemon. If the daemon stays down, reach the Proxmox host over its out-of-band tunnel and restart the service there. For a guest that will not return over any network path, attach the serial console and recover at the kernel level. After a rollback the guest reboots and the daemon starts with it, and it is reachable as soon as the serial socket is up.
-
-To install OPNsense and the daemon on a fresh VM, read [install](install.md). For the wedge mechanism in depth, its trigger, evidenced cause, and how to inspect a wedged guest with a kernel-debug build, read [wedge](wedge.md).
