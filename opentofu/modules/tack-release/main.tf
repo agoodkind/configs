@@ -69,11 +69,13 @@ variable "accountable_email" {
 locals {
   install_dir        = "/root/tack"
   docker             = "/usr/bin/docker compose"
-  services           = var.role == "owner" ? "app audit-consumer" : "app"
+  is_owner           = var.role == "owner"
+  services           = local.is_owner ? "app audit-consumer" : "app"
+  operator_namespace = "0a6f7572-cafe-dead-beef-000000000004"
   operator_email     = lower(var.accountable_email)
-  operator_id        = uuidv5("0a6f7572-cafe-dead-beef-000000000004", local.operator_email)
+  operator_id        = uuidv5(local.operator_namespace, local.operator_email)
   identity           = "--operator-service tack-release --operator-session ${var.commit} --operator-id ${local.operator_id} --operator-email ${local.operator_email} --deploy-commit ${var.commit}"
-  verify_scope       = var.role == "owner" ? "--tack-audit-consumer-digest ${var.consumer_digest}" : "--service app"
+  verify_scope       = local.is_owner ? "--tack-audit-consumer-digest ${var.consumer_digest}" : "--service app"
   audit_reader_files = "-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml"
 
   stage_units = {
@@ -89,13 +91,8 @@ locals {
       lines = [
         "ExecStartPre=/usr/bin/grep -q ^TACK_IMAGE_TAG= .env",
         "ExecStartPre=/usr/bin/sed -i -E s/^TACK_IMAGE_TAG=.*/TACK_IMAGE_TAG=${var.commit}/ .env",
-        "ExecStart=${local.docker} up -d --wait --wait-timeout 200 --no-deps --no-build ${local.services}",
-      ]
-    }
-    "tack-release-health.service" = {
-      description = "Wait for the Tack app health check to pass"
-      lines = [
-        "ExecStart=/usr/bin/curl --fail --silent --show-error --max-time 5 --retry 48 --retry-delay 5 --retry-all-errors --retry-max-time 270 http://[::1]:8000/healthz",
+        "ExecStart=${local.docker} up -d --wait --wait-timeout 60 --no-deps --no-build ${local.services}",
+        "ExecStartPost=/usr/bin/curl --fail --silent --show-error --max-time 5 --retry 40 --retry-delay 5 --retry-all-errors --retry-max-time 200 http://[::1]:8000/healthz",
       ]
     }
     "tack-release-verify.service" = {
@@ -106,7 +103,7 @@ locals {
     }
   }
 
-  check_units = var.role == "owner" ? {
+  check_units = local.is_owner ? {
     "tack-release-search-verify.service" = {
       description = "Run ops search verify after the release"
       lines = [
@@ -171,23 +168,6 @@ resource "pveguest_systemd_unit" "up" {
   depends_on = [pveguest_systemd_unit.pull]
 }
 
-resource "pveguest_systemd_unit" "health" {
-  node = var.node
-  vmid = var.vmid
-  kind = var.kind
-
-  name    = "tack-release-health.service"
-  enabled = false
-  active  = true
-
-  restart_on = {
-    unit = pveguest_file.unit["tack-release-health.service"].write_id
-    up   = pveguest_file.unit["tack-release-up.service"].write_id
-  }
-
-  depends_on = [pveguest_systemd_unit.up]
-}
-
 resource "pveguest_systemd_unit" "verify" {
   node = var.node
   vmid = var.vmid
@@ -199,7 +179,7 @@ resource "pveguest_systemd_unit" "verify" {
 
   restart_on = { unit = pveguest_file.unit["tack-release-verify.service"].write_id }
 
-  depends_on = [pveguest_systemd_unit.health]
+  depends_on = [pveguest_systemd_unit.up]
 }
 
 resource "pveguest_systemd_unit" "check" {
