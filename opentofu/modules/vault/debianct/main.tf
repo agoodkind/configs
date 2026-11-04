@@ -4,7 +4,10 @@ resource "proxmox_virtual_environment_container" "debianct" {
   vm_id     = local.service_mapping.debianct.vmid
 
   initialization {
-    hostname = "debianct.home.goodkind.io"
+    hostname = split(".", local.service_mapping.debianct.hostname)[0]
+    dns {
+      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.debianct.hostname)[0]
+    }
     ip_config {
       ipv6 {
         address = "${local.service_mapping.debianct.ipv6}/64"

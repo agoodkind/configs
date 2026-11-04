@@ -4,7 +4,10 @@ resource "proxmox_virtual_environment_container" "proxy" {
   vm_id     = local.service_mapping.proxy.vmid
 
   initialization {
-    hostname = "proxy.home.goodkind.io"
+    hostname = split(".", local.service_mapping.proxy.hostname)[0]
+    dns {
+      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.proxy.hostname)[0]
+    }
     ip_config {
       ipv4 {
         address = "${local.service_mapping.proxy.ipv4}/24"
