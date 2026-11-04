@@ -70,7 +70,18 @@ resource "proxmox_virtual_environment_container" "proxy" {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  proxy = object({
+    vmid     = number
+    hostname = string
+    ipv4     = string
+    ipv6     = string
+  })
+  vault_hypervisor = object({
+    ipv4 = string
+    ipv6 = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 

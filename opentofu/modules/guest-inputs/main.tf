@@ -1,10 +1,11 @@
 variable "guest_keys" { type = set(string) }
 
-variable "shared_vars" { type = any }
+variable "shared_vars" { type = object({ smtp_host = string, smtp_port = number, smtp_from_domain = string }) }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = map(object({ hostname = string, vmid = number, node = string, kind = optional(string, "lxc"), mail_username = optional(string), mail_from = optional(string), mail_password_version = optional(number) })) }
 
-variable "proxy_vars" { type = any }
+variable "proxy_public_key" { type = string }
+variable "proxy_address" { type = string }
 
 variable "timezone" {
   type     = string
@@ -14,27 +15,10 @@ variable "timezone" {
 locals {
 
   shared_vars     = var.shared_vars
-  proxy_vars      = var.proxy_vars
   service_mapping = var.service_mapping
 
   enrolled = var.guest_keys
 
-
-
-  # The site is the second label of the guest hostname, for example "suburban"
-  # in clyde.suburban.goodkind.io.
-  guest_sites = {
-    for name in local.enrolled : name => split(".", local.service_mapping[name].hostname)[1]
-  }
-
-  # Hostname site labels select keys in the pveguest provider's nodes map.
-  # The home site uses the vault node. An unlisted site causes evaluation to
-  # fail.
-  site_nodes = {
-    home     = "vault"
-    vault    = "vault"
-    suburban = "suburban"
-  }
 
 
   # A guest listed here receives exactly these lines as its authorized_keys
@@ -84,7 +68,7 @@ locals {
     for name in local.enrolled : name => {
       vmid                        = local.service_mapping[name].vmid
       kind                        = local.guest_kinds[name]
-      node                        = local.site_nodes[local.guest_sites[name]]
+      node                        = local.service_mapping[name].node
       timezone                    = var.timezone
       authorized_key_lines        = try(local.authorized_key_lines_overrides[name], null)
       extra_authorized_keys_files = try(local.authorized_keys_files_overrides[name], [])
@@ -121,17 +105,17 @@ locals {
 
   mail_relays = {
     for name in local.mail_relay_guests : name => {
-      username = try(
+      username = coalesce(
         local.service_mapping[name].mail_username,
         "host-${trim(replace(lower(local.service_mapping[name].hostname), "/[^a-z0-9]+/", "-"), "-")}",
       )
       host = local.shared_vars.smtp_host
       port = tonumber(local.shared_vars.smtp_port)
-      from = try(
+      from = coalesce(
         local.service_mapping[name].mail_from,
         "${split(".", local.service_mapping[name].hostname)[0]}@${local.shared_vars.smtp_from_domain}",
       )
-      password_version = try(
+      password_version = coalesce(
         local.service_mapping[name].mail_password_version,
         local.default_mail_password_version,
       )
@@ -147,7 +131,7 @@ locals {
   # guest.
   sshpiper_lines = [
     "# Managed by Ansible - Restricted by SSHPiper",
-    "from=\"${local.service_mapping.proxy.ipv6}/128\" ${trimspace(local.proxy_vars.sshpiper_upstream_pubkey)}",
+    "from=\"${var.proxy_address}/128\" ${trimspace(var.proxy_public_key)}",
   ]
 }
 
@@ -162,9 +146,7 @@ output "guests" {
   }
 }
 
-output "guest_kinds" { value = local.guest_kinds }
 
-output "guest_kind_values" { value = local.guest_kind_values }
 
 output "mail_relays" { value = local.mail_relays }
 

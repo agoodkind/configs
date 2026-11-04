@@ -2,7 +2,7 @@
   "node": "lab",
   "environment": "testbed",
   "validation_file": "validation.json",
-  "group_vars": [],
+  "configuration_dependencies": [],
   "directories": [],
   "parent_directories": [
     { "path": "/srv/outer/inner" }

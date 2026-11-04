@@ -1,13 +1,11 @@
 locals { repository_root = abspath("${path.module}/../../..") }
 
 module "contracts" {
-  source          = "../../modules/contracts"
-  repository_root = local.repository_root
+  source = "../../modules/contracts"
 }
 
 locals {
   shared_vars         = module.contracts.shared_vars
-  service_mapping     = module.contracts.service_mapping
   cloudflare_zone_ids = module.contracts.cloudflare_zone_ids
 }
 
@@ -100,3 +98,5 @@ locals {
 }
 
 locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
+
+module "configuration" { source = "../../modules/vault/host/configuration" }

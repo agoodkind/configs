@@ -21,14 +21,6 @@ locals {
       path    = "${local.runtime_root}/configsctl.yml"
       content = file("${path.module}/configsctl.yml")
     }
-    "ansible.cfg" = {
-      path    = "${local.runtime_root}/ansible/ansible.cfg"
-      content = file("${path.module}/ansible.cfg")
-    }
-    "inventory" = {
-      path    = "${local.runtime_root}/ansible/inventory/hosts.yml"
-      content = file("${path.module}/inventory.yml")
-    }
     "hosts" = {
       path    = "${local.runtime_root}/hosts"
       content = file("${path.module}/hosts")
@@ -123,8 +115,6 @@ resource "terraform_data" "runtime" {
   }
   provisioner "remote-exec" {
     inline = [
-      "/usr/bin/apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 update",
-      "/usr/bin/apt-get install -y --no-install-recommends ansible-core",
       "/usr/bin/systemd-run --unit=idrac-certificate-stage-${self.id} --collect --property=Type=exec --property=RuntimeDirectory=idrac-certificate-stage-${self.id} --property=RuntimeDirectoryMode=0700 --property=RuntimeMaxSec=600 /usr/bin/sleep infinity",
     ]
   }

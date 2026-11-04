@@ -17,59 +17,33 @@ variable "vmid" {
   type        = number
 }
 
-variable "repository_root" {
-  description = "The repository_root variable specifies the absolute path of the repository checkout. The ispsim module reads ansible/inventory/group_vars/suburban_servers.yml below this path."
-  type        = string
-}
 
-variable "name" {
-  description = "The name variable selects the testbed_isp_lxcs entry with the same name field, such as att. The plan fails with an invalid index error when no entry has the name, and with a duplicate object key error when more than one entry has the name."
-  type        = string
-}
+
+variable "configuration" { type = object({
+  ipv6_enabled                         = bool
+  dynamic_v4                           = bool
+  routed_ipv6_enabled                  = bool
+  routed_ipv6_prefix                   = string
+  routed_ipv4_prefix                   = string
+  routed_ipv4_route_to                 = string
+  static_v4_block                      = string
+  static_v4_route_to                   = string
+  v4_subnet                            = string
+  pd_prefix                            = string
+  slaac_prefix                         = string
+  mwan_vm_ll                           = string
+  ra_min_interval_seconds              = number
+  ra_max_interval_seconds              = number
+  ra_dns_servers                       = list(string)
+  ra_dns_lifetime_seconds              = string
+  ra_prefix_preferred_lifetime_seconds = string
+  ra_prefix_valid_lifetime_seconds     = string
+}) }
 
 locals {
   kind = "lxc"
 
-  suburban_servers = yamldecode(
-    file("${var.repository_root}/ansible/inventory/group_vars/suburban_servers.yml")
-  )
-
-  # Building a map keyed by name fails the plan with "Duplicate object key" when two entries
-  # share a name, and the lookup below fails with "Invalid index" when no entry has the name.
-  entries_by_name = {
-    for entry in local.suburban_servers.testbed_isp_lxcs : entry.name => entry
-  }
-
-  # The merge gives each testbed_isp_lxcs entry precedence over testbed_isp_protocol_defaults,
-  # as the Ansible combine filter does.
-  entry = merge(
-    local.suburban_servers.testbed_isp_protocol_defaults,
-    local.entries_by_name[var.name],
-  )
-
-  # The simulator object collects the entry fields that the module reads. A simulator does
-  # not use a feature when its prefix or address is absent from the entry.
-  simulator = {
-    ipv6_enabled         = local.entry.ipv6_enabled
-    dynamic_v4           = local.entry.dynamic_v4
-    routed_ipv6_enabled  = try(local.entry.routed_ipv6_enabled, false)
-    routed_ipv6_prefix   = try(local.entry.routed_ipv6_prefix, "")
-    routed_ipv4_prefix   = try(local.entry.routed_ipv4_prefix, "")
-    routed_ipv4_route_to = try(local.entry.routed_ipv4_route_to, "")
-    static_v4_block      = try(local.entry.static_v4_block, "")
-    static_v4_route_to   = try(local.entry.static_v4_route_to, "")
-    v4_subnet            = local.entry.v4_subnet
-    pd_prefix            = try(local.entry.pd_prefix, "")
-    slaac_prefix         = try(local.entry.slaac_prefix, "")
-    mwan_vm_ll           = try(local.entry.mwan_vm_ll, "")
-
-    ra_min_interval_seconds              = local.entry.ra_min_interval_seconds
-    ra_max_interval_seconds              = local.entry.ra_max_interval_seconds
-    ra_dns_servers                       = local.entry.ra_dns_servers
-    ra_dns_lifetime_seconds              = tostring(local.entry.ra_dns_lifetime_seconds)
-    ra_prefix_preferred_lifetime_seconds = tostring(local.entry.ra_prefix_preferred_lifetime_seconds)
-    ra_prefix_valid_lifetime_seconds     = tostring(local.entry.ra_prefix_valid_lifetime_seconds)
-  }
+  simulator = var.configuration
 
   # Every ISP simulator container installs nftables. The package supplies nftables.service,
   # which loads the firewall and masquerade rules.

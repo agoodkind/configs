@@ -1,15 +1,13 @@
 locals {
-  group_vars_directory = "${local.repository_root}/ansible/inventory/group_vars"
-
-  testbed_release = yamldecode(file("${local.group_vars_directory}/mwan_testbed_all.yml"))
-  mwan_release    = local.testbed_release.mwan_release_tag
-  mwan_arch       = "amd64"
+  routing_networks = module.routing.networks
+  testbed_release  = module.configuration.testbed_release
+  mwan_release     = local.testbed_release.mwan_release_tag
+  mwan_arch        = "amd64"
 
   gateway_map  = local.service_mapping.mwan_suburban
   failover_map = local.service_mapping.mwan_failover_suburban
   router_map   = local.service_mapping.opnsense_suburban
 
-  routing_networks = module.contracts.routing_inventory.testbed_routing_networks
 
   gateway_macs = module.suburban.mwan_suburban_mac_addresses
 
@@ -21,13 +19,13 @@ locals {
   resolver_state_file   = "/var/lib/mwan/owned-resolver.json"
   pve_token_id          = "root@pam!watchdog"
 
-  routing_prefixes = yamldecode(file("${local.group_vars_directory}/testbed_routing_all/prefixes.yml"))
+  routing_prefixes = module.configuration.routing_prefixes
   home_prefix      = local.routing_prefixes.testbed_routing_home_prefix
 
   # The decoder reads plain values and does not decode template strings.
-  suburban_vars   = yamldecode(file("${local.group_vars_directory}/mwan_suburban_servers.yml"))
+  suburban_vars   = module.configuration.suburban_vars
   internal_prefix = local.suburban_vars.mwan_internal_prefix
-  failover_vars   = yamldecode(file("${local.group_vars_directory}/mwan_failover_suburban_servers.yml"))
+  failover_vars   = module.configuration.failover_vars
 
   suburban_providers = {
     for provider in local.suburban_vars.mwan_providers : provider.name => provider

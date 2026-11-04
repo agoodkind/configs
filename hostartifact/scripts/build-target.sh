@@ -31,7 +31,7 @@ project_target() {
   local repository_root="$1"
   local workspace="$2"
   local target="$3"
-  tofu -chdir="$repository_root/$RENDER_ROOT" init -backend=false -input=false > "$target/init.log"
+  tofu -chdir="$repository_root/$RENDER_ROOT" init -backend=false -input=false -var "workspace=$workspace" > "$target/init.log"
   tofu -chdir="$repository_root/$RENDER_ROOT" plan -refresh=false -lock=false -input=false \
     -out="$target/projection.tfplan" -var "workspace=$workspace" > "$target/plan.log"
   tofu -chdir="$repository_root/$RENDER_ROOT" show -json "$target/projection.tfplan" > "$target/show.json"

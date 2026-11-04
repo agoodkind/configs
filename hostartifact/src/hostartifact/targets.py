@@ -31,7 +31,7 @@ DIRECTORY_SUFFIX = "/"
 GIT_PROGRAM = "git"
 # A change to any of these paths selects every target. The list contains
 # the workflow, the helper, the target module, and the render root.
-# Each descriptor lists every group variable file of its target.
+# Each descriptor lists the native configuration files that its target reads.
 PRODUCER_PATHS = (
     ".github/workflows/ci.yml",
     "hostartifact/",
@@ -63,7 +63,7 @@ class TargetDescriptor(StrictModel):
     node: str
     environment: str
     validation_file: str
-    group_vars: list[str]
+    configuration_dependencies: list[str]
     directories: list[DirectoryEntry]
     parent_directories: list[ParentDirectory] = Field(default_factory=list)
     files: list[FileEntry]
@@ -166,7 +166,9 @@ def target_dependencies(
     descriptor = load_descriptor(repository_root, workspace)
     dependencies = {descriptor_path(workspace), pin_path(workspace)}
     dependencies.add(posixpath.normpath(descriptor.validation_file))
-    dependencies.update(posixpath.normpath(path) for path in descriptor.group_vars)
+    dependencies.update(
+        posixpath.normpath(path) for path in descriptor.configuration_dependencies
+    )
     for entry in descriptor.files:
         source = entry.source
         if source.startswith(TEMPLATE_PREFIX):

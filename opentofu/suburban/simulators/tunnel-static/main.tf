@@ -1,28 +1,26 @@
 locals { repository_root = abspath("${path.module}/../../../..") }
 
 module "suburban_config" {
-  source           = "../../../modules/suburban"
-  routing_networks = module.contracts.routing_inventory.testbed_routing_networks
+  source = "../../../modules/suburban"
 }
 
 module "contracts" {
-  source          = "../../../modules/contracts"
-  repository_root = local.repository_root
+  source = "../../../modules/contracts"
 }
 
 locals {
-  shared_vars         = module.contracts.shared_vars
-  service_mapping     = module.contracts.service_mapping
-  cloudflare_zone_ids = module.contracts.cloudflare_zone_ids
+  shared_vars     = module.contracts.shared_vars
+  service_mapping = module.configuration.service_mapping
 }
 
 module "guest_inputs" {
-  source          = "../../../modules/guest-inputs"
-  guest_keys      = toset(["routing_tunnel_static_client_suburban", "routing_tunnel_static_upstream_suburban", "routing_tunnel_static_vps_suburban"])
-  shared_vars     = local.shared_vars
-  service_mapping = local.service_mapping
-  proxy_vars      = module.contracts.proxy_vars
-  timezone        = "America/Los_Angeles"
+  source           = "../../../modules/guest-inputs"
+  guest_keys       = module.configuration.guest_keys
+  shared_vars      = local.shared_vars
+  service_mapping  = { for name in module.configuration.guest_keys : name => local.service_mapping[name] }
+  proxy_public_key = module.configuration.proxy_public_key
+  timezone         = "America/Los_Angeles"
+  proxy_address    = module.configuration.proxy_address
 }
 
 module "github_keys" {
@@ -73,11 +71,12 @@ module "suburban" {
 
   providers = { proxmox = proxmox.suburban }
 
-  ssh_keys          = trimspace(data.http.github_ssh_keys.response_body)
-  service_mapping   = local.service_mapping
-  host_networks     = module.suburban_config.host_networks
-  routing_inventory = module.contracts.routing_inventory
-  guest_keys        = toset(["routing_tunnel_static_client_suburban", "routing_tunnel_static_upstream_suburban", "routing_tunnel_static_vps_suburban"])
+  ssh_keys           = trimspace(data.http.github_ssh_keys.response_body)
+  service_mapping    = local.service_mapping
+  host_networks      = merge(module.suburban_config.bridges, { for name, network in module.routing.networks : name => network.bridge })
+  routing_networks   = module.routing.networks
+  routing_management = module.routing.management
+  guest_keys         = module.configuration.guest_keys
 }
 
 data "http" "github_ssh_keys" {
@@ -100,3 +99,7 @@ data "http" "github_ssh_keys" {
     }
   }
 }
+
+module "configuration" { source = "../../../modules/suburban/simulators/tunnel-static/configuration" }
+
+module "routing" { source = "../../../modules/suburban/routing" }

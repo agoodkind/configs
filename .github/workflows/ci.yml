@@ -47,11 +47,11 @@ jobs:
         with:
           go-version-file: .go-version
           cache-dependency-path: configsctl
-      # The gate hands Jinja forms its Go parser cannot read to a jinja2
-      # subprocess and fails when jinja2 is missing, so it is a hard dependency.
-      - name: Install jinja2
-        run: sudo apt-get update && sudo apt-get install -y python3-jinja2
-      - name: Lint Ansible inputs
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - name: Validate native configuration inputs
         run: ./configsctl lint
 
   # On every push, the job runs select-targets.sh to select host artifact

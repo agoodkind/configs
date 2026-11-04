@@ -71,7 +71,29 @@ locals {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  opnsense_suburban = object({
+    ipv4_privileged = string
+    ipv6_privileged = string
+  })
+  dns64_suburban = object({
+    ipv6 = string
+  })
+  mwan_test_client_a_suburban = object({
+    hostname    = string
+    vmid        = number
+    ipv4        = string
+    ipv6        = string
+    mac_address = string
+  })
+  mwan_test_client_b_suburban = object({
+    hostname    = string
+    vmid        = number
+    ipv4        = string
+    ipv6        = string
+    mac_address = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 

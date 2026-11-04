@@ -62,7 +62,12 @@ resource "proxmox_virtual_environment_vm" "opnsense_suburban" {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  opnsense_suburban = object({
+    vmid     = number
+    hostname = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 

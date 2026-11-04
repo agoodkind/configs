@@ -1,6 +1,5 @@
 module "config" {
-  source           = "../"
-  routing_networks = local.routing_networks
+  source = "../"
 }
 
 resource "proxmox_network_linux_bridge" "isp_astound_suburban" {
@@ -142,8 +141,7 @@ resource "proxmox_network_linux_vlan" "trunk_vlan_100_suburban" {
 }
 
 locals {
-  routing_inventory = var.routing_inventory
-  routing_networks  = local.routing_inventory.testbed_routing_networks
+  routing_networks = var.routing_networks
 
   routing_management_network = "management"
   routing_created_networks = {
@@ -167,11 +165,18 @@ locals {
 
 }
 
-variable "routing_inventory" { type = any }
+variable "routing_networks" { type = map(object({ bridge = string, ipv4_net = string, ipv6_net = string })) }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  vmbrtrunk_suburban = object({
+    ipv4 = string
+    ipv6 = string
+  })
+  vmbr1_suburban = object({
+    ipv4 = string
+  })
+}) }
 
-variable "ssh_keys" { type = string }
 
 locals { service_mapping = var.service_mapping }
 

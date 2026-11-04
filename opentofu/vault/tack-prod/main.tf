@@ -1,23 +1,22 @@
 locals { repository_root = abspath("${path.module}/../../..") }
 
 module "contracts" {
-  source          = "../../modules/contracts"
-  repository_root = local.repository_root
+  source = "../../modules/contracts"
 }
 
 locals {
-  shared_vars         = module.contracts.shared_vars
-  service_mapping     = module.contracts.service_mapping
-  cloudflare_zone_ids = module.contracts.cloudflare_zone_ids
+  shared_vars     = module.contracts.shared_vars
+  service_mapping = module.configuration.service_mapping
 }
 
 module "guest_inputs" {
-  source          = "../../modules/guest-inputs"
-  guest_keys      = toset(["tack", "tack_app2", "tack_data1", "tack_data2", "tack_data3", "tack_search1"])
-  shared_vars     = local.shared_vars
-  service_mapping = local.service_mapping
-  proxy_vars      = module.contracts.proxy_vars
-  timezone        = "America/Los_Angeles"
+  source           = "../../modules/guest-inputs"
+  guest_keys       = module.configuration.guest_keys
+  shared_vars      = local.shared_vars
+  service_mapping  = { for name in module.configuration.guest_keys : name => local.service_mapping[name] }
+  proxy_public_key = module.configuration.proxy_public_key
+  timezone         = "America/Los_Angeles"
+  proxy_address    = module.configuration.proxy_address
 }
 
 module "github_keys" {
@@ -80,7 +79,7 @@ module "vault" {
 
   ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping = local.service_mapping
-  tack_search     = yamldecode(file("${local.repository_root}/ansible/inventory/group_vars/all/search_cluster.yml"))
+  tack_search     = module.configuration.tack_search
 }
 
 output "tack_vmid" {
@@ -115,3 +114,5 @@ data "http" "github_ssh_keys" {
 }
 
 locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
+
+module "configuration" { source = "../../modules/vault/tack-prod/configuration" }

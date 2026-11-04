@@ -1,14 +1,10 @@
 locals { repository_root = abspath("${path.module}/../../..") }
 
 module "contracts" {
-  source          = "../../modules/contracts"
-  repository_root = local.repository_root
+  source = "../../modules/contracts"
 }
 
 locals {
-  shared_vars         = module.contracts.shared_vars
-  service_mapping     = module.contracts.service_mapping
-  cloudflare_zone_ids = module.contracts.cloudflare_zone_ids
 }
 
 module "cloudflare" {
@@ -74,3 +70,5 @@ output "poweredge_tunnel_ids" {
   description = "PowerEdge tunnel identifiers keyed by host or mwan."
   value       = module.cloudflare.poweredge_tunnel_ids
 }
+
+module "configuration" { source = "../../modules/shared/cloudflare-zero-trust/configuration" }

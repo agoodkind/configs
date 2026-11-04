@@ -3,8 +3,7 @@
 # configsctl does not select it as a workspace because it does not have a
 # backend block.
 locals {
-  repository_root     = abspath("${path.module}/../../..")
-  service_mapping_key = "service_mapping"
+  repository_root = abspath("${path.module}/../../..")
 }
 
 module "targets" {
@@ -12,3 +11,5 @@ module "targets" {
   repository_root = local.repository_root
   workspace       = var.workspace
 }
+
+module "configuration" { source = "../../modules/${var.workspace}/configuration" }

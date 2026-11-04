@@ -3,6 +3,9 @@ tofu:
   env_key_prefix: vault_tofu_env_
   lock_targets:
     workspace:
+      lock_endpoints:
+        poweredge:
+          local: true
       module_hosts:
         restful_operation.signing_request: poweredge
         restful_operation.install_certificate: poweredge

@@ -237,7 +237,40 @@ locals {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  mwan_failover_suburban = object({
+    vmid         = number
+    hostname     = string
+    ipv4_transit = string
+    ipv6_transit = string
+    ipv4_vmnet   = string
+    ipv6_vmnet   = string
+  })
+  mwan_suburban = object({
+    vmid     = number
+    hostname = string
+    routing_interfaces = object({
+      sonic_1 = object({
+        network     = string
+        mac_address = string
+        ipv4        = string
+        ipv6        = string
+      })
+      sonic_2 = object({
+        network     = string
+        mac_address = string
+        ipv4        = string
+        ipv6        = string
+      })
+      etheric = object({
+        network     = string
+        mac_address = string
+        ipv4        = string
+        ipv6        = string
+      })
+    })
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 
