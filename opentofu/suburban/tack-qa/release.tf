@@ -5,8 +5,8 @@ locals {
     consumer_digest = "sha256:144fe8beca7863e174eaa1f930fdd1be3670b17dd70a130f0df3e91ef76624f3"
   }
   tack_release_guests = {
-    tack_qa_suburban   = true
-    tack_app2_suburban = false
+    tack_qa_suburban   = "owner"
+    tack_app2_suburban = "app"
   }
 }
 
@@ -14,12 +14,14 @@ module "tack_release" {
   source   = "../../modules/tack-release"
   for_each = local.tack_release_guests
 
-  node  = local.guests[each.key].node
-  vmid  = local.guests[each.key].vmid
-  kind  = local.guests[each.key].kind
-  owner = each.value
+  node = local.guests[each.key].node
+  vmid = local.guests[each.key].vmid
+  kind = local.guests[each.key].kind
+  role = each.value
 
   commit          = local.tack_release.commit
   server_digest   = local.tack_release.server_digest
   consumer_digest = local.tack_release.consumer_digest
+
+  accountable_email = "alex@goodkind.io"
 }
