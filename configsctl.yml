@@ -221,6 +221,8 @@ tofu:
     opentofu/vault/tack-prod:
       module_hosts:
         module.vault: vault
+      node_hosts:
+        vault: vault
   guest_modules:
     suburban/clyde: module.base
     suburban/dns64: module.base
