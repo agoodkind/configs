@@ -115,6 +115,10 @@ module "poweredge_mwan" {
   host_kernel_modules_loaded = data.pveguest_host_kernel_modules.poweredge.loaded
 }
 
+module "poweredge_config" {
+  source = "../../modules/poweredge"
+}
+
 module "poweredge_lan_services" {
   source = "../../modules/poweredge/lan"
 
@@ -135,7 +139,7 @@ data "pveguest_host_kernel_modules" "poweredge" {
   node = local.poweredge_node
   lifecycle {
     postcondition {
-      condition     = alltrue([for module in module.contracts.poweredge_kernel_modules : lookup(self.loaded, module, false)])
+      condition     = alltrue([for module in module.poweredge_config.kernel_modules : lookup(self.loaded, module, false)])
       error_message = "PowerEdge has not loaded every kernel module required by its routing guests."
     }
   }

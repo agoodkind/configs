@@ -1,5 +1,10 @@
 locals { repository_root = abspath("${path.module}/../../../..") }
 
+module "suburban_config" {
+  source           = "../../../modules/suburban"
+  routing_networks = module.contracts.routing_inventory.testbed_routing_networks
+}
+
 module "contracts" {
   source          = "../../../modules/contracts"
   repository_root = local.repository_root
@@ -70,7 +75,7 @@ module "suburban" {
 
   ssh_keys          = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping   = local.service_mapping
-  host_networks     = module.contracts.host_networks
+  host_networks     = module.suburban_config.host_networks
   routing_inventory = module.contracts.routing_inventory
   guest_keys        = toset(["routing_astound_static_client_suburban", "routing_astound_static_endpoint_suburban"])
 }
