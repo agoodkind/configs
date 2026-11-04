@@ -8,6 +8,5 @@ MWAN documentation is moving to the MWAN repository. Read the
 
 - [MWAN](mwan.md)
 - [OPNsense](opnsense.md)
-- [Ansible](ansible.md)
 - [Infrastructure](infra.md)
 - [Operations](ops/README.md)

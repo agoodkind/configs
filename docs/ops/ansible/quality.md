@@ -1,31 +1,32 @@
-# Ansible quality checks
+# Validate configuration
 
-## Default values policy
+Run these checks from the repository root.
 
-Every input value is declared explicitly: in the service's group_vars, in
-[ansible/inventory/group_vars/all/service_mapping.yml](../../../ansible/inventory/group_vars/all/service_mapping.yml),
-or in OpenTofu. A playbook or template reads it bare and fails at load time when
-it is missing. Do not use `| default(...)` or `is defined` on an input variable
-to paper over a missing value or to infer presence. When you need a branch, drive
-`when:` from an explicit flag, not from whether a variable happens to be set.
+1. Check native formatting and provider-free ownership inputs:
 
-Inferring a value from whether it was set is banned in every form: `| default(...)`,
-`is defined`, `.get(key, default)` (a default in disguise), any `| length`
-comparison (an "is this set" or "how big" check in disguise), and
-`lookup(..., default=...)` (an env-presence default in disguise; the place the
-declared value stops being deterministic). The policy does not allow automatic
-exceptions or escape hatches, and the linter lists every banned line, not one per repeated
-snippet. The only defensible reason to read a
-value defensively is a command result from an outside service that is unset more
-often than not, and that judgment is the author's to make and defend in review.
+   ```bash
+   ./configsctl lint
+   ```
 
-The linter parses each Jinja expression with a Go engine and resolves the operand
-each default or presence construct reads. A few Ansible-Jinja forms the Go engine
-cannot parse, such as a parenthesized conditional piped into a filter, are routed
-to a jinja2 reference parser, whose resolved violations are enforced the same as
-any other. The router runs as a
-`python3` subprocess, so `configsctl lint` requires `python3` with the `jinja2`
-package on PATH. A form neither parser can read is listed for review.
+2. Run the artifact helper checks and existing release-verification fixtures:
+
+   ```bash
+   make -C hostartifact check
+   ```
+
+3. Initialize the provider-free artifact policy module:
+
+   ```bash
+   tofu -chdir=opentofu/modules/overlay/host-artifacts init -backend=false -input=false
+   ```
+
+4. Run its native policy tests:
+
+   ```bash
+   tofu -chdir=opentofu/modules/overlay/host-artifacts test
+   ```
+
+The artifact release checks require GNU checksum tools and authenticated GitHub access. These checks evaluate configuration and rendered output without changing a host or infrastructure state.
 
 ## KEA DHCP reservations
 

@@ -7,8 +7,8 @@ between them.
 ## 1. Connect directly
 
 Use the fully qualified domain name when private DNS resolves it. Otherwise,
-look up the host's IPv6 address in
-[the service inventory](../../../ansible/inventory/group_vars/all/service_mapping.yml).
+look up the host's IPv6 address in its
+[native feature configuration](../../../opentofu/modules).
 Both paths connect directly.
 
 ```bash
@@ -40,7 +40,7 @@ ssh root@proxy@ssh.home.goodkind.io
 ## 3. Use break-glass access
 
 Use an out-of-band path when the target network or SSH daemon is unavailable.
-Look up the guest identifier in the service inventory first.
+Read the guest identifier from its native definition first.
 
 Run a command inside an LXC container or QEMU virtual machine from its Proxmox
 host:
