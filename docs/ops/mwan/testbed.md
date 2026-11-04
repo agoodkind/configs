@@ -1,8 +1,5 @@
 # Suburban MWAN testbed
 
-Suburban is the NJ Proxmox hypervisor. The testbed mirrors production MWAN
-using the same Ansible templates with testbed group vars.
-
 ## Bridges
 
 Each bridge carries one role:
@@ -21,10 +18,6 @@ Each bridge carries one role:
   the MWAN VM; the Monkeybrains one also carries the failover's upstream NIC.
 
 ## Guests
-
-OpenTofu provisions every suburban guest. It also writes the ISP simulator
-firewall, sysctl, router advertisement, and return-route files. Ansible writes
-the Kea configuration and configures the rest of each guest.
 
 A guest that mirrors a production service takes its counterpart's VMID plus 100,
 and the simulated ISPs, which do not have a production counterpart, sit in the 9xx
@@ -75,14 +68,6 @@ prefix, and NPT does not translate a prefix for it.
 | Failover LXC   | mwan-failover.home.goodkind.io | mwan-failover.suburban.goodkind.io |
 | OPNsense       | router.home.goodkind.io        | router.suburban.goodkind.io        |
 | Hypervisor     | vault                          | suburban                           |
-
-## Testbed-only infrastructure
-
-The ISP sim LXCs, suburban-side safe IPv6 sysctl defaults, and suburban
-masquerade rules only exist on the testbed. The bridge shape stays in
-OpenTofu, the testbed deploy ships the early-boot sysctl defaults, and
-`mwan-ifmgr` reconciles the live per-bridge Router Advertisement policy
-continuously from the suburban host config.
 
 ## Suburban gotchas
 

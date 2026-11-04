@@ -18,14 +18,6 @@ exceptions or escape hatches, and the linter lists every banned line, not one pe
 snippet. The only defensible reason to read a
 value defensively is a command result from an outside service that is unset more
 often than not, and that judgment is the author's to make and defend in review.
-Restructure instead: declare the value, gate a task with the module's own
-`failed_when` or `changed_when`, or initialize an accumulator with `set_fact`
-before the loop.
-
-Enforced by `configsctl lint`: the deploy command runs it before every deploy, the
-lint path runs it, and pre-commit runs it on staged files. The check flags every
-occurrence and does not grant exceptions. The author must defend a genuine
-outside-service case; the check does not allow it.
 
 The linter parses each Jinja expression with a Go engine and resolves the operand
 each default or presence construct reads. A few Ansible-Jinja forms the Go engine

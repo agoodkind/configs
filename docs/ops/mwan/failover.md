@@ -95,13 +95,6 @@ Hash-change recency window: a hash change is "recent" for
 
 ### Snapshots
 
-Two snapshot types with different owners:
-
-- **`pre-deploy-*`** snapshots are owned by the deploy playbook. The playbook
-  creates `pre-deploy-<trace id>` before it arms the deployment operation.
-  Without it, a fresh or recently changed VM may not have a rollback
-  target until a `known-good-*` snapshot is created (which takes many healthy
-  probe cycles).
 - **`known-good-*`** snapshots are owned by the watchdog and taken
   automatically after the system has been healthy and stable for a sustained
   period.

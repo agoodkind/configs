@@ -158,11 +158,6 @@ accumulate while plans remain broken.
 
 The provider has these expected readback gaps:
 
-- Ansible owns the live `args` field on the MWAN and OPNsense virtual machines.
-  The Proxmox API rejects token writes to that field, so OpenTofu ignores
-  `kvm_arguments` instead of removing the live value. The MWAN value sets its
-  virtual socket context identifier, which tracks its VMID. The OPNsense value
-  serves the out-of-band serial channel.
 - Proxmox does not return injected SSH keys. Resources with a configured
   `initialization.user_account` ignore that block so a reimport does not force a
   replacement.
