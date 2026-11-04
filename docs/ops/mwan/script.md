@@ -1,8 +1,5 @@
 # MWAN and OPNsense script style
 
-Working rules for MWAN and OPNsense shell scripts and the Ansible templates
-that deploy them.
-
 Prefer non-disruptive actions on the MWAN VM. Avoid
 `systemctl restart systemd-networkd` unless necessary.
 
@@ -17,8 +14,6 @@ Prefer non-disruptive actions on the MWAN VM. Avoid
 
 ## Jinja and templating strategy
 
-- Do not keep a `.j2` file if it does not contain Jinja (`{{`, `{%`, or
-  `{#}`). Use a normal extension and deploy with `ansible.builtin.copy`.
 - If a shell script, hook, or service only uses templating to inject
   variables, prefer one templated env file (for example `/etc/mwan/mwan.env`)
   and make the script static. Source the env via `. /etc/mwan/mwan.env`. For
@@ -85,8 +80,6 @@ with multi-line `$( ... )`.
 - Configuration uses systemd getty service overrides:
   - `getty@tty1`: `--autologin root --noclear %I $TERM`.
   - `serial-getty@ttyS0`: `--autologin root --keep-baud 115200,57600,38400,9600 - ${TERM}`.
-- Idempotent deployment: Ansible handles directory creation; systemd reloads on
-  reboot.
 
 ## nftables and runtime rules
 

@@ -8,54 +8,9 @@ hypothesis, test the smallest reversible change, verify that it does not cause a
 regression, and only then codify the change in git. Do not bulk-change MWAN, OPNsense, or the vault
 hypervisor, and do not restart networking services without a rollback path.
 
-Run OpenTofu and Ansible through configsctl from the repository root. The
-[configsctl](../../configsctl) script there runs the configsctl release this
-checkout pins, so continuous integration, the pre-commit hook, and every operator
-run the same version. To move to a newer release, change the version in that
-script.
-
 ```bash
 ./configsctl tofu apply
-./configsctl deploy <name> [--limit <host>] [--check] [--diff]
 ```
-
-A play that installs the MWAN binary or opnsensectl pulls the release its
-environment pins onto the controller first. It downloads each archive against
-the pinned checksum, verifies the GitHub attestation, and unpacks it under the
-ignored `.make/releases` directory. No release is named on the command line,
-and a check run stages the release without touching a host. After it copies
-the binary onto a Linux host, the play runs `mwan version` on that copy and
-fails unless the reported commit is a prefix of the release's commit.
-`deploy-proxmox` and `deploy-opnsense` check opnsensectl the same way. To move
-an environment to a newer release, set its tag, the archive checksums from
-that release's `checksums.txt`, and for MWAN the repository that publishes the
-release in
-[mwan_prod_all.yml](../../ansible/inventory/group_vars/mwan_prod_all.yml) or
-[mwan_testbed_all.yml](../../ansible/inventory/group_vars/mwan_testbed_all.yml).
-Use `--limit` on production so one command does not touch both hypervisors.
-Dry-run with `--check --diff` before a mutating run.
-
-## Replace the MWAN executable
-
-Use a clean checkout merged into `main`. This deployment replaces the gateway
-executable without changing configuration or restarting services. Existing
-daemon processes continue to run their current executable. The command saves
-the prior executable and prints its backup path when it replaces an existing
-file. Keep that path for rollback.
-
-1. Check and deploy the testbed gateway, then verify its command results:
-
-   ```bash
-   ./configsctl deploy deploy-mwan-binary --limit mwan_suburban_servers --check --diff
-   ./configsctl deploy deploy-mwan-binary --limit mwan_suburban_servers
-   ```
-
-2. Check and deploy the production gateway, then verify its command results:
-
-   ```bash
-   ./configsctl deploy deploy-mwan-binary --limit mwan_servers --check --diff
-   ./configsctl deploy deploy-mwan-binary --limit mwan_servers
-   ```
 
 ## Run logs
 

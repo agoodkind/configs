@@ -1,10 +1,6 @@
 # AGENTS
 
-This repository provisions guests with OpenTofu and configures them with
-Ansible. A migration to OpenTofu is in progress. Put new host and guest
-configuration in OpenTofu, and keep each resource thin: fetch code from its own
-repository and run it, instead of copying logic into this repository. Add
-Ansible only where OpenTofu cannot express the change.
+Implement deployments through OpenTofu using the existing shared providers and primitives. When a capability is missing, implement it at the appropriate generic boundary. Do not restore Ansible deployment code or use Ansible as a fallback.
 
 This repository does not contain a Go module. Deployments install the `mwan`
 and `opnsensectl` binaries from the pinned releases of
@@ -12,8 +8,6 @@ and `opnsensectl` binaries from the pinned releases of
 [agoodkind/opnsensectl](https://github.com/agoodkind/opnsensectl). Read
 [docs/README.md](docs/README.md) for area pages and operator runbooks.
 
-Run every deploy as `./configsctl deploy <name>` from the repository root, and
-run OpenTofu as `./configsctl tofu`.
 Do not invoke `ansible`, `ansible-vault`, `ansible-playbook`,
 `ansible-inventory`, or `ansible-console` directly, do not pipe decrypted vault
 contents into chat.

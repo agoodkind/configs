@@ -1,5 +1,0 @@
-- name: Install the management library prerequisites
-  ansible.builtin.include_tasks: wanconfig-packages.yml
-
-- name: Install the management schemas and front end
-  ansible.builtin.include_tasks: wanconfig-models.yml

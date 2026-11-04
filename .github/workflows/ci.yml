@@ -27,11 +27,6 @@ env:
   TARGETS_MODULE: opentofu/modules/host-artifact-targets
 
 jobs:
-  # The deploy command runs this same gate over a playbook's files and refuses
-  # to deploy on a banned default or presence check, which is where such a
-  # finding used to surface: after merge, at deploy time. Running it here over
-  # the whole tree fails the pull request instead. No bypass token is set in CI,
-  # so every finding not in a committed baseline fails the job.
   configs-lint:
     name: configs lint
     runs-on: ubuntu-latest

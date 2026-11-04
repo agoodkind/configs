@@ -8,21 +8,10 @@ live definitions; this page carries the behavior and the recovery steps.
 
 ## Components
 
-Three pieces cooperate, and each one's exact values live with the config that
-owns them.
-
 Tayga translates between the two families on the testbed OPNsense through the
 `os-tayga` plugin. Its prefix and pool come from the `<tayga>` block of the
 imported router config, where the transform rewrites production's prefix to the
 testbed's.
-
-The `dns64.suburban.goodkind.io` LXC runs bind9 and synthesizes AAAA records
-into that prefix, so an IPv4-only name resolves to an address Tayga can
-translate. Its address, resolver, and synthesis settings are group vars; deploy
-them with
-`./configsctl deploy deploy-dns64 --limit dns64_suburban_servers`.
-It forwards to the testbed OPNsense's Unbound over native IPv6, so its own
-recursion does not ride the Tayga path.
 
 Unbound on the testbed OPNsense answers for the LAN and is configured from the
 imported router config.
@@ -78,15 +67,6 @@ OPNsense LAN `/64` and reaches DNS on-link. The MWAN group vars point
 records there and reaches them over its IPv4 WAN. The OPNsense Unbound does
 not synthesize DNS64; that path is for the IPv6-only LAN guests that point at
 the DNS64 LXC instead.
-
-After a daemon deploy, the OPNsense deploy restarts Tayga
-(`configctl tayga restart`) and regenerates the Unbound DNSBL python module
-before restarting Unbound (`configctl unbound dnsbl` then
-`configctl unbound restart`), on prod and testbed. OPNsense core always renders
-`python-script: unbound-dnsbl/dnsbl_module.py` into `unbound.conf` even with
-DNSBL disabled, so a freshly imported box crashed Unbound at startup until the
-module file existed; the deploy now creates it, and the Tayga restart re-installs
-NAT64 routes after a WAN outage or import. Neither needs a manual recovery step.
 
 ## Reproducibility gaps
 

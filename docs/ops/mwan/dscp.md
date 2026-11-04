@@ -111,8 +111,6 @@ flow, identical to how `att_pinned` behaves today.
 
 ## GUI-guided PoC (manual, about 10 minutes, no code deploy)
 
-This proves the path end to end before any Ansible or daemon work.
-
 1. Identify the streaming device LAN addresses. On the mwan VM during playback,
    the device's v6 appears as the conntrack source for Hulu flows (for example
    `3d06:bad:b01:2:9121:f8:be06:8f4a`); its v4 is its DHCP lease on OPNsense.

@@ -31,10 +31,6 @@ API token. The VM resource in
 lists it in `ignore_changes`, which stops a plan from reading the live value as
 removed and nulling it on apply.
 
-[ansible/playbooks/deploy-testbed.yml](../../ansible/playbooks/deploy-testbed.yml)
-sets the field idempotently from the `Configure suburban testbed extras` play, running
-`qm set` only when the live `args` does not already match.
-
 `args` takes effect only at QEMU process start, so a change needs a cold stop and
 start rather than a reboot. The playbook prints a notice when it changes the value.
 
