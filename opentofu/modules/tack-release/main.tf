@@ -52,11 +52,17 @@ variable "server_digest" {
 }
 
 variable "consumer_digest" {
-  description = "Expected tack-audit-consumer index digest."
+  description = "Expected tack-audit-consumer index digest. Set this value only for the owner role."
   type        = string
+  default     = null
 
   validation {
-    condition     = can(regex("^sha256:[0-9a-f]{64}$", var.consumer_digest))
+    condition     = (var.role == "owner") == (var.consumer_digest != null)
+    error_message = "Set consumer_digest for the owner role and use null for the app role."
+  }
+
+  validation {
+    condition     = var.consumer_digest == null || can(regex("^sha256:[0-9a-f]{64}$", var.consumer_digest))
     error_message = "Digest must start with `sha256:` followed by exactly 64 lowercase hexadecimal characters."
   }
 }

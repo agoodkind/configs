@@ -22,7 +22,7 @@ module "tack_release" {
 
   commit          = local.tack_release.commit
   server_digest   = local.tack_release.server_digest
-  consumer_digest = local.tack_release.consumer_digest
+  consumer_digest = each.value == "owner" ? local.tack_release.consumer_digest : null
 
   accountable_email = local.tack_release.accountable
 }
