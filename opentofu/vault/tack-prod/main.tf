@@ -80,7 +80,6 @@ module "vault" {
 
   ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping = local.service_mapping
-  host_networks   = module.contracts.host_networks
   tack_search     = yamldecode(file("${local.repository_root}/ansible/inventory/group_vars/all/search_cluster.yml"))
 }
 

@@ -56,7 +56,6 @@ module "suburban" {
   providers = { proxmox = proxmox.suburban }
 
   service_mapping   = local.service_mapping
-  host_networks     = module.contracts.host_networks
   routing_inventory = module.contracts.routing_inventory
   ssh_keys          = ""
 }

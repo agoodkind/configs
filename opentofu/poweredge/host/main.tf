@@ -50,9 +50,13 @@ resource "proxmox_acme_dns_plugin" "poweredge" {
   depends_on = [module.overlay]
 }
 
+module "poweredge_config" {
+  source = "../../modules/poweredge"
+}
+
 resource "pveguest_host_kernel_modules" "poweredge" {
   node    = local.poweredge_node
-  modules = local.poweredge_kernel_modules
+  modules = toset(module.poweredge_config.kernel_modules)
 }
 
 locals {
@@ -63,27 +67,7 @@ locals {
     commit    = "2b0a332d39a8876d083c195f7081f73e3988a644"
     guest_api = true
     kernel_modules = {
-      allow = [
-        "nf_tables",
-        "nfnetlink",
-        "nf_conntrack",
-        "nf_nat",
-        "nft_chain_nat",
-        "nft_masq",
-        "nft_ct",
-        "nft_nat",
-        "nf_defrag_ipv4",
-        "nf_defrag_ipv6",
-        "nft_log",
-        "nf_log_syslog",
-        "nft_limit",
-        "nft_numgen",
-        "nft_hash",
-        "sch_ingress",
-        "cls_bpf",
-        "8021q",
-        "sit",
-      ]
+      allow = module.poweredge_config.kernel_modules
     }
     container_options = {
       retained_roles = ["PVEAdmin"]
@@ -142,10 +126,6 @@ locals {
 
 locals {
   poweredge_node = "poweredge"
-
-  poweredge_kernel_modules = module.contracts.poweredge_kernel_modules
-
-
 }
 
 locals {

@@ -406,8 +406,6 @@ variable "service_mapping" { type = any }
 
 variable "ssh_keys" { type = string }
 
-variable "host_networks" { type = map(string) }
-
 locals { service_mapping = var.service_mapping }
 
 variable "tack_search" { type = any }

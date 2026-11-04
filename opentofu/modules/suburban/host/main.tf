@@ -1,6 +1,11 @@
+module "config" {
+  source           = "../"
+  routing_networks = local.routing_networks
+}
+
 resource "proxmox_network_linux_bridge" "isp_astound_suburban" {
   node_name = "hypervisor"
-  name      = "vmbr7"
+  name      = module.config.bridges.isp_astound_suburban
 
   autostart = true
 
@@ -11,7 +16,7 @@ resource "proxmox_network_linux_bridge" "isp_astound_suburban" {
 
 resource "proxmox_network_linux_bridge" "isp_att_suburban" {
   node_name = "hypervisor"
-  name      = "vmbr5"
+  name      = module.config.bridges.isp_att_suburban
 
   autostart = true
 
@@ -22,7 +27,7 @@ resource "proxmox_network_linux_bridge" "isp_att_suburban" {
 
 resource "proxmox_network_linux_bridge" "isp_mbrains_suburban" {
   node_name = "hypervisor"
-  name      = "vmbr6"
+  name      = module.config.bridges.isp_mbrains_suburban
 
   autostart = true
 
@@ -33,7 +38,7 @@ resource "proxmox_network_linux_bridge" "isp_mbrains_suburban" {
 
 resource "proxmox_network_linux_bridge" "isp_routed_suburban" {
   node_name = "hypervisor"
-  name      = "vmbr8"
+  name      = module.config.bridges.isp_routed_suburban
 
   autostart = true
 
@@ -44,7 +49,7 @@ resource "proxmox_network_linux_bridge" "isp_routed_suburban" {
 
 resource "proxmox_network_linux_bridge" "isp_webpass_suburban" {
   node_name = "hypervisor"
-  name      = "vmbr4"
+  name      = module.config.bridges.isp_webpass_suburban
 
   autostart = true
 
@@ -55,7 +60,7 @@ resource "proxmox_network_linux_bridge" "isp_webpass_suburban" {
 
 resource "proxmox_network_linux_bridge" "mwan_suburban" {
   node_name = "hypervisor"
-  name      = "vmbr2"
+  name      = module.config.bridges.mwan_suburban
 
   autostart = true
 
@@ -92,7 +97,7 @@ resource "proxmox_network_linux_bridge" "routing_simulator" {
 
 resource "proxmox_network_linux_bridge" "trunk_suburban" {
   node_name = "hypervisor"
-  name      = "vmbrtrunk"
+  name      = module.config.bridges.trunk_suburban
   comment   = "MWAN-140 slice 1: VLAN-aware trunk for OPNsense iavf0 parity"
 
   vlan_aware = true
@@ -109,7 +114,7 @@ resource "proxmox_network_linux_bridge" "trunk_suburban" {
 
 resource "proxmox_network_linux_bridge" "vm_management_suburban" {
   node_name = "hypervisor"
-  name      = "vmbr1"
+  name      = module.config.bridges.vm_management_suburban
 
   autostart = true
   address   = "${local.service_mapping.vmbr1_suburban.ipv4}/24"
@@ -122,7 +127,7 @@ resource "proxmox_network_linux_bridge" "vm_management_suburban" {
 
 resource "proxmox_network_linux_vlan" "trunk_vlan_100_suburban" {
   node_name = "hypervisor"
-  name      = "vmbrtrunk.100"
+  name      = "${module.config.bridges.trunk_suburban}.100"
 
   autostart = true
   address   = "10.240.1.5/24"
@@ -167,8 +172,6 @@ variable "routing_inventory" { type = any }
 variable "service_mapping" { type = any }
 
 variable "ssh_keys" { type = string }
-
-variable "host_networks" { type = map(string) }
 
 locals { service_mapping = var.service_mapping }
 
