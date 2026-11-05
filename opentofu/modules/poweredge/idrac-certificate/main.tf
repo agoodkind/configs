@@ -1,5 +1,6 @@
 terraform {
   required_providers {
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest" }
     restful = {
       source                = "magodo/restful"
       version               = "0.25.2"

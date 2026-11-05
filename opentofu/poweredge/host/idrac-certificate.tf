@@ -35,21 +35,6 @@ locals {
   idrac_host_artifact             = jsondecode(file("${path.module}/../idrac-certificate/host-artifact.auto.tfvars.json")).host_artifact
 }
 
-resource "pveguest_host_artifact" "idrac_certificate" {
-  node            = "poweredge"
-  workspace       = "poweredge/idrac-certificate"
-  repository      = "agoodkind/configs"
-  release_tag     = local.idrac_host_artifact.release_tag
-  asset           = local.idrac_host_artifact.asset
-  sha256          = local.idrac_host_artifact.sha256
-  bundle_asset    = local.idrac_host_artifact.bundle_asset
-  bundle_sha256   = local.idrac_host_artifact.bundle_sha256
-  source_revision = local.idrac_host_artifact.source_revision
-  program_bundles = local.idrac_host_artifact.program_bundles
-
-  depends_on = [module.overlay]
-}
-
 provider "restful" {
   alias    = "idrac_accounts"
   base_url = var.poweredge_idrac_setup_endpoint
@@ -89,13 +74,14 @@ provider "restful" {
 module "idrac_certificate" {
   source = "../../modules/poweredge/idrac-certificate"
   providers = {
+    pveguest         = pveguest
     restful          = restful.idrac_manager
     restful.accounts = restful.idrac_accounts
   }
   ssh_host             = local.service_mapping.poweredge_hypervisor.ipv4
   account_password     = var.vault_poweredge_idrac_certificate_password
-  artifact_sha256      = pveguest_host_artifact.idrac_certificate.installed_sha256
+  artifact_pin         = local.idrac_host_artifact
   initial_installation = var.poweredge_idrac_initial_installation
 
-  depends_on = [pveguest_host_artifact.idrac_certificate]
+  depends_on = [module.overlay]
 }

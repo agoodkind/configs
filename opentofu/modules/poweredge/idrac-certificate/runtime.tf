@@ -1,4 +1,17 @@
-variable "artifact_sha256" { type = string }
+variable "artifact_pin" {
+  type = object({
+    release_tag     = string
+    asset           = string
+    sha256          = string
+    bundle_asset    = string
+    bundle_sha256   = string
+    source_revision = string
+    program_bundles = map(object({
+      asset  = string
+      sha256 = string
+    }))
+  })
+}
 variable "initial_installation" {
   type    = bool
   default = false
@@ -27,10 +40,25 @@ resource "terraform_data" "directories" {
   }
   provisioner "remote-exec" {
     inline = [
-      "/usr/bin/install -d -m 0755 ${local.runtime_root}/bin ${local.runtime_root}/workspace ${local.runtime_root}/ansible/inventory/group_vars/all /etc/systemd/system/idrac-certificate.service.d",
+      "/usr/bin/install -d -m 0755 ${dirname(local.runtime_root)} ${local.runtime_root}/bin ${local.runtime_root}/workspace ${local.runtime_root}/ansible/inventory/group_vars/all /etc/systemd/system/idrac-certificate.service.d",
       "/usr/bin/install -d -m 0700 ${local.state_root} /etc/credstore.encrypted",
     ]
   }
+}
+
+resource "pveguest_host_artifact" "idrac_certificate" {
+  node            = "poweredge"
+  workspace       = "poweredge/idrac-certificate"
+  repository      = "agoodkind/configs"
+  release_tag     = var.artifact_pin.release_tag
+  asset           = var.artifact_pin.asset
+  sha256          = var.artifact_pin.sha256
+  bundle_asset    = var.artifact_pin.bundle_asset
+  bundle_sha256   = var.artifact_pin.bundle_sha256
+  source_revision = var.artifact_pin.source_revision
+  program_bundles = var.artifact_pin.program_bundles
+
+  depends_on = [terraform_data.directories]
 }
 
 removed {
@@ -56,7 +84,7 @@ resource "remote_file" "initial_connection" {
 
 resource "terraform_data" "runtime" {
   triggers_replace = {
-    artifact           = var.artifact_sha256
+    artifact           = pveguest_host_artifact.idrac_certificate.installed_sha256
     tofu               = local.tofu_sha256
     credential_version = var.credential_version
   }
