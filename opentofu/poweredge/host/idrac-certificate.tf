@@ -45,6 +45,7 @@ resource "pveguest_host_artifact" "idrac_certificate" {
   bundle_asset    = local.idrac_host_artifact.bundle_asset
   bundle_sha256   = local.idrac_host_artifact.bundle_sha256
   source_revision = local.idrac_host_artifact.source_revision
+  program_bundles = local.idrac_host_artifact.program_bundles
 
   depends_on = [module.overlay]
 }
