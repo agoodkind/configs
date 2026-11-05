@@ -32,6 +32,7 @@ variable "poweredge_idrac_initial_installation" {
 
 locals {
   idrac_root_ca_certificate_files = var.poweredge_idrac_initial_ca_file == "" ? null : [var.poweredge_idrac_initial_ca_file]
+  idrac_host_artifact             = jsondecode(file("${path.module}/../idrac-certificate/host-artifact.auto.tfvars.json")).host_artifact
 }
 
 provider "restful" {
@@ -73,12 +74,14 @@ provider "restful" {
 module "idrac_certificate" {
   source = "../../modules/poweredge/idrac-certificate"
   providers = {
+    pveguest         = pveguest
     restful          = restful.idrac_manager
     restful.accounts = restful.idrac_accounts
   }
   ssh_host             = local.service_mapping.poweredge_hypervisor.ipv4
   account_password     = var.vault_poweredge_idrac_certificate_password
-  workspace_directory  = abspath("${path.module}/../idrac-certificate")
-  factory_ca_file      = "${path.module}/../firmware/idrac-ca.pem"
+  artifact_pin         = local.idrac_host_artifact
   initial_installation = var.poweredge_idrac_initial_installation
+
+  depends_on = [module.overlay]
 }
