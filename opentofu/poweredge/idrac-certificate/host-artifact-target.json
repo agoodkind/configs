@@ -115,6 +115,18 @@
       "group": "root"
     }
   ],
+  "programs": [
+    {
+      "name": "configsctl",
+      "repository": "agoodkind/configsctl",
+      "asset": "configsctl_linux_amd64.tar.gz",
+      "member": "configsctl",
+      "path": "/opt/configs/idrac-certificate/bin/configsctl",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    }
+  ],
   "configuration_dependencies": [
     "opentofu/modules/poweredge/idrac-certificate/configuration/main.tf",
     "opentofu/modules/poweredge/config.tf",

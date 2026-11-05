@@ -10,7 +10,12 @@ locals {
   artifact_node           = "poweredge"
   artifact_environment    = "testbed"
   configsctl_release_repo = "agoodkind/configsctl"
-  release_signer_repo     = "agoodkind/go-makefile"
+  configsctl_release_tag  = "202611051325-34-df9606b"
+  configsctl_release_assets = [{
+    name     = "configsctl_linux_amd64.tar.gz"
+    checksum = "sha256:85c64a7021c34b65bb34c2fa737116dd18ffaba00797cf0c8fbe7d9a7d25cd5a"
+  }]
+  release_signer_repo = "agoodkind/go-makefile"
   module_hosts = {
     "restful_operation.signing_request"     = "poweredge"
     "restful_operation.install_certificate" = "poweredge"
@@ -52,6 +57,8 @@ output "artifact_vars" { value = {
   idrac_configsctl_configuration = jsonencode(local.configsctl_configuration)
   idrac_binary_checksums         = "${local.tofu_sha256}  ${local.runtime_root}/bin/tofu\n"
   configsctl_release_repo        = local.configsctl_release_repo
+  configsctl_release_tag         = local.configsctl_release_tag
+  configsctl_release_assets      = local.configsctl_release_assets
   release_signer_repo            = local.release_signer_repo
 } }
 
