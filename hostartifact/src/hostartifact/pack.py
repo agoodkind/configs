@@ -32,6 +32,7 @@ from hostartifact.projection import (
     REPOSITORY,
     AssetSource,
     BuildError,
+    FileEntry,
     ProgramEntry,
     Projection,
     StrictModel,
@@ -42,7 +43,7 @@ from hostartifact.projection import (
 )
 from hostartifact.render import VariableResolver, render_template
 from hostartifact.secrets import (
-    check_rendered_file,
+    check_artifact_files,
     check_variable_names,
 )
 
@@ -355,6 +356,7 @@ def build_artifact(
     asset_roots: dict[str, Path],
     program_results: dict[str, ProgramResult],
     output_dir: Path,
+    hcl_checker: Path,
 ) -> BuildResult:
     identifier = target_identifier(projection.workspace)
     check_revision(source_revision)
@@ -371,11 +373,15 @@ def build_artifact(
     check_identity(projection, resolver)
     blocked_keys = frozenset(projection.validation.forbidden_toml_keys)
 
-    members: list[ArchiveMember] = []
-    manifest_files: list[ManifestFile] = []
+    file_contents: list[tuple[FileEntry, bytes]] = []
     for entry in sorted(projection.files, key=lambda item: item.destination):
         content = file_content(entry.source, repository_root, roots, resolver)
-        check_rendered_file(entry.destination, content, blocked_keys)
+        file_contents.append((entry, content))
+    check_artifact_files(file_contents, blocked_keys, projection.workspace, hcl_checker)
+
+    members: list[ArchiveMember] = []
+    manifest_files: list[ManifestFile] = []
+    for entry, content in file_contents:
         member = member_name(entry.destination)
         mode = int(entry.mode, OCTAL_BASE)
         members.append(ArchiveMember(name=member, content=content, mode=mode))

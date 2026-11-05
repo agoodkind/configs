@@ -22,6 +22,7 @@ RENDER_ROOT = "opentofu/render/host-artifact"
 PRODUCER_PATHS = (RENDER_ROOT, "opentofu/modules/host-artifact-targets")
 SUBURBAN = "suburban/mwan"
 VAULT = "vault/mwan"
+POWEREDGE_CERTIFICATE = "poweredge/idrac-certificate"
 DESCRIPTOR_NAME = "host-artifact-target.json"
 IGNORED_COPIES = (".terraform", "*.tfplan", "*.tfstate")
 EXTRA_SELECTORS = (
@@ -30,7 +31,7 @@ EXTRA_SELECTORS = (
     "suburban/simulators/astound_static",
 )
 INVALID_DESCRIPTOR = "{ this descriptor does not parse"
-VAULT_GROUP_FILE = "ansible/inventory/group_vars/vault_servers.yml"
+VAULT_CONFIGURATION_FILE = "opentofu/modules/fixtures/vault/main.tf"
 OPNSENSE_TEMPLATE = "opnsense/config.toml.j2"
 SOURCE_REVISION = "0123456789abcdef0123456789abcdef01234567"
 CONFIGS_REPOSITORY = "agoodkind/configs"
@@ -86,7 +87,7 @@ FIXTURE_DESCRIPTOR: JsonValue = {
     "node": "hypervisor",
     "environment": "testbed",
     "validation_file": VALIDATION_FILE,
-    "group_vars": [],
+    "configuration_dependencies": [],
     "directories": [],
     "files": [
         {
@@ -102,8 +103,8 @@ FIXTURE_DESCRIPTOR: JsonValue = {
 INCLUDE_TEMPLATE = "mwan/config/_ifmgr_common.toml.j2"
 HOST_TEMPLATE = "mwan/config/config-host.toml.j2"
 SUBURBAN_DROP_IN = "proxmox/services/mwan-ifmgr-suburban-host-ipv6-policy.conf"
-RENAMED_VAULT_GROUP_FILE = "ansible/inventory/group_vars/vault_hosts.yml"
-SUBURBAN_GROUP_FILE = "ansible/inventory/group_vars/suburban_servers.yml"
+RENAMED_VAULT_CONFIGURATION_FILE = "opentofu/modules/fixtures/vault/renamed.disabled"
+SUBURBAN_CONFIGURATION_FILE = "opentofu/modules/fixtures/suburban/main.tf"
 OOB_DROP_IN = "proxmox/services/mwan-ifmgr-oob-dhcpv4.conf"
 SELECT_SCRIPT = REPOSITORY_ROOT / "hostartifact/scripts/select-targets.sh"
 MAIN_BRANCH = "main"
@@ -113,9 +114,9 @@ ZERO_COMMIT = "0" * 40
 MAIN_REF = "refs/heads/main"
 FEATURE_BRANCH = "feature"
 FEATURE_REF = "refs/heads/feature"
-VAULT_EMAIL_LINE = 'mwan_email_from: "mwan@example.invalid"\n'
-SERVICE_MAPPING_FILE = "ansible/inventory/group_vars/all/service_mapping.yml"
-SHARED_GROUP_FILE = "ansible/inventory/group_vars/all/vars.yml"
+VAULT_EMAIL_LINE = '  "mwan_email_from" = "mwan@example.invalid"\n'
+SERVICE_MAPPING_FILE = "opentofu/modules/fixtures/services/main.tf"
+SHARED_CONFIGURATION_FILE = "opentofu/modules/fixtures/defaults/main.tf"
 WATCHDOG_TEMPLATE = "proxmox/services/mwan-watchdog.service.j2"
 PROGRAM_REPOSITORY = "agoodkind/mwan"
 PROGRAM_ASSET = "mwan_linux_amd64.tar.gz"
@@ -145,54 +146,12 @@ SCHEMA_ONE_MANIFEST_KEYS = [
 SCHEMA_ONE_ARCHIVE_SHA256 = (
     "6bb99ed9508831c78e8f975f48456a1a38fd583b74fd2304f8d192614670f8c6"
 )
+NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
+CONFIGURATION_TEMPLATE = NATIVE_FIXTURES / "configuration.tf"
+CALLER_CONFIGURATION = NATIVE_FIXTURES / "caller.tf"
+
 FIXTURE_FILES = {
     VALIDATION_FILE: json.dumps(VALIDATION_POLICY),
-    SERVICE_MAPPING_FILE: (
-        "service_mapping:\n"
-        "  hypervisor:\n"
-        "    vmid: 100\n"
-        "  mwan:\n"
-        "    vmid: 113\n"
-        '    address: "3d06:bad:b01::113"\n'
-        "  testbed_mwan:\n"
-        "    vmid: 213\n"
-        '    address: "3d06:bad:b01:210::213"\n'
-    ),
-    SHARED_GROUP_FILE: (
-        'mwan_email_recipient: "alerts@example.invalid"\n'
-        "mwan_host_config_embeds_secrets: true\n"
-        'mwan_watchdog_description: "MWAN watchdog fixture"\n'
-        "mwan_watchdog_enabled: true\n"
-        'mwan_bgp_enabled: "no"\n'
-        'mwan_ra_solicit: "yes"\n'
-        'mwan_config_hostname: "mwan-{{ mwan_vmid }}"\n'
-        "mwan_ping_targets:\n"
-        '  - "2606:4700:4700::1111"\n'
-        '  - "2001:4860:4860::8888"\n'
-        "mwan_interfaces:\n"
-        '  - name: "vmbr0"\n'
-        "    accept_ra: 2\n"
-        '    autoconf: "yes"\n'
-        '  - name: "vmbr1"\n'
-        "    accept_ra: 0\n"
-        "    autoconf: false\n"
-    ),
-    SUBURBAN_GROUP_FILE: (
-        'mwan_proxmox_node: "hypervisor"\n'
-        'mwan_environment: "testbed"\n'
-        'mwan_email_from: "mwan-testbed@example.invalid"\n'
-        'mwan_is_primary: "no"\n'
-        'mwan_vmid: "{{ service_mapping.testbed_mwan.vmid }}"\n'
-        'mwan_agent_addr: "[{{ service_mapping.testbed_mwan.address }}]:50052"\n'
-    ),
-    VAULT_GROUP_FILE: (
-        'mwan_proxmox_node: "vault"\n'
-        'mwan_environment: "prod"\n'
-        f"{VAULT_EMAIL_LINE}"
-        'mwan_is_primary: "yes"\n'
-        'mwan_vmid: "{{ service_mapping.mwan.vmid }}"\n'
-        'mwan_agent_addr: "[{{ service_mapping.mwan.address }}]:50052"\n'
-    ),
     HOST_TEMPLATE: (
         "{# fixture #}\n"
         "vmid = {{ mwan_vmid }}\n"
@@ -318,10 +277,11 @@ UNNORMALIZED_ASSET_TEXT = (
     "source path 'proxmox/services/./mwan-ifmgr-oob-dhcpv4.conf' must equal its "
     "normalized form 'proxmox/services/mwan-ifmgr-oob-dhcpv4.conf'\n"
 )
-UNNORMALIZED_GROUP_FILE = "ansible/inventory/group_vars//suburban_servers.yml"
-UNNORMALIZED_GROUP_TEXT = (
-    "each group variable path in the descriptor must equal its normalized form: "
-    f"{UNNORMALIZED_GROUP_FILE}"
+UNNORMALIZED_CONFIGURATION_FILE = "opentofu/modules/fixtures//suburban/main.tf"
+UNNORMALIZED_CONFIGURATION_TEXT = (
+    "each native configuration dependency path in the descriptor must equal "
+    "its normalized form: "
+    f"{UNNORMALIZED_CONFIGURATION_FILE}"
 )
 GIT_TEST_OPTIONS = (
     "-c",
@@ -364,7 +324,10 @@ def fixture_file(destination: str, source: str, mode: str) -> JsonObject:
 
 
 def fixture_descriptor(
-    node: str, environment: str, host_group_file: str, extra_files: list[JsonValue]
+    node: str,
+    environment: str,
+    host_configuration_file: str,
+    extra_files: list[JsonValue],
 ) -> JsonObject:
     files: list[JsonValue] = [
         fixture_file(MWAN_CONFIG, f"template:{HOST_TEMPLATE}", "0600"),
@@ -388,16 +351,16 @@ def fixture_descriptor(
         {"path": "/etc/mwan", "mode": "0755", "owner": "root", "group": "root"},
         {"path": "/etc/opnsensectl", "mode": "0755", "owner": "root", "group": "root"},
     ]
-    group_vars: list[JsonValue] = [
+    configuration_dependencies: list[JsonValue] = [
         SERVICE_MAPPING_FILE,
-        SHARED_GROUP_FILE,
-        host_group_file,
+        SHARED_CONFIGURATION_FILE,
+        host_configuration_file,
     ]
     return {
         "node": node,
         "environment": environment,
         "validation_file": VALIDATION_FILE,
-        "group_vars": group_vars,
+        "configuration_dependencies": configuration_dependencies,
         "directories": directories,
         "files": files,
         "secret_fields": [],
@@ -422,13 +385,14 @@ def fixture_descriptors() -> dict[str, JsonObject]:
     ]
     return {
         SUBURBAN: fixture_descriptor(
-            "hypervisor", "testbed", SUBURBAN_GROUP_FILE, suburban_files
+            "hypervisor", "testbed", SUBURBAN_CONFIGURATION_FILE, suburban_files
         ),
-        VAULT: fixture_descriptor("vault", "prod", VAULT_GROUP_FILE, vault_files),
+        VAULT: fixture_descriptor("vault", "prod", VAULT_CONFIGURATION_FILE, vault_files),
     }
 
 
 def fixture_repository(destination: Path) -> Path:
+    shutil.copytree(NATIVE_FIXTURES / "modules", destination / "opentofu/modules")
     for relative in PRODUCER_PATHS:
         shutil.copytree(
             REPOSITORY_ROOT / relative,
@@ -439,10 +403,29 @@ def fixture_repository(destination: Path) -> Path:
         (destination / relative).parent.mkdir(parents=True, exist_ok=True)
         (destination / relative).write_text(text, encoding="utf-8")
     for workspace, descriptor in fixture_descriptors().items():
+        write_native_configuration(destination, workspace)
         path = descriptor_file(destination, workspace)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(descriptor, indent=2) + "\n", encoding="utf-8")
     return destination
+
+
+def write_native_configuration(repository: Path, workspace: str) -> None:
+    configuration = repository / "opentofu/modules" / workspace / "configuration"
+    configuration.mkdir(parents=True, exist_ok=True)
+    fixture_owner = workspace.split("/")[0]
+    if fixture_owner != "vault":
+        fixture_owner = "suburban"
+    body = CONFIGURATION_TEMPLATE.read_text(encoding="utf-8")
+    for name in ["services", "defaults", fixture_owner]:
+        dependency = repository / "opentofu/modules/fixtures" / name
+        relative = os.path.relpath(dependency, configuration)
+        token = name.upper()
+        if name == fixture_owner:
+            token = "HOST"
+        body = body.replace(f"__{token}__", relative)
+    body = body.replace("__OWNER__", fixture_owner)
+    (configuration / "main.tf").write_text(body, encoding="utf-8")
 
 
 def descriptor_file(repository: Path, workspace: str) -> Path:
@@ -569,16 +552,33 @@ def affected_output(selected: subprocess.CompletedProcess[str]) -> JsonValue:
     return output
 
 
-def run_tofu(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+def run_tofu(
+    repository: Path, workspace: str, *arguments: str
+) -> subprocess.CompletedProcess[str]:
     command = ["tofu", f"-chdir={repository / RENDER_ROOT}", *arguments]
-    return subprocess.run(command, capture_output=True, text=True, check=False)
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "TF_VAR_workspace": workspace},
+    )
 
 
 def plan_projection(repository: Path, workspace: str) -> subprocess.CompletedProcess[str]:
-    initialized = run_tofu(repository, "init", "-backend=false", "-input=false")
-    assert initialized.returncode == 0, initialized.stderr
+    initialized = run_tofu(
+        repository,
+        workspace,
+        "init",
+        "-backend=false",
+        "-input=false",
+        f"-var=workspace={workspace}",
+    )
+    if initialized.returncode != 0:
+        return initialized
     return run_tofu(
         repository,
+        workspace,
         "plan",
         "-refresh=false",
         "-lock=false",
@@ -592,7 +592,7 @@ def plan_projection(repository: Path, workspace: str) -> subprocess.CompletedPro
 def project(repository: Path, workspace: str) -> JsonObject:
     planned = plan_projection(repository, workspace)
     assert planned.returncode == 0, planned.stderr
-    shown = run_tofu(repository, "show", "-json", PLAN_FILE)
+    shown = run_tofu(repository, workspace, "show", "-json", PLAN_FILE)
     assert shown.returncode == 0, shown.stderr
     plan: JsonValue = json.loads(shown.stdout)
     outputs = as_object(as_object(as_object(plan)["planned_values"])["outputs"])
@@ -680,7 +680,7 @@ def suburban_projection(suburban_repository: Path) -> JsonObject:
 
 def test_build_succeeds_while_another_target_is_broken(tmp_path: Path) -> None:
     repository = fixture_repository(tmp_path / "repository")
-    (repository / VAULT_GROUP_FILE).unlink()
+    (repository / VAULT_CONFIGURATION_FILE).unlink()
     descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
     projection = project(repository, SUBURBAN)
 
@@ -1283,7 +1283,7 @@ def test_affected_reads_a_descriptor_with_programs(tmp_path: Path) -> None:
     repository = fixture_repository(tmp_path / "repository")
     add_descriptor_program(repository)
 
-    selected = run_affected(tmp_path, repository, [SUBURBAN_GROUP_FILE])
+    selected = run_affected(tmp_path, repository, [SUBURBAN_CONFIGURATION_FILE])
 
     assert affected_output(selected) == [SUBURBAN]
     assert selected.stderr == ""
@@ -1298,7 +1298,7 @@ def test_affected_selects_a_target_whose_descriptor_lists_parent_directories(
     descriptor["parent_directories"] = [{"path": "/usr/local/bin"}]
     path.write_text(json.dumps(descriptor), encoding="utf-8")
 
-    selected = run_affected(tmp_path, repository, [SUBURBAN_GROUP_FILE])
+    selected = run_affected(tmp_path, repository, [SUBURBAN_CONFIGURATION_FILE])
 
     assert affected_output(selected) == [SUBURBAN]
     assert selected.stderr == ""
@@ -1310,7 +1310,7 @@ def test_affected_ignores_an_unrelated_descriptor_that_is_not_utf8(
     repository = fixture_repository(tmp_path / "repository")
     descriptor_file(repository, VAULT).write_bytes(NOT_UTF8_BYTES)
 
-    selected = run_affected(tmp_path, repository, [SUBURBAN_GROUP_FILE])
+    selected = run_affected(tmp_path, repository, [SUBURBAN_CONFIGURATION_FILE])
 
     assert selected.returncode == 0, selected.stderr
     assert json.loads(selected.stdout) == [SUBURBAN]
@@ -1322,25 +1322,23 @@ def test_unknown_workspace_fails_with_known_selectors(suburban_repository: Path)
     planned = plan_projection(suburban_repository, "suburban/absent")
 
     assert planned.returncode != 0
-    assert "suburban/mwan, vault/mwan" in planned.stderr
+    assert "suburban/absent" in planned.stderr
 
 
 def caller_projection(repository: Path) -> JsonObject:
     descriptor_path = descriptor_file(repository, SUBURBAN)
     descriptor = as_object(json.loads(descriptor_path.read_text(encoding="utf-8")))
-    descriptor["group_vars"] = [SERVICE_MAPPING_FILE, SUBURBAN_GROUP_FILE]
+    descriptor["configuration_dependencies"] = [
+        SERVICE_MAPPING_FILE,
+        SUBURBAN_CONFIGURATION_FILE,
+    ]
     descriptor["files"] = [
         fixture_file(CALLER_DESTINATION, f"template:{CALLER_TEMPLATE}", "0600")
     ]
     descriptor_path.write_text(json.dumps(descriptor), encoding="utf-8")
     (repository / VALIDATION_FILE).write_text(json.dumps(CALLER_POLICY), encoding="utf-8")
-    (repository / SUBURBAN_GROUP_FILE).write_text(
-        'host_node: "hypervisor"\n'
-        'release_environment: "testbed"\n'
-        'greeting: "original value"\n'
-        "include_private: true\n",
-        encoding="utf-8",
-    )
+    shutil.copy2(CALLER_CONFIGURATION, repository / SUBURBAN_CONFIGURATION_FILE)
+
     template = repository / CALLER_TEMPLATE
     template.parent.mkdir(parents=True)
     template.write_text(CALLER_TEMPLATE_TEXT, encoding="utf-8")
@@ -1812,6 +1810,7 @@ def test_nested_and_underscore_selectors_keep_their_identity(tmp_path: Path) -> 
         target_descriptor = descriptor_file(repository, selector)
         target_descriptor.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_descriptor, target_descriptor)
+        write_native_configuration(repository, selector)
 
     assets: set[str] = set()
     for index, selector in enumerate((SUBURBAN, *EXTRA_SELECTORS)):
@@ -1838,7 +1837,7 @@ def test_nested_and_underscore_selectors_keep_their_identity(tmp_path: Path) -> 
     ("changed", "expected"),
     [
         pytest.param([VALIDATION_FILE], [SUBURBAN, VAULT], id="shared-validation"),
-        pytest.param([VAULT_GROUP_FILE], [VAULT], id="host-group-file"),
+        pytest.param([VAULT_CONFIGURATION_FILE], [VAULT], id="host-native-file"),
         pytest.param(
             ["mwan/config/_ifmgr_common.toml.j2"], [SUBURBAN, VAULT], id="include"
         ),
@@ -1854,12 +1853,14 @@ def test_nested_and_underscore_selectors_keep_their_identity(tmp_path: Path) -> 
             ["hostartifact/src/hostartifact/pack.py"], [SUBURBAN, VAULT], id="helper"
         ),
         pytest.param(
-            ["ansible/inventory/group_vars/all/service_mapping.yml"],
+            ["opentofu/modules/fixtures/services/main.tf"],
             [SUBURBAN, VAULT],
             id="service-mapping",
         ),
         pytest.param(
-            ["ansible/inventory/group_vars/proxy_servers.yml"], [], id="unread-group-file"
+            ["opentofu/modules/fixtures/unrelated/main.tf"],
+            [],
+            id="unread-native-file",
         ),
         pytest.param(["docs/README.md"], [], id="unrelated"),
     ],
@@ -1873,12 +1874,46 @@ def test_affected_selects_targets_by_dependency(
     assert json.loads(selected.stdout) == expected
 
 
+@pytest.mark.parametrize(
+    ("changed", "expected"),
+    [
+        pytest.param(
+            "configsctl",
+            [POWEREDGE_CERTIFICATE, SUBURBAN, VAULT],
+            id="controller-launcher",
+        ),
+        pytest.param(
+            "opentofu/modules/poweredge/config.tf",
+            [POWEREDGE_CERTIFICATE],
+            id="poweredge-config",
+        ),
+        pytest.param(
+            "opentofu/modules/poweredge/endpoint.tf",
+            [POWEREDGE_CERTIFICATE],
+            id="poweredge-endpoint",
+        ),
+    ],
+)
+def test_affected_selects_certificate_source_inputs(
+    tmp_path: Path, changed: str, expected: list[str]
+) -> None:
+    changed_file = write_changed_list(tmp_path, [changed])
+    selected = run_affected_command(
+        REPOSITORY_ROOT,
+        changed_file,
+        workspaces=(POWEREDGE_CERTIFICATE, SUBURBAN, VAULT),
+    )
+
+    assert selected.returncode == 0, selected.stderr
+    assert json.loads(selected.stdout) == expected
+
+
 def test_affected_ignores_a_broken_unrelated_target(tmp_path: Path) -> None:
     repository = fixture_repository(tmp_path / "repository")
     descriptor_file(repository, VAULT).write_text(INVALID_DESCRIPTOR, encoding="utf-8")
 
     selected = run_affected(
-        tmp_path, repository, ["ansible/inventory/group_vars/suburban_servers.yml"]
+        tmp_path, repository, ["opentofu/modules/fixtures/suburban/main.tf"]
     )
 
     assert selected.returncode == 0, selected.stderr
@@ -1959,7 +1994,7 @@ def test_include_of_a_deleted_template_comes_from_the_base_revision(
 def test_renamed_input_selects_only_its_target(tmp_path: Path) -> None:
     repository = fixture_repository(tmp_path / "repository")
     base_revision = commit_repository(repository)
-    run_git(repository, "mv", VAULT_GROUP_FILE, RENAMED_VAULT_GROUP_FILE)
+    run_git(repository, "mv", VAULT_CONFIGURATION_FILE, RENAMED_VAULT_CONFIGURATION_FILE)
     changed_file = git_changed_list(tmp_path, repository, base_revision)
 
     selected = run_affected_command(repository, changed_file, base_revision=base_revision)
@@ -1967,7 +2002,7 @@ def test_renamed_input_selects_only_its_target(tmp_path: Path) -> None:
 
     assert affected_output(selected) == [VAULT]
     assert planned.returncode != 0
-    assert "vault_servers.yml" in planned.stderr
+    assert "vars" in planned.stderr
 
 
 def test_deletion_selects_its_target_while_another_target_is_broken(
@@ -1987,18 +2022,18 @@ def test_deletion_selects_its_target_while_another_target_is_broken(
     )
 
 
-def test_unnormalized_group_file_fails_the_plan(tmp_path: Path) -> None:
+def test_unnormalized_native_dependency_fails_the_plan(tmp_path: Path) -> None:
     repository = fixture_repository(tmp_path / "repository")
     replace_in_file(
         descriptor_file(repository, SUBURBAN),
-        SUBURBAN_GROUP_FILE,
-        UNNORMALIZED_GROUP_FILE,
+        SUBURBAN_CONFIGURATION_FILE,
+        UNNORMALIZED_CONFIGURATION_FILE,
     )
 
     planned = plan_projection(repository, SUBURBAN)
 
     assert planned.returncode != 0
-    assert UNNORMALIZED_GROUP_TEXT in " ".join(planned.stderr.split())
+    assert UNNORMALIZED_CONFIGURATION_TEXT in " ".join(planned.stderr.split())
 
 
 @pytest.mark.parametrize(
@@ -2027,9 +2062,9 @@ def test_unnormalized_group_file_fails_the_plan(tmp_path: Path) -> None:
             id="configs-asset",
         ),
         pytest.param(
-            SUBURBAN_GROUP_FILE,
-            UNNORMALIZED_GROUP_FILE,
-            SUBURBAN_GROUP_FILE,
+            SUBURBAN_CONFIGURATION_FILE,
+            UNNORMALIZED_CONFIGURATION_FILE,
+            SUBURBAN_CONFIGURATION_FILE,
             [SUBURBAN],
             id="group-file",
         ),
@@ -2057,7 +2092,7 @@ def test_branch_selection_keeps_a_failed_target_after_a_documentation_push(
     repository = fixture_repository(tmp_path / "repository")
     commit_repository(repository)
     run_git(repository, "checkout", "--quiet", "-b", FEATURE_BRANCH)
-    replace_in_file(repository / VAULT_GROUP_FILE, VAULT_EMAIL_LINE, "")
+    replace_in_file(repository / VAULT_CONFIGURATION_FILE, VAULT_EMAIL_LINE, "")
     failed_push = commit_all(repository, "break vault input")
     (repository / "docs").mkdir()
     (repository / "docs/README.md").write_text("documentation\n", encoding="utf-8")

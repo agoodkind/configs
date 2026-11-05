@@ -1,14 +1,10 @@
 locals { repository_root = abspath("${path.module}/../../..") }
 
 module "contracts" {
-  source          = "../../modules/contracts"
-  repository_root = local.repository_root
+  source = "../../modules/contracts"
 }
 
 locals {
-  shared_vars         = module.contracts.shared_vars
-  service_mapping     = module.contracts.service_mapping
-  cloudflare_zone_ids = module.contracts.cloudflare_zone_ids
 }
 
 module "poweredge" {
@@ -27,3 +23,5 @@ output "observed_nic_attributes" {
   description = "Independent iDRAC NIC attribute readback. The provider resource does not refresh configured OEM attribute values."
   value       = module.poweredge.observed_nic_attributes
 }
+
+module "configuration" { source = "../../modules/poweredge/firmware/configuration" }

@@ -21,7 +21,7 @@ locals {
     ])
   ])
 
-  # The module reads the descriptor, validation file, and group variable files only
+  # The module reads the descriptor, validation file, and native configuration dependencies only
   # for the selected workspace. Invalid or missing inputs of another target do not
   # fail the build of the selected target.
   descriptors = {
@@ -30,18 +30,15 @@ locals {
     if workspace == var.workspace
   }
   unnormalized_path_pattern = "(^/|^\\.(/|$)|/\\.(/|$)|//|(^|/)\\.\\.(/|$)|/$|^$)"
-  unnormalized_group_files = flatten([
+  unnormalized_configuration_files = flatten([
     for descriptor in values(local.descriptors) : [
-      for group_file in descriptor.group_vars : group_file
-      if length(regexall(local.unnormalized_path_pattern, group_file)) > 0
+      for configuration_file in descriptor.configuration_dependencies : configuration_file
+      if length(regexall(local.unnormalized_path_pattern, configuration_file)) > 0
     ]
   ])
   targets = {
     for workspace, descriptor in local.descriptors : workspace => merge(descriptor, {
       validation = jsondecode(file("${var.repository_root}/${descriptor.validation_file}"))
-      vars = merge([
-        for group_file in descriptor.group_vars : yamldecode(file("${var.repository_root}/${group_file}"))
-      ]...)
     })
   }
 }

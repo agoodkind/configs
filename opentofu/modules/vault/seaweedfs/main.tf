@@ -72,7 +72,15 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  seaweedfs = object({
+    vmid     = number
+    hostname = string
+  })
+  vault_hypervisor = object({
+    ipv6 = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 

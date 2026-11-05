@@ -1,0 +1,9 @@
+tofu:
+  workspaces_dir: workspaces
+  configuration_root: native
+  env_key_prefix: fixture_installed_source_env_
+  installed_source:
+    root: /srv/hostartifact-acceptance
+    workspace: suburban/hostartifact-acceptance
+    node: hypervisor
+    environment: testbed

@@ -1,0 +1,20 @@
+output "simulator" { value = {
+  "ipv6_enabled"                         = true
+  "dynamic_v4"                           = false
+  "routed_ipv6_enabled"                  = false
+  "routed_ipv6_prefix"                   = ""
+  "routed_ipv4_prefix"                   = ""
+  "routed_ipv4_route_to"                 = ""
+  "static_v4_block"                      = ""
+  "static_v4_route_to"                   = ""
+  "v4_subnet"                            = "10.241.204.0/29"
+  "pd_prefix"                            = "3d06:bad:b01:2200::/56"
+  "slaac_prefix"                         = ""
+  "mwan_vm_ll"                           = "fe80::be24:11ff:febe:8eb4"
+  "ra_min_interval_seconds"              = 30
+  "ra_max_interval_seconds"              = 100
+  "ra_dns_servers"                       = ["2606:4700:4700::1111"]
+  "ra_dns_lifetime_seconds"              = "240"
+  "ra_prefix_preferred_lifetime_seconds" = "omit"
+  "ra_prefix_valid_lifetime_seconds"     = "omit"
+} }

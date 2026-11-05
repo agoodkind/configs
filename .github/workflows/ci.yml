@@ -17,7 +17,32 @@ on:
         description: Fixture case, or none for a target build; workspace must equal the fixture selector
         required: false
         default: none
-        type: string
+        type: choice
+        options:
+          - none
+          - valid-v1
+          - valid-v2
+          - installed-source-v1
+          - installed-source-v2
+          - other-target
+          - digest
+          - size
+          - symlink
+          - hardlink
+          - traversal
+          - absolute
+          - extra
+          - missing
+          - duplicate
+          - member-mode
+          - recovery-v1
+          - recovery-v2
+          - program-valid
+          - program-wrong-source
+          - program-wrong-signer
+          - program-wrong-archive
+          - program-wrong-member
+          - program-collision
 
 permissions:
   contents: read
@@ -47,12 +72,18 @@ jobs:
         with:
           go-version-file: .go-version
           cache-dependency-path: configsctl
-      # The gate hands Jinja forms its Go parser cannot read to a jinja2
-      # subprocess and fails when jinja2 is missing, so it is a hard dependency.
-      - name: Install jinja2
-        run: sudo apt-get update && sudo apt-get install -y python3-jinja2
-      - name: Lint Ansible inputs
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - name: Validate native configuration inputs
         run: ./configsctl lint
+      - name: Install jinja2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-jinja2
+      - name: Lint host artifact templates
+        run: ./configsctl lint mwan/config/*.j2 opnsense/*.j2 proxmox/services/*.j2
 
   # On every push, the job runs select-targets.sh to select host artifact
   # targets. On a branch other than main, selection compares the head with

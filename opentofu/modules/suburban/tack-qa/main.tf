@@ -398,7 +398,49 @@ resource "proxmox_virtual_environment_container" "tack_search1_suburban" {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  tack_app2_suburban = object({
+    vmid        = number
+    hostname    = string
+    ipv6        = string
+    mac_address = string
+  })
+  opnsense_suburban = object({
+    ipv6_vmnet = string
+  })
+  dns64_suburban = object({
+    ipv6 = string
+  })
+  tack_data1_suburban = object({
+    vmid        = number
+    hostname    = string
+    ipv6        = string
+    mac_address = string
+  })
+  tack_data2_suburban = object({
+    vmid        = number
+    hostname    = string
+    ipv6        = string
+    mac_address = string
+  })
+  tack_data3_suburban = object({
+    vmid        = number
+    hostname    = string
+    ipv6        = string
+    mac_address = string
+  })
+  tack_qa_suburban = object({
+    vmid     = number
+    hostname = string
+    ipv6     = string
+  })
+  tack_search1_suburban = object({
+    vmid        = number
+    hostname    = string
+    ipv6        = string
+    mac_address = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 
@@ -406,7 +448,7 @@ variable "host_networks" { type = map(string) }
 
 locals { service_mapping = var.service_mapping }
 
-variable "tack_search" { type = any }
+variable "tack_search" { type = object({ tack_search_guest_memory_mib = number, tack_search_guest_cores = number, tack_search_guest_disk_gib = number }) }
 
 locals { tack_search = var.tack_search }
 

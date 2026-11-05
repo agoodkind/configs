@@ -65,7 +65,16 @@ resource "proxmox_virtual_environment_container" "dns64_suburban" {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  dns64_suburban = object({
+    vmid     = number
+    hostname = string
+    ipv6     = string
+  })
+  opnsense_suburban = object({
+    ipv6_vmnet = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 

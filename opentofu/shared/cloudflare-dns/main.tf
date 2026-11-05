@@ -1,13 +1,11 @@
 locals { repository_root = abspath("${path.module}/../../..") }
 
 module "contracts" {
-  source          = "../../modules/contracts"
-  repository_root = local.repository_root
+  source = "../../modules/contracts"
 }
 
 locals {
-  shared_vars         = module.contracts.shared_vars
-  service_mapping     = module.contracts.service_mapping
+  service_mapping     = module.configuration.service_mapping
   cloudflare_zone_ids = module.contracts.cloudflare_zone_ids
 }
 
@@ -874,3 +872,5 @@ resource "cloudflare_dns_record" "dynamic_silver" {
     ignore_changes  = [content]
   }
 }
+
+module "configuration" { source = "../../modules/shared/cloudflare-dns/configuration" }

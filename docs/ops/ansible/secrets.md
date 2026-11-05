@@ -1,12 +1,6 @@
-# Ansible vault secrets
+# Manage Vault secrets
 
-Every shared inventory secret is Ansible Vault-encrypted inside the inventory, one key
-per secret, and every key name starts with `vault_`. Consumers reference the
-`vault_` name directly. Pure aliases like `api_key: "{{ vault_api_key }}"` are
-banned. An env-wrapper variable is allowed only when it encodes a real
-environment override with a vault fallback and stays local to the service that
-needs it; the Cloudflare token wrapper in the proxy group vars is the one
-current example.
+Store shared secret values in the encrypted Configs Vault. Each key starts with `vault_`. OpenTofu roots declare matching variables, and configsctl exports their values for the selected workspace. Keep nonsecret settings in native configuration.
 
 configsctl is the only sanctioned interface to the vault. Do not
 invoke `ansible`, `ansible-vault`, `ansible-playbook`, `ansible-inventory`, or
@@ -25,10 +19,9 @@ the added and updated key names. Read a single value with
 the cleanup command; never cat, paste, log, or commit that file.
 
 The vault password sits at `~/.config/ansible/vault.pass` with mode `600`.
-Every configsctl invocation reads it from there. If decryption fails, verify that
-file exists and holds the current password. If a playbook reports an undefined
-`vault_` variable, the key is missing from the vault or the consumer still
-references a removed alias.
+Vault commands read the password from that file. If decryption fails, verify that
+file exists and stores the current password. If OpenTofu reports a missing
+required secret variable, compare its declared name with the stored key names.
 
 If the password is lost, the vault cannot be decrypted. Restore the password
 from 1Password, or re-create every secret from its original source into a

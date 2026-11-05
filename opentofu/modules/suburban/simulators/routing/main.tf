@@ -78,32 +78,17 @@ resource "proxmox_virtual_environment_container" "routing_simulator" {
 
     precondition {
       condition     = length(distinct(values(local.routing_guests)[*].vmid)) == length(local.routing_guests)
-      error_message = "testbed_routing_guests contains two guests with the same VMID."
+      error_message = "Routing guests must have distinct VMIDs."
     }
   }
 }
 
 locals {
-  routing_inventory = var.routing_inventory
-  routing_networks  = local.routing_inventory.testbed_routing_networks
-  routing_guests    = { for name in var.guest_keys : name => local.service_mapping[name] }
+  routing_networks = var.routing_networks
+  routing_guests   = { for name in var.guest_keys : name => local.service_mapping[name] }
 
   routing_management_network = "management"
-  routing_created_networks = {
-    for name, network in local.routing_networks : name => network
-    if name != local.routing_management_network
-  }
-  routing_bridge_names = var.host_networks
-  routing_existing_bridge_names = [
-    var.host_networks.vm_management_suburban,
-    var.host_networks.mwan_suburban,
-    var.host_networks.isp_webpass_suburban,
-    var.host_networks.isp_att_suburban,
-    var.host_networks.isp_mbrains_suburban,
-    var.host_networks.isp_astound_suburban,
-    var.host_networks.isp_routed_suburban,
-    var.host_networks.trunk_suburban,
-  ]
+  routing_bridge_names       = var.host_networks
 
   routing_management_interfaces = {
     for name, guest in local.routing_guests : name => one([
@@ -113,9 +98,8 @@ locals {
   }
   routing_management_ipv4_prefix_length = split("/", local.routing_networks.management.ipv4_net)[1]
   routing_management_ipv6_prefix_length = split("/", local.routing_networks.management.ipv6_net)[1]
-  routing_outer_ipv4_prefix_length      = split("/", local.routing_networks.outer.ipv4_net)[1]
 
-  routing_management = local.routing_inventory.testbed_routing_management
+  routing_management = var.routing_management
   routing_management_ipv4_gateway = (
     local.routing_management.ipv4_default_route ? local.service_mapping.vmbr1_suburban.ipv4 : null
   )
@@ -136,9 +120,9 @@ locals {
 
 variable "guest_keys" { type = set(string) }
 
-variable "routing_inventory" { type = any }
+variable "routing_networks" { type = map(object({ bridge = string, ipv4_net = string, ipv6_net = string })) }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = map(object({ hostname = optional(string), vmid = optional(number), ipv4 = optional(string), ipv6 = optional(string), routing_interfaces = optional(map(object({ name = string, network = string, mac_address = string, ipv4 = string, ipv6 = string }))) })) }
 
 variable "ssh_keys" { type = string }
 
@@ -155,3 +139,5 @@ terraform {
     }
   }
 }
+
+variable "routing_management" { type = object({ forwarding = bool, ipv4_default_route = bool, ipv6_default_route = bool }) }

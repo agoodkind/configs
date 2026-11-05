@@ -100,13 +100,32 @@ resource "proxmox_virtual_environment_container" "isp_astound_suburban" {
 }
 
 locals {
-  routing_outer_ipv4_prefix_length = split("/", var.routing_inventory.testbed_routing_networks.outer.ipv4_net)[1]
+  routing_outer_ipv4_prefix_length = split("/", var.routing_networks.outer.ipv4_net)[1]
   routing_bridge_names             = var.host_networks
 }
 
-variable "routing_inventory" { type = any }
+variable "routing_networks" { type = map(object({ bridge = string, ipv4_net = string, ipv6_net = string })) }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  isp_astound_suburban = object({
+    vmid        = number
+    hostname    = string
+    ipv4        = string
+    ipv4_uplink = string
+    routing_interfaces = object({
+      outer = object({
+        name        = string
+        network     = string
+        mac_address = string
+        ipv4        = string
+        ipv6        = string
+      })
+    })
+  })
+  vmbr1_suburban = object({
+    ipv4 = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 

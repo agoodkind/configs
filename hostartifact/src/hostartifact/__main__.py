@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ ASSET_ROOT_SEPARATOR = "="
 CHANGED_PATH_SEPARATOR = "\0"
 FAILURE_EXIT_CODE = 1
 PROGRAM_NAME = "hostartifact"
+HCL_CHECKER_VARIABLE = "HOSTARTIFACT_HCL_CHECKER"
 
 
 class Arguments(argparse.Namespace):
@@ -84,6 +86,11 @@ def read_changed_paths(path: Path) -> set[str]:
 
 
 def run_build(parsed: Arguments) -> str:
+    checker = os.environ.get(HCL_CHECKER_VARIABLE)
+    if not checker:
+        raise BuildError(
+            f"set {HCL_CHECKER_VARIABLE} to the staged native configsctl binary"
+        )
     result = build_artifact(
         projection=load_projection(parsed.projection),
         repository_root=parsed.repository_root,
@@ -91,6 +98,7 @@ def run_build(parsed: Arguments) -> str:
         asset_roots=parse_asset_roots(parsed.asset_root),
         program_results=load_program_results(parsed.program_result),
         output_dir=parsed.output_dir,
+        hcl_checker=Path(checker),
     )
     return result.model_dump_json()
 

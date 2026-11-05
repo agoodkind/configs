@@ -1,1 +1,4 @@
-variable "workspace" { type = string }
+variable "workspace" {
+  type  = string
+  const = true
+}

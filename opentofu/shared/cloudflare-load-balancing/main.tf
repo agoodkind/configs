@@ -18,3 +18,5 @@ resource "cloudflare_load_balancer_monitor" "http_monit_port_1406" {
     prevent_destroy = true
   }
 }
+
+module "configuration" { source = "../../modules/shared/cloudflare-load-balancing/configuration" }

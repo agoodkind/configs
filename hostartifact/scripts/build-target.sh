@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The build helper PATH contains only the uv environment and the OpenTofu directory.
+# The build helper PATH contains only uv, OpenTofu, and the pinned configsctl tool.
 # Usage: build-target.sh <repository root> <workspace> <target directory> <source revision>.
 # Set GH_TOKEN and GITHUB_REPOSITORY before running it.
 
@@ -31,10 +31,10 @@ project_target() {
   local repository_root="$1"
   local workspace="$2"
   local target="$3"
-  tofu -chdir="$repository_root/$RENDER_ROOT" init -backend=false -input=false > "$target/init.log"
+  tofu -chdir="$repository_root/$RENDER_ROOT" init -backend=false -input=false -var "workspace=$workspace" > "$target/init.log"
   tofu -chdir="$repository_root/$RENDER_ROOT" plan -refresh=false -lock=false -input=false \
     -out="$target/projection.tfplan" -var "workspace=$workspace" > "$target/plan.log"
-  tofu -chdir="$repository_root/$RENDER_ROOT" show -json "$target/projection.tfplan" > "$target/show.json"
+  TF_VAR_workspace="$workspace" tofu -chdir="$repository_root/$RENDER_ROOT" show -json "$target/projection.tfplan" > "$target/show.json"
   jq -e .planned_values.outputs.projection.value "$target/show.json" > "$target/projection.json"
 }
 
@@ -201,6 +201,7 @@ build_archive() {
   local target="$2"
   local source_revision="$3"
   local helper_path="$4"
+  local hcl_checker="$5"
   local root
   local result
   local root_arguments=()
@@ -211,7 +212,7 @@ build_archive() {
   while read -r result; do
     result_arguments+=(--program-result "$result")
   done < "$target/program-results.txt"
-  env -i PATH="$helper_path" python -I -m hostartifact build \
+  env -i PATH="$helper_path" HOSTARTIFACT_HCL_CHECKER="$hcl_checker" python -I -m hostartifact build \
     --projection "$target/projection.json" \
     --repository-root "$repository_root" \
     --source-revision "$source_revision" \
@@ -231,14 +232,17 @@ main() {
   local target="$3"
   local source_revision="$4"
   local venv_bin="$repository_root/hostartifact/.venv/bin"
+  local tool_dir="$target/tools"
   local tofu_dir
   tofu_dir="$(dirname "$(command -v tofu)")"
-  check_helper_path "$venv_bin" "$tofu_dir"
   mkdir -p "$target"
+  "$(dirname "${BASH_SOURCE[0]}")/stage-hcl-checker.sh" "$repository_root" "$tool_dir"
+  check_helper_path "$venv_bin" "$tofu_dir" "$tool_dir"
   project_target "$repository_root" "$workspace" "$target"
   verify_applications "$repository_root" "$target"
   verify_programs "$target"
-  build_archive "$repository_root" "$target" "$source_revision" "$venv_bin:$tofu_dir"
+  build_archive "$repository_root" "$target" "$source_revision" \
+    "$venv_bin:$tofu_dir:$tool_dir" "$tool_dir/configsctl"
 }
 
 # Only direct shell execution runs main. Other scripts can source its functions.

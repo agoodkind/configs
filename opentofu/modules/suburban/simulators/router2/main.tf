@@ -102,7 +102,20 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  router2_suburban = object({
+    vmid         = number
+    hostname     = string
+    ipv4_transit = string
+    ipv6_transit = string
+    ipv4_uplink  = string
+    ipv6_uplink  = string
+  })
+  vmbr1_suburban = object({
+    ipv4 = string
+    ipv6 = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 

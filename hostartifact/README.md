@@ -10,6 +10,7 @@ that depend on a list of changed paths. Each target has a descriptor at
 - uv.
 - Python 3.15. uv installs Python from `requires-python`.
 - OpenTofu 1.13.2 for the tests and the render root.
+- Go for the native HCL checker pinned by the repository's configsctl launcher.
 - git for `affected --base-revision`.
 - GitHub CLI, jq, and GNU sha256sum for test fixture preparation. GitHub CLI requires
   an authenticated account or `GH_TOKEN` with access to the pinned program release.
@@ -29,6 +30,8 @@ uv sync --frozen --project hostartifact
 `ruff check --fix`. The test target downloads and verifies the pinned program release
 in a temporary directory before running pytest. The target deletes that directory after
 success, failure, or interruption.
+The test target builds the pinned native HCL checker into that temporary directory.
+`HOSTARTIFACT_HCL_CHECKER` can select an explicit local checker binary for development.
 
 ## build
 
@@ -45,6 +48,9 @@ The `build` command accepts these arguments:
 
 A template or asset source path must equal its normalized form. For example, use
 `opnsense/config.toml.j2` instead of `./opnsense/config.toml.j2`.
+Direct `build` calls require `HOSTARTIFACT_HCL_CHECKER` to identify an absolute,
+executable configsctl path. The sanctioned target build stages that executable from
+the launcher's pinned Go module version.
 
 Each descriptor requires `validation_file`, a repository-relative JSON file. The
 selected target reads that file into the projection's required `validation` field.
@@ -54,6 +60,17 @@ the keys to reject at every depth in rendered TOML. The builder merges the overr
 before checking variable names and adding the separately supplied `service_mapping`.
 The builder rejects `vault_` variable names and a caller-defined `service_mapping`.
 The archive manifest does not include validation data.
+
+Raw OpenTofu source from the selected workspace can use a `var.vault_*` expression
+when the same source and installed module directories declare that variable with
+`sensitive = true` and without a default. The native configsctl checker reads
+the exact source buffers before the builder copies their original bytes. It
+rejects `vault_*` text in source literals, comments, and undeclared references.
+It accepts declared references in heredoc interpolations. A rendered JSON
+controller settings file can use a `vault_`
+prefix ending in an underscore only as `tofu.env_key_prefix`. The builder rejects
+duplicate JSON keys. Other JSON fields and service or TOML files cannot contain
+`vault_*` references.
 
 The command prints one JSON line on stdout with `archive`, `asset`, `sha256`, and `size`.
 The asset file name is `hostconfig_<SHA-256 of the selector>.tar.gz`.
@@ -212,7 +229,8 @@ The `build` and `affected` commands use these exit codes:
 
 `scripts/build-target.sh <repository root> <workspace> <target directory>
 <source revision>` plans the render root, verifies each pinned application release,
-checks out the attested source commits, and runs `build`.
+checks out the attested source commits, stages the pinned native checker, and runs
+`build`.
 
 `scripts/check-target.sh <repository root> <workspace> <target directory> <base commit>
 <head commit>` runs `build-target.sh`, checks the archive member digests, compares copied

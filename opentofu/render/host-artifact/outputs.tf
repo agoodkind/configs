@@ -4,11 +4,10 @@ output "projection" {
     node        = module.targets.target.node
     environment = module.targets.target.environment
     validation  = module.targets.target.validation
-    vars = {
-      for name, value in module.targets.target.vars : name => value
-      if name != local.service_mapping_key
-    }
-    service_mapping = module.targets.target.vars[local.service_mapping_key]
+    vars = merge(module.configuration.artifact_vars, {
+      (module.targets.target.validation.identity_variables.environment) = module.targets.target.environment
+    })
+    service_mapping = module.configuration.service_mapping
     directories     = module.targets.target.directories
     files           = module.targets.target.files
     programs        = try(module.targets.target.programs, [])

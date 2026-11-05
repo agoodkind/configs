@@ -57,7 +57,20 @@ resource "proxmox_virtual_environment_container" "clyde_suburban" {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  clyde_suburban = object({
+    vmid        = number
+    hostname    = string
+    ipv6        = string
+    mac_address = string
+  })
+  opnsense_suburban = object({
+    ipv6_vmnet = string
+  })
+  dns64_suburban = object({
+    ipv6 = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 

@@ -87,7 +87,19 @@ resource "proxmox_virtual_environment_container" "isp_att_suburban" {
   }
 }
 
-variable "service_mapping" { type = any }
+variable "service_mapping" { type = object({
+  isp_att_suburban = object({
+    vmid        = number
+    hostname    = string
+    ipv4        = string
+    ipv4_uplink = string
+    ipv6_uplink = string
+  })
+  vmbr1_suburban = object({
+    ipv4 = string
+    ipv6 = string
+  })
+}) }
 
 variable "ssh_keys" { type = string }
 
