@@ -2,7 +2,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "proxy" {
   provider = cloudflare.tunnels
 
   account_id = var.cloudflare_account_id
-  tunnel_id  = "4b602332-6413-4f95-8874-561ed6d9b266"
+  tunnel_id  = module.contracts.tack_tunnel_id
   source     = "cloudflare"
   config = {
     ingress = concat([
@@ -71,5 +71,5 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "proxy" {
 
 import {
   to = cloudflare_zero_trust_tunnel_cloudflared_config.proxy
-  id = "${var.cloudflare_account_id}/4b602332-6413-4f95-8874-561ed6d9b266"
+  id = "${var.cloudflare_account_id}/${module.contracts.tack_tunnel_id}"
 }

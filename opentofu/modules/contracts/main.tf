@@ -1,6 +1,8 @@
 variable "repository_root" { type = string }
 
 locals {
+  tack_tunnel_id = "4b602332-6413-4f95-8874-561ed6d9b266"
+
   shared_vars       = yamldecode(file("${var.repository_root}/ansible/inventory/group_vars/all/vars.yml"))
   routing_inventory = yamldecode(file("${var.repository_root}/ansible/inventory/group_vars/all/service_mapping.yml"))
   service_mapping   = local.routing_inventory.service_mapping
@@ -33,3 +35,5 @@ locals {
 output "cloudflare_zone_ids" { value = local.cloudflare_zone_ids }
 
 output "tack_domain_aliases" { value = local.tack_domain_aliases }
+
+output "tack_tunnel_id" { value = local.tack_tunnel_id }
