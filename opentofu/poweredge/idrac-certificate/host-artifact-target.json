@@ -10,6 +10,12 @@
       "group": "root"
     },
     {
+      "path": "/opt/configs/idrac-certificate/bin",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    },
+    {
       "path": "/opt/configs/idrac-certificate/workspace",
       "mode": "0755",
       "owner": "root",
