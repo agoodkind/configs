@@ -4,6 +4,7 @@ import gzip
 import hashlib
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,9 @@ from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ConfigDict, JsonValue
+
+from hostartifact.manifest import Manifest
+from hostartifact.native_hcl import HclSourceFile, HclSourceRequest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = REPOSITORY_ROOT / "hostartifact/tests/build_fixture.py"
@@ -113,7 +117,29 @@ PROGRAM_CASES = (
     "program-wrong-member",
     "program-collision",
 )
-ALL_CASES = (*LEGACY_CASES, *PROGRAM_CASES)
+INSTALLED_SOURCE_CASES = ("installed-source-v1", "installed-source-v2")
+ALL_CASES = (*LEGACY_CASES, *PROGRAM_CASES, *INSTALLED_SOURCE_CASES)
+INSTALLED_SOURCE_FILES = (
+    "configsctl.yml",
+    "native/main.tf",
+    "workspaces/sample/main.tf",
+    "workspaces/sample/host/main.tf",
+)
+INSTALLED_SOURCE_DIRECTORIES = (
+    DIRECTORY_A,
+    f"{DIRECTORY_A}/native",
+    f"{DIRECTORY_A}/workspaces",
+    f"{DIRECTORY_A}/workspaces/sample",
+    f"{DIRECTORY_A}/workspaces/sample/host",
+)
+HCL_CHECKER_ENV = "HOSTARTIFACT_HCL_CHECKER"
+TOKEN_BYTE_COUNT = 32
+TOKEN_VARIABLE_ENV = "TF_VAR_vault_installed_source_token"
+EXPECTED_DIGEST_ENV = "TF_VAR_expected_token_sha256"
+TOKEN_VALIDATION_ERROR = "The supplied token must match the expected SHA-256 digest."
+MARKER_ADDRESS = "module.host.terraform_data.marker"
+NATIVE_WORKSPACE_SELECTOR = "workspaces/sample"
+COMMAND_TIMEOUT_SECONDS = 30
 
 type JsonObject = dict[str, JsonValue]
 
@@ -377,6 +403,184 @@ def test_valid_case_contains_exactly_its_two_files(
     manifest = read_manifest(members[0])
     assert manifest == expected_manifest(workspace, directory, files, NO_SIZE_CHANGE)
     assert members[1:] == [file_member(item) for item in files]
+
+
+def installed_source_members(output_dir: Path, case: str) -> list[TarMember]:
+    result = build(case, output_dir)
+    members = read_members(Path(as_text(result["archive"])))
+    manifest = Manifest.model_validate_json(members[0].content)
+    assert (
+        manifest.repository,
+        manifest.workspace,
+        manifest.node,
+        manifest.environment,
+        manifest.source_revision,
+    ) == (CONFIGS_REPOSITORY, TARGET_A, NODE, ENVIRONMENT, SOURCE_REVISION)
+    assert manifest.programs == []
+    assert [entry.path for entry in manifest.directories] == list(
+        INSTALLED_SOURCE_DIRECTORIES
+    )
+    for directory in manifest.directories:
+        assert (directory.mode, directory.owner, directory.group) == (
+            DIRECTORY_MODE,
+            ROOT_ACCOUNT,
+            ROOT_ACCOUNT,
+        )
+    expected_paths = [f"{DIRECTORY_A}/{path}" for path in INSTALLED_SOURCE_FILES]
+    assert [entry.path for entry in manifest.files] == expected_paths
+    assert [member.name for member in members[1:]] == [
+        FILES_PREFIX + path.lstrip("/") for path in expected_paths
+    ]
+    for entry, member in zip(manifest.files, members[1:], strict=True):
+        assert (entry.mode, entry.owner, entry.group) == (
+            FIRST_MODE,
+            ROOT_ACCOUNT,
+            ROOT_ACCOUNT,
+        )
+        assert member == regular(entry.member, member.content, MANIFEST_MODE)
+        assert entry.sha256 == hashlib.sha256(member.content).hexdigest()
+        assert entry.size == len(member.content)
+    assert list(output_dir.iterdir()) == [Path(as_text(result["archive"]))]
+    return members
+
+
+def test_installed_source_versions_keep_identity_and_change_only_the_child_module(
+    tmp_path: Path,
+) -> None:
+    first = installed_source_members(tmp_path / "first", INSTALLED_SOURCE_CASES[0])
+    second = installed_source_members(tmp_path / "second", INSTALLED_SOURCE_CASES[1])
+
+    assert (
+        hashlib.sha256(first[0].content).hexdigest()
+        != hashlib.sha256(second[0].content).hexdigest()
+    )
+    assert first[1:-1] == second[1:-1]
+    assert first[-1].name == second[-1].name
+    assert first[-1].mode == second[-1].mode
+    fixtures = GENERATOR.parent / "fixtures" / "installed-source"
+    assert first[-1].content == (fixtures / VERSION_ONE / "main.tf").read_bytes()
+    assert second[-1].content == (fixtures / VERSION_TWO / "main.tf").read_bytes()
+
+
+def native_command(
+    directory: Path, environment: dict[str, str], *arguments: str
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["tofu", *arguments],
+        cwd=directory,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+    )
+
+
+def check_private_input(token: str, content: bytes) -> None:
+    if token.encode() in content:
+        pytest.fail("OpenTofu exposed the private input", pytrace=False)
+
+
+@pytest.mark.parametrize(
+    ("case", "version"),
+    list(zip(INSTALLED_SOURCE_CASES, (VERSION_ONE, VERSION_TWO), strict=True)),
+)
+def test_installed_source_archive_passes_native_checker_and_plans_with_builtin_provider(
+    tmp_path: Path, case: str, version: str
+) -> None:
+    members = installed_source_members(tmp_path / "archive", case)
+    installed = tmp_path / "installed"
+    sources: list[HclSourceFile] = []
+    fixtures = GENERATOR.parent / "fixtures" / "installed-source"
+    for relative_path, member in zip(INSTALLED_SOURCE_FILES, members[1:], strict=True):
+        path = installed / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(member.content)
+        source = fixtures / "common" / relative_path
+        if relative_path == INSTALLED_SOURCE_FILES[-1]:
+            source = fixtures / version / "main.tf"
+        assert member.content == source.read_bytes()
+        if path.suffix == ".tf":
+            sources.append(
+                HclSourceFile(
+                    source=str(source.relative_to(REPOSITORY_ROOT)),
+                    destination=f"{DIRECTORY_A}/{relative_path}",
+                    content=member.content.decode(),
+                )
+            )
+    request = HclSourceRequest(files=sources)
+    request_path = tmp_path / "sources.json"
+    request_path.write_text(request.model_dump_json(), encoding="utf-8")
+    checked = subprocess.run(
+        [os.environ[HCL_CHECKER_ENV], "lint-hcl-sources", str(request_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+    )
+    assert checked.returncode == 0, checked.stderr
+    environment = dict(os.environ)
+    environment["TF_DATA_DIR"] = str(tmp_path / "tofu-data")
+    environment["TF_WORKSPACE"] = "default"
+    formatted = native_command(installed, environment, "fmt", "-check", "-recursive")
+    assert formatted.returncode == 0, formatted.stdout + formatted.stderr
+    native = installed / "native"
+    initialized_native = native_command(native, environment, "init", "-input=false")
+    assert initialized_native.returncode == 0, initialized_native.stderr
+    native_plan = tmp_path / "native.tfplan"
+    selected = native_command(
+        native,
+        environment,
+        "plan",
+        "-input=false",
+        f"-var=workspace={NATIVE_WORKSPACE_SELECTOR}",
+        f"-out={native_plan}",
+    )
+    assert selected.returncode == 0, selected.stdout + selected.stderr
+    native_shown = native_command(native, environment, "show", "-json", str(native_plan))
+    assert native_shown.returncode == 0, native_shown.stderr
+    native_document = as_object(json.loads(native_shown.stdout))
+    outputs = as_object(as_object(native_document["planned_values"])["outputs"])
+    locks = as_object(as_object(outputs["lock_targets"])["value"])
+    assert locks == {
+        "module_hosts": {"module.host": NODE},
+        "lock_endpoints": {NODE: {"local": True}},
+    }
+    workspace = installed / NATIVE_WORKSPACE_SELECTOR
+    environment["TF_DATA_DIR"] = str(tmp_path / "workspace-data")
+    initialized = native_command(
+        workspace,
+        environment,
+        "init",
+        "-input=false",
+        f"-backend-config=path={tmp_path / 'state.tfstate'}",
+    )
+    assert initialized.returncode == 0, initialized.stdout + initialized.stderr
+    token = secrets.token_hex(TOKEN_BYTE_COUNT)
+    environment[TOKEN_VARIABLE_ENV] = token
+    environment[EXPECTED_DIGEST_ENV] = hashlib.sha256(token.encode()).hexdigest()
+    plan_path = tmp_path / "fixture.tfplan"
+    planned = native_command(
+        workspace, environment, "plan", "-input=false", f"-out={plan_path}"
+    )
+    check_private_input(token, (planned.stdout + planned.stderr).encode())
+    assert planned.returncode == 0, planned.stdout + planned.stderr
+    check_private_input(token, plan_path.read_bytes())
+    shown = native_command(workspace, environment, "show", "-json", str(plan_path))
+    check_private_input(token, (shown.stdout + shown.stderr).encode())
+    assert shown.returncode == 0, shown.stderr
+    document = as_object(json.loads(shown.stdout))
+    changes = document["resource_changes"]
+    assert isinstance(changes, list)
+    assert len(changes) == 1
+    change = as_object(changes[0])
+    assert change["address"] == MARKER_ADDRESS
+    assert as_object(as_object(change["change"])["after"])["input"] == version
+    environment[EXPECTED_DIGEST_ENV] = WRONG_DIGEST
+    rejected = native_command(workspace, environment, "plan", "-input=false")
+    check_private_input(token, (rejected.stdout + rejected.stderr).encode())
+    assert rejected.returncode == REJECTED_INPUT_EXIT_CODE
+    assert TOKEN_VALIDATION_ERROR in rejected.stderr
 
 
 VERSION_TWO_FILES = two_files(DIRECTORY_A, VERSION_TWO)

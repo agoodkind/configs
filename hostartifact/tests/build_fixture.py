@@ -89,11 +89,26 @@ PROGRAM_SIGNER_REVISION = "6f29e0969c7c302aee9c1a23b3424c91f8c7796d"
 PROGRAM_MODE = "0755"
 WRONG_REVISION = "1" * 40
 WRONG_DIGEST = "0" * 64
+INSTALLED_SOURCE_FIXTURES = Path(__file__).parent / "fixtures" / "installed-source"
+INSTALLED_SOURCE_FILES = (
+    "configsctl.yml",
+    "native/main.tf",
+    "workspaces/sample/main.tf",
+)
+INSTALLED_SOURCE_MODULE = "workspaces/sample/host/main.tf"
+INSTALLED_SOURCE_DIRECTORIES = (
+    "native",
+    "workspaces",
+    "workspaces/sample",
+    "workspaces/sample/host",
+)
 
 
 class FixtureCase(StrEnum):
     VALID_V1 = "valid-v1"
     VALID_V2 = "valid-v2"
+    INSTALLED_SOURCE_V1 = "installed-source-v1"
+    INSTALLED_SOURCE_V2 = "installed-source-v2"
     OTHER_TARGET = "other-target"
     DIGEST = "digest"
     SIZE = "size"
@@ -222,6 +237,37 @@ def recovery_files(target: FixtureTarget, version: str) -> list[FixtureFile]:
     return files
 
 
+def installed_source_files(target: FixtureTarget, version: str) -> list[FixtureFile]:
+    common = INSTALLED_SOURCE_FIXTURES / "common"
+    files = [
+        FixtureFile(
+            path=destination(target, relative_path),
+            content=(common / relative_path).read_bytes(),
+            mode=FIRST_FILE_MODE,
+        )
+        for relative_path in INSTALLED_SOURCE_FILES
+    ]
+    files.append(
+        FixtureFile(
+            path=destination(target, INSTALLED_SOURCE_MODULE),
+            content=(INSTALLED_SOURCE_FIXTURES / version / "main.tf").read_bytes(),
+            mode=FIRST_FILE_MODE,
+        )
+    )
+    return files
+
+
+def installed_source_directories(target: FixtureTarget) -> list[ManifestDirectory]:
+    paths = [target.directory]
+    paths.extend(destination(target, path) for path in INSTALLED_SOURCE_DIRECTORIES)
+    return [
+        ManifestDirectory(
+            path=path, mode=DIRECTORY_MODE, owner=ROOT_ACCOUNT, group=ROOT_ACCOUNT
+        )
+        for path in paths
+    ]
+
+
 def manifest_file(fixture_file: FixtureFile) -> ManifestFile:
     return ManifestFile(
         member=member_name(fixture_file.path),
@@ -298,10 +344,14 @@ def manifest_member(
     source_revision: str,
     entries: list[ManifestFile],
     programs: list[ManifestProgram],
+    directories: list[ManifestDirectory] | None = None,
 ) -> ArchiveMember:
     directory = ManifestDirectory(
         path=target.directory, mode=DIRECTORY_MODE, owner=ROOT_ACCOUNT, group=ROOT_ACCOUNT
     )
+    owned_directories = [directory]
+    if directories is not None:
+        owned_directories = directories
     manifest = Manifest(
         schema_version=schema_version_for(programs),
         repository=REPOSITORY,
@@ -309,7 +359,7 @@ def manifest_member(
         workspace=target.workspace,
         node=NODE,
         environment=ENVIRONMENT,
-        directories=[directory],
+        directories=owned_directories,
         files=entries,
         programs=programs,
     )
@@ -324,20 +374,28 @@ def assembled_archive(
     entries: list[ManifestFile],
     file_members: Sequence[FixtureMember],
     programs: list[ManifestProgram] | None = None,
+    directories: list[ManifestDirectory] | None = None,
 ) -> FixtureArchive:
     listed_programs: list[ManifestProgram] = []
     if programs is not None:
         listed_programs = programs
-    manifest = manifest_member(target, source_revision, entries, listed_programs)
+    manifest = manifest_member(
+        target, source_revision, entries, listed_programs, directories
+    )
     return FixtureArchive(target=target, members=[manifest, *file_members])
 
 
 def matching_archive(
-    target: FixtureTarget, source_revision: str, files: list[FixtureFile]
+    target: FixtureTarget,
+    source_revision: str,
+    files: list[FixtureFile],
+    directories: list[ManifestDirectory] | None = None,
 ) -> FixtureArchive:
     entries = [manifest_file(item) for item in files]
     file_members = [archive_member(item) for item in files]
-    return assembled_archive(target, source_revision, entries, file_members)
+    return assembled_archive(
+        target, source_revision, entries, file_members, directories=directories
+    )
 
 
 def fixture_archive(
@@ -354,6 +412,16 @@ def fixture_archive(
             return matching_archive(target, source_revision, version_one)
         case FixtureCase.VALID_V2:
             return matching_archive(target, source_revision, version_two)
+        case FixtureCase.INSTALLED_SOURCE_V1 | FixtureCase.INSTALLED_SOURCE_V2:
+            version = VERSION_ONE
+            if case == FixtureCase.INSTALLED_SOURCE_V2:
+                version = VERSION_TWO
+            return matching_archive(
+                target,
+                source_revision,
+                installed_source_files(target, version),
+                installed_source_directories(target),
+            )
         case (
             FixtureCase.PROGRAM_VALID
             | FixtureCase.PROGRAM_WRONG_SOURCE

@@ -17,7 +17,32 @@ on:
         description: Fixture case, or none for a target build; workspace must equal the fixture selector
         required: false
         default: none
-        type: string
+        type: choice
+        options:
+          - none
+          - valid-v1
+          - valid-v2
+          - installed-source-v1
+          - installed-source-v2
+          - other-target
+          - digest
+          - size
+          - symlink
+          - hardlink
+          - traversal
+          - absolute
+          - extra
+          - missing
+          - duplicate
+          - member-mode
+          - recovery-v1
+          - recovery-v2
+          - program-valid
+          - program-wrong-source
+          - program-wrong-signer
+          - program-wrong-archive
+          - program-wrong-member
+          - program-collision
 
 permissions:
   contents: read
