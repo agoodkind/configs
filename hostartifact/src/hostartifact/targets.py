@@ -34,6 +34,7 @@ GIT_PROGRAM = "git"
 # Each descriptor lists the native configuration files that its target reads.
 PRODUCER_PATHS = (
     ".github/workflows/ci.yml",
+    "configsctl",
     "hostartifact/",
     "opentofu/modules/host-artifact-targets/",
     "opentofu/render/host-artifact/",

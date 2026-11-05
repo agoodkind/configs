@@ -214,8 +214,8 @@ resource "proxmox_virtual_environment_vm" "mwan_suburban" {
   lifecycle {
     prevent_destroy = true
     ignore_changes = [
-      # Ansible owns the live `args` field (vhost-vsock-pci); the Proxmox API
-      # rejects token writes to it, so tofu must not try to change or null it.
+      # Preserve the live `args` field (vhost-vsock-pci). The Proxmox API rejects
+      # token writes to it, so tofu must not change or null its current value.
       kvm_arguments,
     ]
   }

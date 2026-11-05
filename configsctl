@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly CONFIGSCTL_PACKAGE="goodkind.io/configsctl/cmd/configsctl"
-readonly CONFIGSCTL_VERSION="v0.0.0-20261105093909-5355d5843fce"
+readonly CONFIGSCTL_VERSION="v0.0.0-20261105132405-df9606b0ef46"
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   cd "$(dirname "${BASH_SOURCE[0]}")"

@@ -116,6 +116,8 @@
     }
   ],
   "configuration_dependencies": [
-    "opentofu/modules/poweredge/idrac-certificate/configuration/main.tf"
+    "opentofu/modules/poweredge/idrac-certificate/configuration/main.tf",
+    "opentofu/modules/poweredge/config.tf",
+    "opentofu/modules/poweredge/endpoint.tf"
   ]
 }

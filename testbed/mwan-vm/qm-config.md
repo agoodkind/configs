@@ -3,11 +3,10 @@
 ## Target args
 
 The testbed MWAN VM must run with a `vhost-vsock-pci` device whose guest CID equals
-its VMID, so the suburban watchdog reaches the in-VM `mwan-agent` over native vsock.
-Both values resolve from `mwan_vmid` in
-[mwan_suburban_servers.yml](../../ansible/inventory/group_vars/mwan_suburban_servers.yml),
-which reads the id from
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
+its VMID. The suburban watchdog uses that CID to contact `mwan-agent` over vsock.
+The `mwan_suburban` service mapping in
+[configuration/main.tf](../../opentofu/modules/suburban/mwan/configuration/main.tf)
+sets VMID 213 and its management IPv6 address.
 The id deliberately differs from production's MWAN VM, so renumbering one guest
 does not silently point the other's tooling at it.
 
@@ -27,19 +26,18 @@ attached to `root@pam` itself fails, because the token authuser is
 
 So OpenTofu cannot set `args` while the suburban provider alias authenticates with an
 API token. The VM resource in
-[opentofu/suburban/vms.tf](../../opentofu/suburban/vms.tf) omits `kvm_arguments` and
+[main.tf](../../opentofu/modules/suburban/mwan/main.tf) omits `kvm_arguments` and
 lists it in `ignore_changes`, which stops a plan from reading the live value as
 removed and nulling it on apply.
 
 `args` takes effect only at QEMU process start, so a change needs a cold stop and
-start rather than a reboot. The playbook prints a notice when it changes the value.
+start rather than a reboot.
 
 ## Verification
 
 Inside the VM the kernel modules `vmw_vsock_virtio_transport` and `vsock` should be
-loaded and `/dev/vsock` should be present. Reach the VM at the management address
-`mwan.suburban.goodkind.io` owns in
-[service_mapping.yml](../../ansible/inventory/group_vars/all/service_mapping.yml).
+loaded and `/dev/vsock` should be present. The `mwan_suburban` service mapping
+sets `mwan.suburban.goodkind.io` as the management hostname.
 
 ```shell
 ssh root@"$MWAN_VM" 'lsmod | grep vsock; ls /dev/vsock'
