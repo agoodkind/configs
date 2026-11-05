@@ -5,5 +5,7 @@ set -euo pipefail
 readonly CONFIGSCTL_PACKAGE="goodkind.io/configsctl/cmd/configsctl"
 readonly CONFIGSCTL_VERSION="v0.0.0-20261105093909-5355d5843fce"
 
-cd "$(dirname "${BASH_SOURCE[0]}")"
-exec go run "${CONFIGSCTL_PACKAGE}@${CONFIGSCTL_VERSION}" "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  cd "$(dirname "${BASH_SOURCE[0]}")"
+  exec go run "${CONFIGSCTL_PACKAGE}@${CONFIGSCTL_VERSION}" "$@"
+fi

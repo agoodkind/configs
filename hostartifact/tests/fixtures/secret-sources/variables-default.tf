@@ -1,1 +1,4 @@
-variable "vault_demo" { sensitive = true default = "secret" }
+variable "vault_demo" {
+  sensitive = true
+  default   = "secret"
+}

@@ -27,5 +27,18 @@ test:
 	trap 'rm -rf "$$work"' EXIT; \
 	trap 'exit 130' INT; \
 	trap 'exit 143' TERM; \
+	if [ "$${GITHUB_ACTIONS:-}" = "true" ] && [ -n "$${HOSTARTIFACT_HCL_CHECKER:-}" ]; then \
+	  echo "CI must build the native HCL checker from the pinned configsctl launcher" >&2; \
+	  exit 1; \
+	fi; \
+	if [ -n "$${HOSTARTIFACT_HCL_CHECKER:-}" ]; then \
+	  checker="$$HOSTARTIFACT_HCL_CHECKER"; \
+	  echo "Using the supplied native HCL checker: $$checker"; \
+	else \
+	  echo "Building the native HCL checker from the pinned configsctl launcher"; \
+	  bash scripts/stage-hcl-checker.sh .. "$$work/tools"; \
+	  checker="$$work/tools/configsctl"; \
+	fi; \
 	bash scripts/build-fixture-program.sh "$$work"; \
-	HOSTARTIFACT_FIXTURE_PROGRAM_RESULT="$$work/result.json" $(UV_RUN) pytest
+	HOSTARTIFACT_FIXTURE_PROGRAM_RESULT="$$work/result.json" \
+	  HOSTARTIFACT_HCL_CHECKER="$$checker" $(UV_RUN) pytest

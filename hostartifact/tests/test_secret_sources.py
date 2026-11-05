@@ -136,12 +136,38 @@ def test_build_keeps_sensitive_hcl_source_and_settings_bytes(
             assert member.read() == (repository / source).read_bytes()
 
 
+def test_build_requires_native_checker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, projection = source_fixture(tmp_path)
+    monkeypatch.delenv("HOSTARTIFACT_HCL_CHECKER", raising=False)
+
+    result = build(tmp_path, repository, projection)
+
+    assert result.returncode == 1
+    assert "set HOSTARTIFACT_HCL_CHECKER" in result.stderr
+    assert not (tmp_path / "output").exists()
+
+
+def test_build_rejects_missing_native_binary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository, projection = source_fixture(tmp_path)
+    monkeypatch.setenv("HOSTARTIFACT_HCL_CHECKER", str(tmp_path / "missing"))
+
+    result = build(tmp_path, repository, projection)
+
+    assert result.returncode == 1
+    assert "native HCL checker is missing or not executable" in result.stderr
+    assert not (tmp_path / "output").exists()
+
+
 @pytest.mark.parametrize(
     ("case", "expected"),
     [
         ("secret-default", "sensitive = true and without a default"),
         ("nonsensitive", "sensitive = true and without a default"),
-        ("duplicate-sensitive", "sensitive = true and without a default"),
+        ("duplicate-sensitive", "invalid native HCL syntax"),
         ("extra-label", "exactly one variable label"),
         ("undeclared", "outside a sensitive variable declaration or reference"),
         ("literal", "outside a sensitive variable declaration or reference"),

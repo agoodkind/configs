@@ -5,11 +5,12 @@ import re
 import tomllib
 from collections.abc import Mapping
 from datetime import date, datetime, time
+from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 lazy from pydantic import JsonValue
 
-from hostartifact.hcl_secrets import check_hcl_sources, raw_hcl_asset
+from hostartifact.native_hcl import check_hcl_sources, raw_hcl_asset
 from hostartifact.projection import BuildError, FileEntry
 from hostartifact.secret_patterns import (
     TEMPLATE_MARKERS,
@@ -153,8 +154,9 @@ def check_artifact_files(
     files: list[tuple[FileEntry, bytes]],
     blocked_keys: frozenset[str],
     workspace: str,
+    hcl_checker: Path,
 ) -> None:
-    checked_hcl = check_hcl_sources(files, workspace)
+    checked_hcl = check_hcl_sources(files, workspace, hcl_checker)
     for entry, content in files:
         if entry.destination in checked_hcl and raw_hcl_asset(entry, workspace):
             continue

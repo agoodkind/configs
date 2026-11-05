@@ -356,6 +356,7 @@ def build_artifact(
     asset_roots: dict[str, Path],
     program_results: dict[str, ProgramResult],
     output_dir: Path,
+    hcl_checker: Path,
 ) -> BuildResult:
     identifier = target_identifier(projection.workspace)
     check_revision(source_revision)
@@ -376,7 +377,7 @@ def build_artifact(
     for entry in sorted(projection.files, key=lambda item: item.destination):
         content = file_content(entry.source, repository_root, roots, resolver)
         file_contents.append((entry, content))
-    check_artifact_files(file_contents, blocked_keys, projection.workspace)
+    check_artifact_files(file_contents, blocked_keys, projection.workspace, hcl_checker)
 
     members: list[ArchiveMember] = []
     manifest_files: list[ManifestFile] = []
