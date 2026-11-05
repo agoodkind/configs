@@ -56,12 +56,14 @@ The builder rejects `vault_` variable names and a caller-defined `service_mappin
 The archive manifest does not include validation data.
 
 Raw OpenTofu source from the selected workspace can use a `var.vault_*` expression
-when the same module directory declares that variable with `sensitive = true` and
-without a default. The builder parses those source files and copies their original
-bytes. It rejects `vault_*` text in source strings, comments, and undeclared
-references. A rendered JSON controller settings file can use a `vault_` prefix
-ending in an underscore only as `tofu.env_key_prefix`. Other JSON fields and
-service or TOML files cannot contain `vault_*` references.
+when the same source and installed module directories declare that variable with
+`sensitive = true` and without a default. The builder parses those source files
+and copies their original bytes. It rejects `vault_*` text in source literals,
+comments, and undeclared references. It accepts declared references in heredoc
+interpolations. A rendered JSON controller settings file can use a `vault_`
+prefix ending in an underscore only as `tofu.env_key_prefix`. The builder rejects
+duplicate JSON keys. Other JSON fields and service or TOML files cannot contain
+`vault_*` references.
 
 The command prints one JSON line on stdout with `archive`, `asset`, `sha256`, and `size`.
 The asset file name is `hostconfig_<SHA-256 of the selector>.tar.gz`.

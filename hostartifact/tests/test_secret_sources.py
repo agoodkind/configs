@@ -13,15 +13,34 @@ WORKSPACE = "lab/cert"
 REPOSITORY = "agoodkind/configs"
 SOURCE_REVISION = "0123456789abcdef0123456789abcdef01234567"
 VARIABLE_NAME = "vault_demo"
+FIXTURES = Path(__file__).parent / "fixtures" / "secret-sources"
 VARIABLES_PATH = f"opentofu/{WORKSPACE}/variables.tf"
 PROVIDER_PATH = f"opentofu/{WORKSPACE}/providers.tf"
 SETTINGS_PATH = f"opentofu/{WORKSPACE}/configsctl.yml"
 VARIABLES_DESTINATION = "/opt/example/workspace/variables.tf"
 PROVIDER_DESTINATION = "/opt/example/workspace/providers.tf"
 SETTINGS_DESTINATION = "/opt/example/configsctl.yml"
-DECLARATION = f'variable "{VARIABLE_NAME}" {{ sensitive = true }}\n'
-REFERENCE = f"locals {{ credential = var.{VARIABLE_NAME} }}\n"
-SETTINGS = '{"tofu":{"env_key_prefix":"vault_tofu_env_"}}\n'
+
+VARIABLE_CASES = {
+    "secret-default": "variables-default.tf",
+    "nonsensitive": "variables-nonsensitive.tf",
+    "duplicate-sensitive": "variables-duplicate-sensitive.tf",
+    "extra-label": "variables-extra-label.tf",
+}
+PROVIDER_CASES = {
+    "undeclared": "providers-undeclared.tf",
+    "literal": "providers-literal.tf",
+    "encoded-literal": "providers-encoded-literal.tf",
+    "for-shadow": "providers-for-shadow.tf",
+}
+SETTINGS_CASES = {
+    "settings-extra": "settings-extra.json",
+    "settings-encoded-extra": "settings-encoded-extra.json",
+    "settings-encoded-invalid-shape": "settings-encoded-invalid-shape.json",
+    "settings-invalid-prefix": "settings-invalid-prefix.json",
+    "settings-duplicate": "settings-duplicate.json",
+    "settings-duplicate-encoded": "settings-duplicate-encoded.json",
+}
 
 
 def file_entry(destination: str, source: str) -> dict[str, JsonValue]:
@@ -34,17 +53,17 @@ def file_entry(destination: str, source: str) -> dict[str, JsonValue]:
     }
 
 
-def write_source(repository: Path, relative_path: str, content: str) -> None:
+def copy_fixture(repository: Path, relative_path: str, fixture_name: str) -> None:
     path = repository / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_bytes((FIXTURES / fixture_name).read_bytes())
 
 
 def source_fixture(tmp_path: Path) -> tuple[Path, dict[str, JsonValue]]:
     repository = tmp_path / "repository"
-    write_source(repository, VARIABLES_PATH, DECLARATION)
-    write_source(repository, PROVIDER_PATH, REFERENCE)
-    write_source(repository, SETTINGS_PATH, SETTINGS)
+    copy_fixture(repository, VARIABLES_PATH, "variables.tf")
+    copy_fixture(repository, PROVIDER_PATH, "providers.tf")
+    copy_fixture(repository, SETTINGS_PATH, "settings.json")
     projection: dict[str, JsonValue] = {
         "workspace": WORKSPACE,
         "node": "lab",
@@ -92,8 +111,12 @@ def build(
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
-def test_build_keeps_sensitive_hcl_source_and_settings_bytes(tmp_path: Path) -> None:
+@pytest.mark.parametrize("provider_fixture", ["providers.tf", "providers-heredoc.tf"])
+def test_build_keeps_sensitive_hcl_source_and_settings_bytes(
+    tmp_path: Path, provider_fixture: str
+) -> None:
     repository, projection = source_fixture(tmp_path)
+    copy_fixture(repository, PROVIDER_PATH, provider_fixture)
 
     result = build(tmp_path, repository, projection)
 
@@ -116,16 +139,22 @@ def test_build_keeps_sensitive_hcl_source_and_settings_bytes(tmp_path: Path) -> 
 @pytest.mark.parametrize(
     ("case", "expected"),
     [
-        ("secret-default", "must be declared once with sensitive = true"),
-        ("nonsensitive", "must be declared once with sensitive = true"),
-        ("duplicate-sensitive", "must be declared once with sensitive = true"),
+        ("secret-default", "sensitive = true and without a default"),
+        ("nonsensitive", "sensitive = true and without a default"),
+        ("duplicate-sensitive", "sensitive = true and without a default"),
+        ("extra-label", "exactly one variable label"),
         ("undeclared", "outside a sensitive variable declaration or reference"),
         ("literal", "outside a sensitive variable declaration or reference"),
+        ("encoded-literal", "outside a sensitive variable declaration or reference"),
+        ("for-shadow", "outside a sensitive variable declaration or reference"),
         ("sibling-module", "outside a sensitive variable declaration or reference"),
+        ("child-destination", "outside a sensitive variable declaration or reference"),
         ("settings-extra", "contains vault references: vault_demo"),
         ("settings-encoded-extra", "contains vault references: vault_demo"),
         ("settings-encoded-invalid-shape", "contains vault references: vault_demo"),
         ("settings-invalid-prefix", "contains vault references: vault_demo"),
+        ("settings-duplicate", "duplicate JSON key"),
+        ("settings-duplicate-encoded", "duplicate JSON key"),
         ("service", "contains vault references: vault_demo"),
         ("toml", "contains vault references: vault_demo"),
         ("projection", "must not include vault values: vault_demo"),
@@ -135,61 +164,34 @@ def test_build_rejects_secret_source_misuse(
     tmp_path: Path, case: str, expected: str
 ) -> None:
     repository, projection = source_fixture(tmp_path)
-    if case == "secret-default":
-        write_source(
-            repository, VARIABLES_PATH, DECLARATION.replace(" }", ' default = "secret" }')
-        )
-    elif case == "nonsensitive":
-        write_source(repository, VARIABLES_PATH, DECLARATION.replace("true", "false"))
-    elif case == "duplicate-sensitive":
-        write_source(
-            repository,
-            VARIABLES_PATH,
-            DECLARATION.replace(" }", " sensitive = false }"),
-        )
-    elif case == "undeclared":
-        write_source(
-            repository, PROVIDER_PATH, REFERENCE.replace(VARIABLE_NAME, "vault_missing")
-        )
-    elif case == "literal":
-        write_source(
-            repository, PROVIDER_PATH, f'locals {{ credential = "{VARIABLE_NAME}" }}\n'
-        )
+    if case in VARIABLE_CASES:
+        copy_fixture(repository, VARIABLES_PATH, VARIABLE_CASES[case])
+    elif case in PROVIDER_CASES:
+        copy_fixture(repository, PROVIDER_PATH, PROVIDER_CASES[case])
+    elif case in SETTINGS_CASES:
+        copy_fixture(repository, SETTINGS_PATH, SETTINGS_CASES[case])
     elif case == "sibling-module":
         child_path = f"opentofu/{WORKSPACE}/child/main.tf"
-        write_source(repository, child_path, REFERENCE)
+        copy_fixture(repository, child_path, "providers.tf")
         files = projection["files"]
         assert isinstance(files, list)
         files.append(file_entry("/opt/example/workspace/child/main.tf", child_path))
-    elif case == "settings-extra":
-        write_source(
-            repository,
-            SETTINGS_PATH,
-            '{"tofu":{"env_key_prefix":"vault_tofu_env_","other":"vault_demo"}}\n',
-        )
-    elif case == "settings-encoded-extra":
-        write_source(
-            repository,
-            SETTINGS_PATH,
-            '{"tofu":{"env_key_prefix":"vault_tofu_env_","other":"\\u0076ault_demo"}}\n',
-        )
-    elif case == "settings-invalid-prefix":
-        write_source(
-            repository, SETTINGS_PATH, '{"tofu":{"env_key_prefix":"vault_demo"}}\n'
-        )
-    elif case == "settings-encoded-invalid-shape":
-        write_source(repository, SETTINGS_PATH, '{"tofu":{"other":"\\u0076ault_demo"}}\n')
+    elif case == "child-destination":
+        files = projection["files"]
+        assert isinstance(files, list)
+        for item in files:
+            assert isinstance(item, dict)
+            if item["destination"] == PROVIDER_DESTINATION:
+                item["destination"] = "/opt/example/workspace/child/providers.tf"
     elif case == "service":
         service_path = f"opentofu/{WORKSPACE}/test.service"
-        write_source(
-            repository, service_path, f"[Service]\nEnvironment=X={VARIABLE_NAME}\n"
-        )
+        copy_fixture(repository, service_path, "secret.service")
         files = projection["files"]
         assert isinstance(files, list)
         files.append(file_entry("/etc/systemd/system/test.service", service_path))
     elif case == "toml":
         toml_path = f"opentofu/{WORKSPACE}/test.toml"
-        write_source(repository, toml_path, f'name = "{VARIABLE_NAME}"\n')
+        copy_fixture(repository, toml_path, "secret.toml")
         files = projection["files"]
         assert isinstance(files, list)
         files.append(file_entry("/etc/test.toml", toml_path))

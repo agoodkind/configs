@@ -11,12 +11,14 @@ lazy from pydantic import JsonValue
 
 from hostartifact.hcl_secrets import check_hcl_sources, raw_hcl_asset
 from hostartifact.projection import BuildError, FileEntry
+from hostartifact.secret_patterns import (
+    TEMPLATE_MARKERS,
+    VAULT_PREFIX,
+    VAULT_REFERENCE_PATTERN,
+)
 
-VAULT_PREFIX = "vault_"
 TOML_SUFFIX = ".toml"
 CONFIGSCTL_SETTINGS_SUFFIX = "/configsctl.yml"
-TEMPLATE_MARKERS = ("{{", "{%", "{#")
-VAULT_REFERENCE_PATTERN = re.compile(r"\bvault_[A-Za-z0-9_]+")
 VAULT_ENV_PREFIX_PATTERN = re.compile(r"^vault_[A-Za-z][A-Za-z0-9_]*_$")
 SETTINGS_PREFIX_PATH = ("tofu", "env_key_prefix")
 
@@ -79,12 +81,24 @@ def reject_encoded_vault_references(destination: str, document: JsonValue) -> No
         )
 
 
+def reject_duplicate_json_pairs(
+    pairs: list[tuple[str, JsonValue]],
+) -> dict[str, JsonValue]:
+    document: dict[str, JsonValue] = {}
+    for key, value in pairs:
+        if key in document:
+            raise BuildError(f"duplicate JSON key {key!r} in controller settings")
+        document[key] = value
+    return document
+
+
 def settings_vault_references(destination: str, text: str) -> set[str] | None:
     if not destination.endswith(CONFIGSCTL_SETTINGS_SUFFIX):
         return None
     try:
-        document = TypeAdapter(JsonValue).validate_json(text)
-    except ValidationError:
+        parsed = json.loads(text, object_pairs_hook=reject_duplicate_json_pairs)
+        document = TypeAdapter(JsonValue).validate_python(parsed)
+    except json.JSONDecodeError, ValidationError:
         return None
     if not isinstance(document, dict):
         reject_encoded_vault_references(destination, document)
