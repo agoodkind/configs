@@ -5,7 +5,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "proxy" {
   tunnel_id  = "4b602332-6413-4f95-8874-561ed6d9b266"
   source     = "cloudflare"
   config = {
-    ingress = [
+    ingress = concat([
       {
         hostname = "mdm.goodkind.io"
         service  = "https://mdm.home.goodkind.io"
@@ -53,17 +53,19 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "proxy" {
           origin_server_name = "huly.home.goodkind.io"
         }
       },
-      {
-        hostname = "tack.goodkind.io"
+      ], [
+      for hostname in concat(["tack.goodkind.io"], sort(keys(module.contracts.tack_domain_aliases))) : {
+        hostname = hostname
         service  = "https://localhost"
         origin_request = {
           http2_origin       = true
           http_host_header   = "tack.home.goodkind.io"
           origin_server_name = "tack.home.goodkind.io"
         }
-      },
+      }
+      ], [
       { service = "http_status:404" },
-    ]
+    ])
   }
 }
 
