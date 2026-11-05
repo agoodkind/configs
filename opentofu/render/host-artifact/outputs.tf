@@ -1,10 +1,12 @@
 output "projection" {
   value = {
-    workspace       = var.workspace
-    node            = module.targets.target.node
-    environment     = module.targets.target.environment
-    validation      = module.targets.target.validation
-    vars            = module.configuration.artifact_vars
+    workspace   = var.workspace
+    node        = module.targets.target.node
+    environment = module.targets.target.environment
+    validation  = module.targets.target.validation
+    vars = merge(module.configuration.artifact_vars, {
+      (module.targets.target.validation.identity_variables.environment) = module.targets.target.environment
+    })
     service_mapping = module.configuration.service_mapping
     directories     = module.targets.target.directories
     files           = module.targets.target.files

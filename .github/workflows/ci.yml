@@ -53,6 +53,12 @@ jobs:
           tofu_wrapper: false
       - name: Validate native configuration inputs
         run: ./configsctl lint
+      - name: Install jinja2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-jinja2
+      - name: Lint host artifact templates
+        run: ./configsctl lint mwan/config/*.j2 opnsense/*.j2 proxmox/services/*.j2
 
   # On every push, the job runs select-targets.sh to select host artifact
   # targets. On a branch other than main, selection compares the head with

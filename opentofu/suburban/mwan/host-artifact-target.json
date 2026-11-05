@@ -104,6 +104,7 @@
   ],
   "configuration_dependencies": [
     "opentofu/modules/suburban/config.tf",
+    "opentofu/modules/suburban/endpoint.tf",
     "opentofu/modules/suburban/mwan/configuration/artifact.tf",
     "opentofu/modules/suburban/mwan/configuration/failover_vars.tf",
     "opentofu/modules/suburban/mwan/configuration/main.tf",

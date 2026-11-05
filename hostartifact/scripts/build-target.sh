@@ -34,7 +34,7 @@ project_target() {
   tofu -chdir="$repository_root/$RENDER_ROOT" init -backend=false -input=false -var "workspace=$workspace" > "$target/init.log"
   tofu -chdir="$repository_root/$RENDER_ROOT" plan -refresh=false -lock=false -input=false \
     -out="$target/projection.tfplan" -var "workspace=$workspace" > "$target/plan.log"
-  tofu -chdir="$repository_root/$RENDER_ROOT" show -json "$target/projection.tfplan" > "$target/show.json"
+  TF_VAR_workspace="$workspace" tofu -chdir="$repository_root/$RENDER_ROOT" show -json "$target/projection.tfplan" > "$target/show.json"
   jq -e .planned_values.outputs.projection.value "$target/show.json" > "$target/projection.json"
 }
 
