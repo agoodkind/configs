@@ -1,5 +1,4 @@
-variable "workspace_directory" { type = string }
-variable "factory_ca_file" { type = string }
+variable "artifact_sha256" { type = string }
 variable "initial_installation" {
   type    = bool
   default = false
@@ -9,60 +8,13 @@ variable "credential_version" {
   default = 1
 }
 
+module "configuration" { source = "./configuration" }
+
 locals {
-  runtime_root        = "/opt/configs/idrac-certificate"
-  state_root          = "/var/lib/configs-idrac-certificate"
-  operator_state      = pathexpand("~/.codex/state/idrac-certificate-runtime")
-  configsctl_revision = "d4572f95665c509f036622003c4706b018ba3e09"
-  configsctl_sha256   = "309eed4ca1b05a69b7e1008bcaeb92ffe9c7f8fd626a200edb2c6b44f81f042e"
-  tofu_sha256         = "8f95cbe1523ef7b7913773634a6d6ac94c38f3c8eadba2e18b1e5b01567561ad"
-  runtime_files = merge({
-    "configsctl.yml" = {
-      path    = "${local.runtime_root}/configsctl.yml"
-      content = file("${path.module}/configsctl.yml")
-    }
-    "ansible.cfg" = {
-      path    = "${local.runtime_root}/ansible/ansible.cfg"
-      content = file("${path.module}/ansible.cfg")
-    }
-    "inventory" = {
-      path    = "${local.runtime_root}/ansible/inventory/hosts.yml"
-      content = file("${path.module}/inventory.yml")
-    }
-    "hosts" = {
-      path    = "${local.runtime_root}/hosts"
-      content = file("${path.module}/hosts")
-    }
-    "factory-ca" = {
-      path    = "${local.runtime_root}/workspace/idrac-ca.pem"
-      content = file(var.factory_ca_file)
-    }
-    "provider-lock" = {
-      path    = "${local.runtime_root}/workspace/.terraform.lock.hcl"
-      content = file("${var.workspace_directory}/.terraform.lock.hcl")
-    }
-    "service" = {
-      path    = "/etc/systemd/system/idrac-certificate.service"
-      content = file("${path.module}/idrac-certificate.service")
-    }
-    "timer" = {
-      path    = "/etc/systemd/system/idrac-certificate.timer"
-      content = file("${path.module}/idrac-certificate.timer")
-    }
-    "usb-interface" = {
-      path    = "/etc/network/interfaces.d/idrac"
-      content = file("${path.module}/usb-interface")
-    }
-    "checksums" = {
-      path    = "${local.runtime_root}/binaries.sha256"
-      content = "${local.configsctl_sha256}  ${local.runtime_root}/bin/configsctl\n${local.tofu_sha256}  ${local.runtime_root}/bin/tofu\n"
-    }
-    }, {
-    for name in fileset(var.workspace_directory, "*.tf") : "workspace/${name}" => {
-      path    = "${local.runtime_root}/workspace/${name}"
-      content = file("${var.workspace_directory}/${name}")
-    }
-  })
+  runtime_root   = module.configuration.runtime_root
+  state_root     = module.configuration.state_root
+  operator_state = pathexpand("~/.codex/state/idrac-certificate-runtime")
+  tofu_sha256    = module.configuration.tofu_sha256
 }
 
 resource "terraform_data" "directories" {
@@ -81,17 +33,12 @@ resource "terraform_data" "directories" {
   }
 }
 
-resource "remote_file" "configuration" {
-  for_each = local.runtime_files
-  conn {
-    host  = "[${var.ssh_host}]"
-    user  = "root"
-    agent = true
+removed {
+  from = remote_file.configuration
+
+  lifecycle {
+    destroy = false
   }
-  path        = each.value.path
-  content     = each.value.content
-  permissions = "0644"
-  depends_on  = [terraform_data.directories]
 }
 
 resource "remote_file" "initial_connection" {
@@ -109,8 +56,7 @@ resource "remote_file" "initial_connection" {
 
 resource "terraform_data" "runtime" {
   triggers_replace = {
-    configuration      = sha256(jsonencode(local.runtime_files))
-    configsctl         = local.configsctl_revision
+    artifact           = var.artifact_sha256
     tofu               = local.tofu_sha256
     credential_version = var.credential_version
   }
@@ -123,14 +69,8 @@ resource "terraform_data" "runtime" {
   }
   provisioner "remote-exec" {
     inline = [
-      "/usr/bin/apt-get -o Acquire::Retries=0 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 update",
-      "/usr/bin/apt-get install -y --no-install-recommends ansible-core",
       "/usr/bin/systemd-run --unit=idrac-certificate-stage-${self.id} --collect --property=Type=exec --property=RuntimeDirectory=idrac-certificate-stage-${self.id} --property=RuntimeDirectoryMode=0700 --property=RuntimeMaxSec=600 /usr/bin/sleep infinity",
     ]
-  }
-  provisioner "file" {
-    source      = "${local.operator_state}/artifacts/${local.configsctl_revision}/linux-amd64/configsctl"
-    destination = "${local.runtime_root}/bin/configsctl"
   }
   provisioner "file" {
     source      = "${local.operator_state}/artifacts/opentofu/linux-amd64/tofu"
@@ -146,7 +86,7 @@ resource "terraform_data" "runtime" {
   }
   provisioner "remote-exec" {
     inline = [
-      "/usr/bin/chmod 0755 ${local.runtime_root}/bin/configsctl ${local.runtime_root}/bin/tofu",
+      "/usr/bin/chmod 0755 ${local.runtime_root}/bin/tofu",
       "/usr/bin/chmod 0600 ${local.runtime_root}/ansible/inventory/group_vars/all/vault.yml",
       "/usr/bin/sha256sum --check ${local.runtime_root}/binaries.sha256",
       "/usr/bin/systemd-creds encrypt --with-key=host --name=vault.pass /run/idrac-certificate-stage-${self.id}/vault.pass /run/idrac-certificate-stage-${self.id}/vault.encrypted",
@@ -159,7 +99,6 @@ resource "terraform_data" "runtime" {
   }
   depends_on = [
     restful_operation.usb,
-    remote_file.configuration,
     remote_file.initial_connection,
   ]
 }

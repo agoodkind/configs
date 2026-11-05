@@ -63,7 +63,7 @@ locals {
   overlay_hosts = { poweredge = {
     ssh_host  = "poweredge.home.goodkind.io"
     node_name = "poweredge"
-    commit    = "2b0a332d39a8876d083c195f7081f73e3988a644"
+    commit    = "b685157b778cf2fb9edcd79489d9743350c9db4b"
     guest_api = true
     kernel_modules = {
       allow = module.poweredge_config.kernel_modules
@@ -84,7 +84,17 @@ locals {
     }
     grub_cmdline_linux_default = "systemd.show_status=1"
     network_interfaces_file    = "${path.module}/../../modules/overlay/files/poweredge/interfaces"
+    host_artifact_workspaces   = ["poweredge/idrac-certificate"]
   } }
+}
+
+module "host_artifacts" {
+  source   = "../../modules/overlay/host-artifacts"
+  for_each = local.overlay_hosts
+
+  repository_root = local.repository_root
+  node_name       = each.value.node_name
+  workspaces      = each.value.host_artifact_workspaces
 }
 
 module "overlay" {
@@ -104,6 +114,7 @@ module "overlay" {
 
   grub_cmdline_linux_default = each.value.grub_cmdline_linux_default
   network_interfaces_file    = each.value.network_interfaces_file
+  host_artifact_policies     = module.host_artifacts[each.key].policies
 }
 
 # Each ACME account and DNS plugin depends on module.overlay. The automation

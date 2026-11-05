@@ -1,7 +1,0 @@
-all:
-  children:
-    tofu_lock_hosts:
-      hosts:
-        poweredge:
-          ansible_connection: local
-          ansible_user: root
