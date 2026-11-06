@@ -86,6 +86,28 @@
       "group": "root"
     }
   ],
+  "programs": [
+    {
+      "name": "mwan",
+      "repository": "agoodkind/mwan",
+      "asset": "mwan_linux_amd64.tar.gz",
+      "member": "mwan",
+      "path": "/usr/local/bin/mwan",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    },
+    {
+      "name": "opnsensectl",
+      "repository": "agoodkind/opnsensectl",
+      "asset": "opnsensectl_linux_amd64.tar.gz",
+      "member": "opnsensectl",
+      "path": "/usr/local/bin/opnsensectl",
+      "mode": "0755",
+      "owner": "root",
+      "group": "root"
+    }
+  ],
   "secret_fields": [
     {
       "name": "SMTP2GO_API_KEY",
