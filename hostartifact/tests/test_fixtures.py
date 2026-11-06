@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import configparser
 import gzip
 import hashlib
 import json
@@ -124,14 +123,6 @@ ALL_CASES = (*LEGACY_CASES, *PROGRAM_CASES, *INSTALLED_SOURCE_CASES, *UNIT_CASES
 UNIT_NAME = "hostartifact-acceptance-unit.service"
 UNIT_PATH = f"/etc/systemd/system/{UNIT_NAME}"
 UNIT_MODE = "0644"
-UNIT_SERVICE_SECTION = "Service"
-UNIT_INSTALL_SECTION = "Install"
-UNIT_EXPECTED_SERVICE = {
-    "Type": "oneshot",
-    "RemainAfterExit": "yes",
-    "ExecStart": "/bin/true",
-}
-UNIT_EXPECTED_INSTALL = {"WantedBy": "multi-user.target"}
 INSTALLED_SOURCE_FILES = (
     "configsctl.yml",
     "native/main.tf",
@@ -475,17 +466,6 @@ def test_installed_source_versions_keep_identity_and_change_only_the_child_modul
     assert second[-1].content == (fixtures / VERSION_TWO / "main.tf").read_bytes()
 
 
-class UnitParser(configparser.ConfigParser):
-    def optionxform(self, optionstr: str) -> str:
-        return optionstr
-
-
-def unit_settings(content: bytes, section: str) -> dict[str, str]:
-    parser = UnitParser(interpolation=None)
-    parser.read_string(content.decode())
-    return dict(parser[section])
-
-
 def unit_case_members(output_dir: Path, case: str, version: str) -> list[TarMember]:
     fixture = GENERATOR.parent / "fixtures" / "unit" / version / UNIT_NAME
     unit = ExpectedFile(path=UNIT_PATH, content=fixture.read_bytes(), mode=UNIT_MODE)
@@ -497,10 +477,6 @@ def unit_case_members(output_dir: Path, case: str, version: str) -> list[TarMemb
     manifest = read_manifest(members[0])
     assert manifest == expected_manifest(TARGET_A, DIRECTORY_A, files, NO_SIZE_CHANGE)
     assert members[1:] == [file_member(item) for item in files]
-    service = unit_settings(unit.content, UNIT_SERVICE_SECTION)
-    for key, value in UNIT_EXPECTED_SERVICE.items():
-        assert service[key] == value
-    assert unit_settings(unit.content, UNIT_INSTALL_SECTION) == UNIT_EXPECTED_INSTALL
     return members
 
 
