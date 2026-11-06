@@ -21,16 +21,15 @@ that workspace.
 
 Initialize each selected root before its first plan.
 
-Run the existing [provider installer](guest/install-providers.sh) before
-initializing a root that uses the pinned local providers. The installer uses
-the shared mirror that `tofu.provider_mirror` selects in
-[configsctl.yml](../configsctl.yml). configsctl resolves that path relative to
-the settings file and creates a private OpenTofu CLI configuration in the user
-cache directory. Every workspace uses that configuration. Public providers
-retain direct registry installation.
+Run `./configsctl providers install` before initializing a root that uses the
+pinned local providers. The command uses the shared mirror that
+`tofu.provider_mirror` selects in [configsctl.yml](../configsctl.yml).
+configsctl resolves that path relative to the settings file and creates a
+private OpenTofu CLI configuration in the user cache directory. Every workspace
+uses that configuration. Public providers retain direct registry installation.
 
 ```bash
-opentofu/guest/install-providers.sh
+./configsctl providers install
 ./configsctl tofu suburban/tack-qa init
 ```
 
