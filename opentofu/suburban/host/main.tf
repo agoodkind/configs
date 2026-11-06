@@ -94,6 +94,7 @@ module "overlay" {
   commit          = each.value.commit
   guest_api       = each.value.guest_api
   automation_user = local.shared_vars.proxmox_api_user
+  grant_scope     = var.overlay_grant_scope
   kernel_modules  = each.value.kernel_modules
   acme_account    = local.acme_account
   acme_plugin     = local.acme_plugin

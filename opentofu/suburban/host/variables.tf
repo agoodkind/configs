@@ -33,3 +33,9 @@ variable "vault_tofu_state_passphrase" {
   type        = string
   sensitive   = true
 }
+
+variable "overlay_grant_scope" {
+  description = "Select the overlay grant scope for this run."
+  type        = string
+  default     = "all"
+}
