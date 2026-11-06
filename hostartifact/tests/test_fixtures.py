@@ -466,7 +466,7 @@ def test_installed_source_versions_keep_identity_and_change_only_the_child_modul
     assert second[-1].content == (fixtures / VERSION_TWO / "main.tf").read_bytes()
 
 
-def unit_case_members(output_dir: Path, case: str, version: str) -> list[TarMember]:
+def assert_unit_case(output_dir: Path, case: str, version: str) -> list[TarMember]:
     fixture = GENERATOR.parent / "fixtures" / "unit" / version / UNIT_NAME
     unit = ExpectedFile(path=UNIT_PATH, content=fixture.read_bytes(), mode=UNIT_MODE)
     files = [unit, *two_files(DIRECTORY_A, VERSION_ONE)]
@@ -483,8 +483,8 @@ def unit_case_members(output_dir: Path, case: str, version: str) -> list[TarMemb
 def test_unit_versions_keep_target_a_files_and_change_only_the_unit_file(
     tmp_path: Path,
 ) -> None:
-    first = unit_case_members(tmp_path / "first", UNIT_CASES[0], VERSION_ONE)
-    second = unit_case_members(tmp_path / "second", UNIT_CASES[1], VERSION_TWO)
+    first = assert_unit_case(tmp_path / "first", UNIT_CASES[0], VERSION_ONE)
+    second = assert_unit_case(tmp_path / "second", UNIT_CASES[1], VERSION_TWO)
 
     assert first[1].name == second[1].name == FILES_PREFIX + UNIT_PATH.lstrip("/")
     assert first[1].content != second[1].content
