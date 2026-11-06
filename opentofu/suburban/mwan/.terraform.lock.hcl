@@ -73,12 +73,12 @@ provider "registry.opentofu.org/hashicorp/http" {
 }
 
 provider "tofu.home.arpa/agoodkind/mwan" {
-  version     = "0.1.1"
-  constraints = ">= 0.1.0, 0.1.1"
+  version     = "0.1.2"
+  constraints = ">= 0.1.0, 0.1.2"
   hashes = [
-    "h1:27tJjj2hjdCVEO4mXMJkqyFsO4tbPG7vIy3EewTUOvQ=",
-    "h1:mqDq3a0zaMQQGdrY/gJmtEAX6FF77m3bMXovUxyZfRU=",
-    "h1:rA3WXt/EnOaeiX0JNymfbNdZ7NVADrro78bvoG45jfE=",
+    "h1:+oJkqhpGwlWeIeArWIEvTgQ2xEaqmqVkesayvVM+Otw=",
+    "h1:nqS+LZ4WhlpZZaDyF+zt6dwxanb5eftVlLchIJJi6js=",
+    "h1:sSwLSiXjSN+r5j6ZnNdNrMpUTj0mHpuH2ij92GWM9CQ=",
   ]
 }
 
