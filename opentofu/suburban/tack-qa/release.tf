@@ -5,24 +5,45 @@ locals {
     consumer_digest = "sha256:45a42932c1592f06f4d171ea3b463ab4cc342f7ddea13593c8d9332c3fcbff8f"
     accountable     = "alex@goodkind.io"
   }
-  tack_release_guests = {
-    tack_qa_suburban   = "owner"
-    tack_app2_suburban = "app"
-  }
 }
 
 module "tack_release" {
-  source   = "../../modules/tack-release"
-  for_each = local.tack_release_guests
+  source = "../../modules/tack-release"
 
-  node = local.guests[each.key].node
-  vmid = local.guests[each.key].vmid
-  kind = local.guests[each.key].kind
-  role = each.value
+  node = local.guests["tack_qa_suburban"].node
+  vmid = local.guests["tack_qa_suburban"].vmid
+  kind = local.guests["tack_qa_suburban"].kind
+  role = "owner"
 
   commit          = local.tack_release.commit
   server_digest   = local.tack_release.server_digest
-  consumer_digest = each.value == "owner" ? local.tack_release.consumer_digest : null
+  consumer_digest = local.tack_release.consumer_digest
 
   accountable_email = local.tack_release.accountable
+}
+
+module "tack_release_app" {
+  source = "../../modules/tack-release"
+
+  node = local.guests["tack_app2_suburban"].node
+  vmid = local.guests["tack_app2_suburban"].vmid
+  kind = local.guests["tack_app2_suburban"].kind
+  role = "app"
+
+  commit        = local.tack_release.commit
+  server_digest = local.tack_release.server_digest
+
+  accountable_email = local.tack_release.accountable
+
+  depends_on = [module.tack_release]
+}
+
+moved {
+  from = module.tack_release["tack_qa_suburban"]
+  to   = module.tack_release
+}
+
+moved {
+  from = module.tack_release["tack_app2_suburban"]
+  to   = module.tack_release_app
 }
