@@ -102,6 +102,10 @@ INSTALLED_SOURCE_DIRECTORIES = (
     "workspaces/sample",
     "workspaces/sample/host",
 )
+UNIT_FIXTURES = Path(__file__).parent / "fixtures" / "unit"
+UNIT_NAME = "hostartifact-acceptance-unit.service"
+UNIT_DIRECTORY = "/etc/systemd/system"
+UNIT_MODE = "0644"
 
 
 class FixtureCase(StrEnum):
@@ -128,6 +132,8 @@ class FixtureCase(StrEnum):
     PROGRAM_WRONG_ARCHIVE = "program-wrong-archive"
     PROGRAM_WRONG_MEMBER = "program-wrong-member"
     PROGRAM_COLLISION = "program-collision"
+    UNIT_V1 = "unit-v1"
+    UNIT_V2 = "unit-v2"
 
 
 PROGRAM_CASES = frozenset(
@@ -255,6 +261,16 @@ def installed_source_files(target: FixtureTarget, version: str) -> list[FixtureF
         )
     )
     return files
+
+
+def unit_files(target: FixtureTarget, version: str) -> list[FixtureFile]:
+    unit = FixtureFile(
+        path=f"{UNIT_DIRECTORY}/{UNIT_NAME}",
+        content=(UNIT_FIXTURES / version / UNIT_NAME).read_bytes(),
+        mode=UNIT_MODE,
+    )
+    files = [unit, *two_files(target, VERSION_ONE)]
+    return sorted(files, key=lambda item: item.path)
 
 
 def installed_source_directories(target: FixtureTarget) -> list[ManifestDirectory]:
@@ -434,6 +450,12 @@ def fixture_archive(
             return assembled_archive(
                 target, source_revision, entries, [first, second], [program]
             )
+        case FixtureCase.UNIT_V1:
+            unit_one = unit_files(target, VERSION_ONE)
+            return matching_archive(target, source_revision, unit_one)
+        case FixtureCase.UNIT_V2:
+            unit_two = unit_files(target, VERSION_TWO)
+            return matching_archive(target, source_revision, unit_two)
         case FixtureCase.RECOVERY_V1:
             recovery_one = recovery_files(target, VERSION_ONE)
             return matching_archive(target, source_revision, recovery_one)
