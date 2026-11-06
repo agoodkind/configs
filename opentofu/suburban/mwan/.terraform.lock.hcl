@@ -73,21 +73,20 @@ provider "registry.opentofu.org/hashicorp/http" {
 }
 
 provider "tofu.home.arpa/agoodkind/mwan" {
-  version     = "0.1.1"
-  constraints = ">= 0.1.0, 0.1.1"
+  version     = "0.1.2"
+  constraints = ">= 0.1.0, 0.1.2"
   hashes = [
-    "h1:27tJjj2hjdCVEO4mXMJkqyFsO4tbPG7vIy3EewTUOvQ=",
-    "h1:mqDq3a0zaMQQGdrY/gJmtEAX6FF77m3bMXovUxyZfRU=",
-    "h1:rA3WXt/EnOaeiX0JNymfbNdZ7NVADrro78bvoG45jfE=",
+    "h1:+oJkqhpGwlWeIeArWIEvTgQ2xEaqmqVkesayvVM+Otw=",
+    "h1:nqS+LZ4WhlpZZaDyF+zt6dwxanb5eftVlLchIJJi6js=",
+    "h1:sSwLSiXjSN+r5j6ZnNdNrMpUTj0mHpuH2ij92GWM9CQ=",
   ]
 }
 
 provider "tofu.home.arpa/agoodkind/pveguest" {
-  version     = "0.1.3"
-  constraints = ">= 0.1.1, 0.1.3"
+  version     = "0.1.4"
+  constraints = ">= 0.1.1, 0.1.4"
   hashes = [
-    "h1:0pfKRxBLQ/kLjd0fvvXZKuUVWCKWVApcMbn2npwsGHw=",
-    "h1:J0hV3tmWHEM/3zg3X8bNNm3OMNY75zOy3Yrnc/YWVak=",
-    "h1:r8USwIeIDmkvpeiODGCMwGqaZpzWVbaLqJ43G1OejjM=",
+    "h1:40TSKWjpXcjW/59394YkmcyJwwnVPc1Yj+eK28+MfTY=",
+    "h1:cM/MjJz8Luu1oVJlI0qzbn7gCH/+Ec9m4g33zj1Buq8=",
   ]
 }
