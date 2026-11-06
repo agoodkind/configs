@@ -57,6 +57,33 @@ variable "grant_scope" {
   }
 }
 
+variable "additional_patches" {
+  description = "Add named patch files from the selected overlay commit."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for component in keys(var.additional_patches) : can(regex("^[A-Za-z0-9][A-Za-z0-9_-]*$", component))
+    ])
+    error_message = "Each additional_patches key must start with a letter or digit and use only letters, digits, underscores, or hyphens."
+  }
+
+  validation {
+    condition = alltrue([
+      for source in values(var.additional_patches) : can(regex("^([A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\\.patch$", source))
+    ])
+    error_message = "Each additional_patches value must be a repository-relative .patch path without empty, dot, or parent directory segments."
+  }
+
+  validation {
+    condition = alltrue([
+      for component in keys(var.additional_patches) : !contains(keys(local.base_files), "patches/${component}.patch")
+    ])
+    error_message = "additional_patches must not replace an existing managed patch component."
+  }
+}
+
 variable "kernel_modules" {
   description = "A null value disables kernel module API access for the automation user by removing the ScopedKernelModules role and its ACL. An object grants ScopedKernelModules on /. The API accepts only entries in allow. An empty allow list permits no modules. The selected overlay commit must provide the kernel module API."
   type = object({
@@ -188,7 +215,7 @@ locals {
 
   # Key: the file path in agoodkind/proxmox-overlays. Debian creates
   # /usr/local/sbin and /usr/local/share.
-  files = {
+  base_files = {
     "pve-overlay" = {
       path        = local.script
       permissions = "0755"
@@ -214,6 +241,18 @@ locals {
       permissions = "0644"
     }
   }
+
+  files = merge(local.base_files, {
+    for component in keys(var.additional_patches) : "patches/${component}.patch" => {
+      path        = "/usr/local/share/pve-overlay-${component}.patch"
+      permissions = "0644"
+    }
+  })
+
+  file_sources = merge(
+    { for source in keys(local.base_files) : source => source },
+    { for component, source in var.additional_patches : "patches/${component}.patch" => source },
+  )
 
   # remote_file builds the SSH address as <host>:<port>. An IPv6 address needs
   # brackets in that format.
@@ -436,12 +475,12 @@ locals {
 data "http" "files" {
   for_each = local.files
 
-  url = "${local.source}/${each.key}"
+  url = "${local.source}/${local.file_sources[each.key]}"
 
   lifecycle {
     postcondition {
       condition     = self.status_code == 200
-      error_message = "GitHub returned ${self.status_code} for ${each.key} at ${var.commit}."
+      error_message = "GitHub returned ${self.status_code} for ${local.file_sources[each.key]} at ${var.commit}."
     }
   }
 }
