@@ -79,11 +79,10 @@ module "suburban" {
 
   providers = { proxmox = proxmox.suburban, proxmox.root = proxmox.suburban_root }
 
-  ssh_keys           = trimspace(data.http.github_ssh_keys.response_body)
-  service_mapping    = local.service_mapping
-  host_networks      = merge(module.suburban_config.bridges, { for name, network in module.routing.networks : name => network.bridge })
-  routing_networks   = module.routing.networks
-  routing_management = module.routing.management
+  ssh_keys         = trimspace(data.http.github_ssh_keys.response_body)
+  service_mapping  = local.service_mapping
+  host_networks    = merge(module.suburban_config.bridges, { for name, network in module.routing.networks : name => network.bridge })
+  routing_networks = module.routing.networks
 }
 
 data "http" "github_ssh_keys" {
