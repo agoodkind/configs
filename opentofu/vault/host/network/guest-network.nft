@@ -1,10 +1,4 @@
 destroy table ip vault_guests
-table ip vault_guests {
-    chain postrouting {
-        type nat hook postrouting priority srcnat; policy accept;
-        oifname "mbrains" ip saddr 10.250.0.0/24 masquerade
-    }
-}
 
 destroy table inet vault_guests
 table inet vault_guests {
