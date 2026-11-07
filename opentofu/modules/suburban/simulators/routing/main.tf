@@ -200,7 +200,8 @@ resource "pveguest_apt_packages" "frr" {
 
   packages = toset(["frr"])
 
-  depends_on = [proxmox_virtual_environment_container.routing_simulator]
+  # Install the network packages first to prevent concurrent apt runs on a guest.
+  depends_on = [pveguest_apt_packages.network]
 }
 
 resource "pveguest_file" "frr_daemons" {
