@@ -46,6 +46,44 @@ variable "automation_user" {
   type        = string
 }
 
+variable "grant_scope" {
+  description = "Select all bootstrap grants or only the host artifact role."
+  type        = string
+  default     = "all"
+
+  validation {
+    condition     = contains(["all", "host-artifacts"], var.grant_scope)
+    error_message = "grant_scope must be all or host-artifacts."
+  }
+}
+
+variable "additional_patches" {
+  description = "Add named patch files from the selected overlay commit."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for component in keys(var.additional_patches) : can(regex("^[A-Za-z0-9][A-Za-z0-9_-]*$", component))
+    ])
+    error_message = "Each additional_patches key must start with a letter or digit and use only letters, digits, underscores, or hyphens."
+  }
+
+  validation {
+    condition = alltrue([
+      for source in values(var.additional_patches) : can(regex("^([A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\\.patch$", source))
+    ])
+    error_message = "Each additional_patches value must be a repository-relative .patch path without empty, dot, or parent directory segments."
+  }
+
+  validation {
+    condition = alltrue([
+      for component in keys(var.additional_patches) : !contains(keys(local.base_files), "patches/${component}.patch")
+    ])
+    error_message = "additional_patches must not replace an existing managed patch component."
+  }
+}
+
 variable "kernel_modules" {
   description = "A null value disables kernel module API access for the automation user by removing the ScopedKernelModules role and its ACL. An object grants ScopedKernelModules on /. The API accepts only entries in allow. An empty allow list permits no modules. The selected overlay commit must provide the kernel module API."
   type = object({
@@ -177,7 +215,7 @@ locals {
 
   # Key: the file path in agoodkind/proxmox-overlays. Debian creates
   # /usr/local/sbin and /usr/local/share.
-  files = {
+  base_files = {
     "pve-overlay" = {
       path        = local.script
       permissions = "0755"
@@ -203,6 +241,18 @@ locals {
       permissions = "0644"
     }
   }
+
+  files = merge(local.base_files, {
+    for component in keys(var.additional_patches) : "patches/${component}.patch" => {
+      path        = "/usr/local/share/pve-overlay-${component}.patch"
+      permissions = "0644"
+    }
+  })
+
+  file_sources = merge(
+    { for source in keys(local.base_files) : source => source },
+    { for component, source in var.additional_patches : "patches/${component}.patch" => source },
+  )
 
   # remote_file builds the SSH address as <host>:<port>. An IPv6 address needs
   # brackets in that format.
@@ -238,7 +288,7 @@ locals {
 
   host_artifacts_roles = local.host_artifacts_enabled ? {
     ScopedHostArtifacts = {
-      path = "/"
+      path = "/nodes/${var.node_name}"
       privileges = [
         "Sys.HostArtifacts.Audit",
         "Sys.HostArtifacts.Modify",
@@ -373,7 +423,8 @@ locals {
         "pveum acl modify ${path} --users ${var.automation_user} --roles ${role} --propagate 1"
       ],
     ]
-  ]), local.container_options_acl_commands)
+    if var.grant_scope == "all" || contains(keys(local.host_artifacts_roles), role)
+  ]), var.grant_scope == "all" ? local.container_options_acl_commands : [])
 
   # Earlier grants put these roles on /vms and /nodes/<node>. `pveum acl
   # delete` succeeds when the entry is absent.
@@ -401,10 +452,10 @@ locals {
     ])
   ]
 
-  revoke_commands = concat([
+  revoke_commands = var.grant_scope == "all" ? concat([
     "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
     "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
-  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands, local.container_options_revoke_commands)
+  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands, local.container_options_revoke_commands) : []
 
   allowlist_path = "/etc/pve-overlay/kernel-modules.allow"
 
@@ -424,12 +475,12 @@ locals {
 data "http" "files" {
   for_each = local.files
 
-  url = "${local.source}/${each.key}"
+  url = "${local.source}/${local.file_sources[each.key]}"
 
   lifecycle {
     postcondition {
       condition     = self.status_code == 200
-      error_message = "GitHub returned ${self.status_code} for ${each.key} at ${var.commit}."
+      error_message = "GitHub returned ${self.status_code} for ${local.file_sources[each.key]} at ${var.commit}."
     }
   }
 }
@@ -486,6 +537,15 @@ resource "terraform_data" "grant" {
   provisioner "remote-exec" {
     inline = concat(["set -eu"], local.grant_commands, local.revoke_commands)
   }
+
+  lifecycle {
+    precondition {
+      condition     = var.grant_scope != "host-artifacts" || local.host_artifacts_enabled
+      error_message = "host-artifacts grant scope requires a nonempty host_artifact_policies map."
+    }
+  }
+
+  depends_on = [remote_file.host_artifacts_trusted_root, remote_file.host_artifact_policies]
 }
 
 resource "terraform_data" "allowlist_directory" {
