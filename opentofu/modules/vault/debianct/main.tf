@@ -23,7 +23,7 @@ resource "proxmox_virtual_environment_container" "debianct" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "vmbr0"
+    bridge      = "vmnet"
     mac_address = "BC:24:11:73:B0:3C"
   }
 
