@@ -14,11 +14,18 @@ locals {
       "ipv6_uplink"         = "3d06:bad:b01:200::93"
       "announced_prefix_v6" = "3d06:bad:b01:230::/64"
     }
+    mwan_suburban = {
+      "ipv6_transit" = "3d06:bad:b01:201::3"
+    }
+    mwan_failover_suburban = {
+      "ipv6_transit" = "3d06:bad:b01:201::4"
+    }
     suburban_hypervisor = module.suburban_hypervisor.value
     vmbr1_suburban      = module.vmbr1_suburban.value
   }
 }
 output "service_mapping" { value = local.service_mapping }
+output "bgp_asn" { value = 4200000001 }
 locals {
   lock_targets = {
     "module_hosts" = {

@@ -69,11 +69,12 @@ module "base" {
 module "suburban" {
   source = "../../../modules/suburban/simulators/router2"
 
-  providers = { proxmox = proxmox.suburban }
+  providers = { proxmox = proxmox.suburban, pveguest = pveguest }
 
   ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping = local.service_mapping
   host_networks   = module.suburban_config.bridges
+  bgp_asn         = module.configuration.bgp_asn
 }
 
 data "http" "github_ssh_keys" {

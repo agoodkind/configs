@@ -1,0 +1,20 @@
+! FRR config for the router-2 simulator.
+! The simulator peers with both MWAN speakers over iBGP on the transit link
+! and announces the prefix that announced-prefix.service adds to lo. The
+! network statement originates the prefix only while that connected route exists.
+frr defaults traditional
+hostname ${hostname}
+!
+router bgp ${asn}
+ bgp router-id ${router_id}
+%{ for neighbor in neighbors ~}
+ neighbor ${neighbor} remote-as ${asn}
+%{ endfor ~}
+ !
+ address-family ipv6 unicast
+  network ${announced_prefix}
+%{ for neighbor in neighbors ~}
+  neighbor ${neighbor} activate
+%{ endfor ~}
+ exit-address-family
+!
