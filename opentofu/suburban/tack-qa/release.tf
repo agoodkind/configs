@@ -35,6 +35,9 @@ module "tack_release_app" {
 
   accountable_email = local.tack_release.accountable
 
+  writer           = "docker"
+  runtime_revision = module.tack_app.container_id
+
   depends_on = [module.tack_release]
 }
 
