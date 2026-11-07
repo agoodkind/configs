@@ -17,16 +17,6 @@ locals {
       source = "forwarding.conf"
     }
   }
-  retired_guest_filter_files = {
-    firewall = {
-      path   = "/etc/vault-guest-network.nft"
-      source = "guest-network.nft"
-    }
-    firewall_unit = {
-      path   = "/etc/systemd/system/vault-guest-network.service"
-      source = "guest-network.service"
-    }
-  }
 }
 
 resource "terraform_data" "guest_network_packages" {
@@ -46,22 +36,6 @@ resource "terraform_data" "guest_network_packages" {
 
 resource "remote_file" "host_network" {
   for_each = local.host_network_files
-
-  conn {
-    host  = local.overlay_hosts.vault.ssh_host
-    user  = "root"
-    agent = true
-  }
-
-  path        = each.value.path
-  content     = file("${path.module}/network/${each.value.source}")
-  permissions = "0644"
-
-  depends_on = [terraform_data.guest_network_packages]
-}
-
-resource "remote_file" "guest_network" {
-  for_each = local.retired_guest_filter_files
 
   conn {
     host  = local.overlay_hosts.vault.ssh_host

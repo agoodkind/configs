@@ -2,6 +2,7 @@
 auto mbrains
 iface mbrains inet manual
     address-purge no
+    ip-forward on
     bridge-ports enp4s0
     bridge-stp off
     bridge-fd 0
