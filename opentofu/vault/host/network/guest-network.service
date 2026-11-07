@@ -1,7 +1,7 @@
 [Unit]
-Description=Guest forwarding and IPv4 masquerade
+Description=Guest forwarding and inbound filtering
 After=networking.service
-Before=pve-guests.service tayga.service
+Before=pve-guests.service
 
 [Service]
 Type=oneshot
