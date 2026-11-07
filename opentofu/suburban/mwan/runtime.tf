@@ -17,7 +17,6 @@ locals {
   reserved_tables       = [400, 500]
   restconf_port         = 10080
   resolver_state_file   = "/var/lib/mwan/owned-resolver.json"
-  pve_token_id          = "root@pam!watchdog"
 
   routing_prefixes = module.configuration.routing_prefixes
   home_prefix      = local.routing_prefixes.testbed_routing_home_prefix
@@ -897,9 +896,6 @@ locals {
     email_bind_iface        = ""
     email_min_level         = local.alert_level
     email_cooldown          = local.alert_cooldown
-    pve_base_url            = "https://[::1]:8006/api2/json"
-    pve_node                = "hypervisor"
-    pve_token_id            = local.pve_token_id
     watchdog_service_name   = "mwan-watchdog-testbed"
     watchdog_agent_tcp_addr = "[${local.gateway_map.ipv6}]:50052"
     watchdog_log_file       = "/var/log/mwan-watchdog-testbed.log"
@@ -956,7 +952,6 @@ locals {
   gateway_config_public = templatefile("${path.module}/gateway-config.toml.tftpl", {
     c = merge(local.gateway_config_values, {
       smtp2go_api_key     = ""
-      pve_token_secret    = ""
       opnsense_api_key    = ""
       opnsense_api_secret = ""
     })
@@ -965,7 +960,6 @@ locals {
   gateway_config_secret = templatefile("${path.module}/gateway-config.toml.tftpl", {
     c = merge(local.gateway_config_values, {
       smtp2go_api_key     = var.vault_smtp2go_api_key
-      pve_token_secret    = var.vault_suburban_testbed_pve_token_secret
       opnsense_api_key    = var.vault_suburban_testbed_opnsense_api_key
       opnsense_api_secret = var.vault_suburban_testbed_opnsense_api_secret
     })
@@ -1054,6 +1048,16 @@ import {
 import {
   to = module.mwan.pveguest_file.network[0]
   id = "${local.guests["mwan_suburban"].node}/${local.guests["mwan_suburban"].vmid}/${local.guests["mwan_suburban"].kind}//etc/mwan/network.json"
+}
+
+import {
+  to = module.mwan.pveguest_file.role["/etc/systemd/system/systemd-networkd.service.d/override.conf"]
+  id = "${local.guests["mwan_suburban"].node}/${local.guests["mwan_suburban"].vmid}/${local.guests["mwan_suburban"].kind}//etc/systemd/system/systemd-networkd.service.d/override.conf"
+}
+
+import {
+  to = module.mwan.pveguest_systemd_unit.role["systemd-networkd.service"]
+  id = "${local.guests["mwan_suburban"].node}/${local.guests["mwan_suburban"].vmid}/${local.guests["mwan_suburban"].kind}/systemd-networkd.service"
 }
 
 import {

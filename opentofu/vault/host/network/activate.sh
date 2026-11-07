@@ -20,8 +20,8 @@ dispatch_activation() {
     if [[ "$load_state" == not-found ]]; then
         runtime_directory=$(mktemp -d /run/vault-network-activation.XXXXXXXX)
         cp -- "$0" "$runtime_directory/activate.sh"
-        systemd-run --unit="$unit_name" --property=Type=oneshot \
-            --property=RemainAfterExit=yes /usr/bin/bash "$runtime_directory/activate.sh" --apply
+        systemd-run --wait --unit="$unit_name" --property=Type=oneshot \
+            /usr/bin/bash "$runtime_directory/activate.sh" --apply
         return
     fi
     systemctl start "$unit_name"
@@ -37,15 +37,14 @@ if [[ "$#" -ne 1 || "$1" != --apply ]]; then
 fi
 
 systemctl daemon-reload
-nft --check --file /etc/vault-guest-network.nft
-systemd-analyze verify /etc/systemd/system/vault-guest-network.service
-ifreload --all
+if [[ -e /etc/systemd/system/vault-guest-network.service ]]; then
+    systemctl disable --now vault-guest-network.service
+fi
+nft destroy table ip vault_guests
+nft destroy table inet vault_guests
 sysctl --load=/etc/sysctl.d/70-vault-guest-network.conf
 systemctl enable --now systemd-networkd.service
 networkctl reload
-networkctl reconfigure mbrains
 
-systemctl enable vault-guest-network.service
-systemctl restart vault-guest-network.service
 systemctl enable cloudflared.service
 systemctl restart cloudflared.service
