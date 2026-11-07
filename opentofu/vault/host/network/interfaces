@@ -8,14 +8,4 @@ iface enp6s0 inet manual
 iface enp2s0f0np0 inet manual
 iface enp2s0f1np1 inet manual
 
-auto vmbr0
-iface vmbr0 inet static
-    address 10.250.0.254/24
-    bridge-ports none
-    bridge-stp off
-    bridge-fd 0
-
-iface vmbr0 inet6 static
-    address 3d06:bad:b01::254/64
-
 source /etc/network/interfaces.d/*
