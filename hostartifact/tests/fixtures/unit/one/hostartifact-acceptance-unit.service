@@ -1,0 +1,8 @@
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOSTARTIFACT_ACCEPTANCE_VERSION=one
+ExecStart=/bin/true
+
+[Install]
+WantedBy=multi-user.target

@@ -118,7 +118,11 @@ PROGRAM_CASES = (
     "program-collision",
 )
 INSTALLED_SOURCE_CASES = ("installed-source-v1", "installed-source-v2")
-ALL_CASES = (*LEGACY_CASES, *PROGRAM_CASES, *INSTALLED_SOURCE_CASES)
+UNIT_CASES = ("unit-v1", "unit-v2")
+ALL_CASES = (*LEGACY_CASES, *PROGRAM_CASES, *INSTALLED_SOURCE_CASES, *UNIT_CASES)
+UNIT_NAME = "hostartifact-acceptance-unit.service"
+UNIT_PATH = f"/etc/systemd/system/{UNIT_NAME}"
+UNIT_MODE = "0644"
 INSTALLED_SOURCE_FILES = (
     "configsctl.yml",
     "native/main.tf",
@@ -460,6 +464,31 @@ def test_installed_source_versions_keep_identity_and_change_only_the_child_modul
     fixtures = GENERATOR.parent / "fixtures" / "installed-source"
     assert first[-1].content == (fixtures / VERSION_ONE / "main.tf").read_bytes()
     assert second[-1].content == (fixtures / VERSION_TWO / "main.tf").read_bytes()
+
+
+def assert_unit_case(output_dir: Path, case: str, version: str) -> list[TarMember]:
+    fixture = GENERATOR.parent / "fixtures" / "unit" / version / UNIT_NAME
+    unit = ExpectedFile(path=UNIT_PATH, content=fixture.read_bytes(), mode=UNIT_MODE)
+    files = [unit, *two_files(DIRECTORY_A, VERSION_ONE)]
+
+    result = build(case, output_dir)
+
+    members = read_members(Path(as_text(result["archive"])))
+    manifest = read_manifest(members[0])
+    assert manifest == expected_manifest(TARGET_A, DIRECTORY_A, files, NO_SIZE_CHANGE)
+    assert members[1:] == [file_member(item) for item in files]
+    return members
+
+
+def test_unit_versions_keep_target_a_files_and_change_only_the_unit_file(
+    tmp_path: Path,
+) -> None:
+    first = assert_unit_case(tmp_path / "first", UNIT_CASES[0], VERSION_ONE)
+    second = assert_unit_case(tmp_path / "second", UNIT_CASES[1], VERSION_TWO)
+
+    assert first[1].name == second[1].name == FILES_PREFIX + UNIT_PATH.lstrip("/")
+    assert first[1].content != second[1].content
+    assert first[2:] == second[2:]
 
 
 def native_command(

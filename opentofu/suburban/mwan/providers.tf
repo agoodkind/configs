@@ -17,6 +17,6 @@ terraform {
     http     = { source = "hashicorp/http", version = ">= 3.0" }
     mwan     = { source = "tofu.home.arpa/agoodkind/mwan", version = "0.1.2" }
     proxmox  = { source = "bpg/proxmox", version = "0.116.0" }
-    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.4" }
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.5" }
   }
 }
