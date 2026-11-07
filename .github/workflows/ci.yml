@@ -43,6 +43,8 @@ on:
           - program-wrong-archive
           - program-wrong-member
           - program-collision
+          - unit-v1
+          - unit-v2
 
 permissions:
   contents: read
