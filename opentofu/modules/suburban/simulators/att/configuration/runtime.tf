@@ -17,4 +17,23 @@ output "simulator" { value = {
   "ra_dns_lifetime_seconds"              = "omit"
   "ra_prefix_preferred_lifetime_seconds" = "omit"
   "ra_prefix_valid_lifetime_seconds"     = "omit"
+  "dhcp4" = {
+    "valid_lifetime_seconds"         = 4000
+    "socket_max_retries"             = 60
+    "socket_retry_wait_milliseconds" = 1000
+    "pool"                           = "10.240.205.100 - 10.240.205.200"
+    "gateway"                        = "10.240.205.1"
+    "dns"                            = "1.1.1.1"
+    "reservations" = [{
+      "mac_address" = "BC:24:11:C0:D7:60"
+      "ipv4"        = "10.240.205.2"
+    }]
+  }
+  "dhcp6" = {
+    "preferred_lifetime_seconds"     = 3000
+    "valid_lifetime_seconds"         = 4000
+    "dns_servers"                    = []
+    "socket_max_retries"             = 60
+    "socket_retry_wait_milliseconds" = 5000
+  }
 } }

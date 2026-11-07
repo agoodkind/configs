@@ -1,8 +1,10 @@
 terraform {
   required_providers {
     pveguest = {
-      source  = "tofu.home.arpa/agoodkind/pveguest"
-      version = "0.1.1"
+      source = "tofu.home.arpa/agoodkind/pveguest"
+      # pveguest 0.1.3 adds the masked and allow_missing attributes of
+      # pveguest_systemd_unit.
+      version = ">= 0.1.3"
     }
   }
 }
@@ -19,26 +21,78 @@ variable "vmid" {
 
 
 
-variable "configuration" { type = object({
-  ipv6_enabled                         = bool
-  dynamic_v4                           = bool
-  routed_ipv6_enabled                  = bool
-  routed_ipv6_prefix                   = string
-  routed_ipv4_prefix                   = string
-  routed_ipv4_route_to                 = string
-  static_v4_block                      = string
-  static_v4_route_to                   = string
-  v4_subnet                            = string
-  pd_prefix                            = string
-  slaac_prefix                         = string
-  mwan_vm_ll                           = string
-  ra_min_interval_seconds              = number
-  ra_max_interval_seconds              = number
-  ra_dns_servers                       = list(string)
-  ra_dns_lifetime_seconds              = string
-  ra_prefix_preferred_lifetime_seconds = string
-  ra_prefix_valid_lifetime_seconds     = string
-}) }
+variable "configuration" {
+  type = object({
+    ipv6_enabled                         = bool
+    dynamic_v4                           = bool
+    routed_ipv6_enabled                  = bool
+    routed_ipv6_prefix                   = string
+    routed_ipv4_prefix                   = string
+    routed_ipv4_route_to                 = string
+    static_v4_block                      = string
+    static_v4_route_to                   = string
+    v4_subnet                            = string
+    pd_prefix                            = string
+    slaac_prefix                         = string
+    mwan_vm_ll                           = string
+    ra_min_interval_seconds              = number
+    ra_max_interval_seconds              = number
+    ra_dns_servers                       = list(string)
+    ra_dns_lifetime_seconds              = string
+    ra_prefix_preferred_lifetime_seconds = string
+    ra_prefix_valid_lifetime_seconds     = string
+
+    # kea-dhcp4-server serves this configuration when dynamic_v4 is true. A null
+    # renew_seconds or rebind_seconds leaves the timer out of the Kea file.
+    dhcp4 = optional(object({
+      valid_lifetime_seconds         = number
+      renew_seconds                  = optional(number)
+      rebind_seconds                 = optional(number)
+      socket_max_retries             = number
+      socket_retry_wait_milliseconds = number
+      pool                           = string
+      gateway                        = string
+      dns                            = string
+      reservations = list(object({
+        mac_address = string
+        ipv4        = string
+      }))
+    }))
+
+    # kea-dhcp6-server serves this configuration when ipv6_enabled is true. It
+    # delegates pd_prefix at the length of pd_prefix. A non-null address_pool
+    # also assigns IA_NA addresses from slaac_prefix.
+    dhcp6 = optional(object({
+      preferred_lifetime_seconds     = number
+      valid_lifetime_seconds         = number
+      renew_seconds                  = optional(number)
+      rebind_seconds                 = optional(number)
+      dns_servers                    = list(string)
+      socket_max_retries             = number
+      socket_retry_wait_milliseconds = number
+      address_pool                   = optional(string)
+    }))
+  })
+
+  validation {
+    condition     = (var.configuration.dhcp4 != null) == var.configuration.dynamic_v4
+    error_message = "Set configuration.dhcp4 exactly when configuration.dynamic_v4 is true."
+  }
+
+  validation {
+    condition     = (var.configuration.dhcp6 != null) == var.configuration.ipv6_enabled
+    error_message = "Set configuration.dhcp6 exactly when configuration.ipv6_enabled is true."
+  }
+
+  validation {
+    condition = (
+      var.configuration.dhcp6 == null ||
+      try(var.configuration.dhcp6.address_pool, null) == null ||
+      var.configuration.slaac_prefix != ""
+    )
+    error_message = "configuration.dhcp6.address_pool requires a configuration.slaac_prefix value."
+  }
+}
 
 locals {
   kind = "lxc"
@@ -61,6 +115,27 @@ locals {
   # radvd.service. The set contains the unit name as the for_each key for these simulators
   # and remains empty for other simulators.
   radvd_units = local.simulator.ipv6_enabled ? toset(["radvd.service"]) : toset([])
+
+  # These maps use the Kea unit name as the key and the Kea configuration as
+  # the value. A map is empty when the simulator does not serve that DHCP
+  # family.
+  dhcp4_units = {
+    for dhcp4 in local.simulator.dhcp4[*] : "kea-dhcp4-server.service" => dhcp4
+  }
+  dhcp6_units = {
+    for dhcp6 in local.simulator.dhcp6[*] : "kea-dhcp6-server.service" => dhcp6
+  }
+
+  # A simulator without IPv6 keeps kea-dhcp6-server and radvd stopped and
+  # disabled. The module does not install either package on that simulator,
+  # so each unit can be absent.
+  disabled_ipv6_units = (
+    local.simulator.ipv6_enabled
+    ? toset([])
+    : toset(["kea-dhcp6-server.service", "radvd.service"])
+  )
+
+  pd_prefix_parts = split("/", local.simulator.pd_prefix)
 
   # Only simulators that route a delegated IPv6 prefix, a routed IPv6 prefix, a routed IPv4
   # prefix, or a static IPv4 block back to the MWAN VM create pd-route.service and its
@@ -222,4 +297,125 @@ resource "pveguest_systemd_unit" "pd_route" {
   restart_on = {
     unit = pveguest_file.pd_route[each.key].write_id
   }
+}
+
+resource "pveguest_file" "kea_dhcp4" {
+  for_each = local.dhcp4_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path = "/etc/kea/kea-dhcp4.conf"
+  content = templatefile("${path.module}/files/kea-dhcp4.conf.tftpl", {
+    socket_max_retries             = each.value.socket_max_retries
+    socket_retry_wait_milliseconds = each.value.socket_retry_wait_milliseconds
+    valid_lifetime_seconds         = each.value.valid_lifetime_seconds
+    renew_seconds                  = each.value.renew_seconds
+    rebind_seconds                 = each.value.rebind_seconds
+    subnet                         = local.simulator.v4_subnet
+    pool                           = each.value.pool
+    gateway                        = each.value.gateway
+    dns                            = each.value.dns
+    reservation_lines = [
+      for reservation in each.value.reservations : format(
+        "                { \"hw-address\": \"%s\", \"ip-address\": \"%s\" }",
+        lower(reservation.mac_address),
+        reservation.ipv4,
+      )
+    ]
+  })
+  validate = "kea-dhcp4 -t %s"
+
+  depends_on = [pveguest_apt_packages.simulator]
+}
+
+resource "pveguest_systemd_unit" "kea_dhcp4" {
+  for_each = local.dhcp4_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = each.key
+  enabled = true
+  active  = true
+
+  restart_on = {
+    conf = pveguest_file.kea_dhcp4[each.key].write_id
+  }
+
+  depends_on = [pveguest_apt_packages.simulator]
+}
+
+resource "pveguest_file" "kea_dhcp6" {
+  for_each = local.dhcp6_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path = "/etc/kea/kea-dhcp6.conf"
+  content = templatefile("${path.module}/files/kea-dhcp6.conf.tftpl", {
+    socket_max_retries             = each.value.socket_max_retries
+    socket_retry_wait_milliseconds = each.value.socket_retry_wait_milliseconds
+    preferred_lifetime_seconds     = each.value.preferred_lifetime_seconds
+    valid_lifetime_seconds         = each.value.valid_lifetime_seconds
+    renew_seconds                  = each.value.renew_seconds
+    rebind_seconds                 = each.value.rebind_seconds
+    dns_servers                    = each.value.dns_servers
+    address_pool                   = each.value.address_pool
+    slaac_prefix                   = local.simulator.slaac_prefix
+    pd_network                     = local.pd_prefix_parts[0]
+    pd_length                      = local.pd_prefix_parts[1]
+  })
+  validate = "kea-dhcp6 -t %s"
+
+  depends_on = [pveguest_apt_packages.simulator]
+}
+
+resource "pveguest_systemd_unit" "kea_dhcp6" {
+  for_each = local.dhcp6_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = each.key
+  enabled = true
+  active  = true
+
+  restart_on = {
+    conf = pveguest_file.kea_dhcp6[each.key].write_id
+  }
+
+  depends_on = [pveguest_apt_packages.simulator]
+}
+
+resource "pveguest_systemd_unit" "disabled_ipv6" {
+  for_each = local.disabled_ipv6_units
+
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name          = each.key
+  enabled       = false
+  active        = false
+  allow_missing = true
+}
+
+# Kea serves DHCP on every simulator. Some LXC base images enable dnsmasq,
+# which binds the DHCP socket and fails at every boot. The module masks
+# dnsmasq and clears its failed state. The unit can be absent.
+resource "pveguest_systemd_unit" "dnsmasq" {
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name         = "dnsmasq.service"
+  enabled      = false
+  active       = false
+  masked       = true
+  reset_failed = true
 }

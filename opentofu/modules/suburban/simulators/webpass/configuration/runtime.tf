@@ -17,4 +17,13 @@ output "simulator" { value = {
   "ra_dns_lifetime_seconds"              = "240"
   "ra_prefix_preferred_lifetime_seconds" = "omit"
   "ra_prefix_valid_lifetime_seconds"     = "omit"
+  "dhcp6" = {
+    "preferred_lifetime_seconds"     = 180
+    "valid_lifetime_seconds"         = 240
+    "renew_seconds"                  = 60
+    "rebind_seconds"                 = 120
+    "dns_servers"                    = ["2001:4860:4860::8888", "2001:4860:4860::8844"]
+    "socket_max_retries"             = 60
+    "socket_retry_wait_milliseconds" = 5000
+  }
 } }
