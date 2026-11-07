@@ -72,6 +72,8 @@ module "ispsim" {
   node          = local.guests["isp_att_suburban"].node
   vmid          = local.guests["isp_att_suburban"].vmid
   configuration = module.configuration.simulator
+
+  depends_on = [module.suburban]
 }
 
 module "suburban" {
