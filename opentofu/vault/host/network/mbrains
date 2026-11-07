@@ -1,8 +1,10 @@
 # ifupdown2 creates the bridge. systemd-networkd manages its addresses.
 auto mbrains
 iface mbrains inet manual
+    address-purge no
     bridge-ports enp4s0
     bridge-stp off
     bridge-fd 0
 
 iface mbrains inet6 manual
+    address-purge no
