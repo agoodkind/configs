@@ -1,7 +1,7 @@
-# Router-2 simulator: an FRR speaker on the transit link that proves router
-# N+1 onboarding needs no MWAN change. One interface, on the transit bridge;
-# the announced prefix lives on its loopback, configured by
-# deploy-router2-sim.yml through pct alongside FRR itself.
+# The router2 simulator runs FRR on the transit link to verify that another
+# router can join without an MWAN change. The container also has a management
+# interface. announced-prefix.service adds the first address of the announced
+# prefix to lo.
 resource "proxmox_virtual_environment_container" "router2_suburban" {
   node_name = "hypervisor"
   vm_id     = local.service_mapping.router2_suburban.vmid
@@ -91,8 +91,8 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
   start_on_boot = true
   unprivileged  = true
 
-  # The simulator holds no state worth protecting: its FRR config is rendered
-  # by its deploy play, so recreating it costs one deploy.
+  # The guest does not store state worth protecting. One apply restores a
+  # recreated guest, including its FRR configuration and announced-prefix.service.
   lifecycle {
     prevent_destroy = false
     ignore_changes = [
@@ -102,14 +102,126 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
   }
 }
 
+locals {
+  router2_kind = "lxc"
+  router2      = local.service_mapping.router2_suburban
+
+  # The simulator peers with the transit address of each MWAN speaker.
+  router2_neighbors = [
+    local.service_mapping.mwan_suburban.ipv6_transit,
+    local.service_mapping.mwan_failover_suburban.ipv6_transit,
+  ]
+
+  # announced-prefix.service adds the first host address of announced_prefix_v6
+  # to lo with a /64 prefix length.
+  router2_loopback_address = "${cidrhost(local.router2.announced_prefix_v6, 1)}/${split("/", local.router2.announced_prefix_v6)[1]}"
+}
+
+resource "pveguest_apt_packages" "router2" {
+  node = local.router2.node
+  vmid = local.router2.vmid
+  kind = local.router2_kind
+
+  packages = toset(["frr"])
+
+  depends_on = [proxmox_virtual_environment_container.router2_suburban]
+}
+
+resource "pveguest_file" "announced_prefix" {
+  node = local.router2.node
+  vmid = local.router2.vmid
+  kind = local.router2_kind
+
+  path = "/etc/systemd/system/announced-prefix.service"
+  content = templatefile("${path.module}/files/announced-prefix.service.tftpl", {
+    loopback_address = local.router2_loopback_address
+  })
+
+  depends_on = [proxmox_virtual_environment_container.router2_suburban]
+}
+
+resource "pveguest_systemd_unit" "announced_prefix" {
+  node = local.router2.node
+  vmid = local.router2.vmid
+  kind = local.router2_kind
+
+  name    = "announced-prefix.service"
+  enabled = true
+  active  = true
+
+  restart_on = {
+    unit = pveguest_file.announced_prefix.write_id
+  }
+}
+
+resource "pveguest_file" "frr_daemons" {
+  node = local.router2.node
+  vmid = local.router2.vmid
+  kind = local.router2_kind
+
+  path    = "/etc/frr/daemons"
+  content = file("${path.module}/../routing/files/frr-daemons")
+  mode    = "0640"
+  owner   = "frr"
+  group   = "frr"
+
+  depends_on = [pveguest_apt_packages.router2]
+}
+
+resource "pveguest_file" "frr_conf" {
+  node = local.router2.node
+  vmid = local.router2.vmid
+  kind = local.router2_kind
+
+  path = "/etc/frr/frr.conf"
+  content = templatefile("${path.module}/files/frr.conf.tftpl", {
+    hostname         = split(".", local.router2.hostname)[0]
+    asn              = var.bgp_asn
+    router_id        = local.router2.ipv4_transit
+    neighbors        = local.router2_neighbors
+    announced_prefix = local.router2.announced_prefix_v6
+  })
+  mode     = "0640"
+  owner    = "frr"
+  group    = "frr"
+  validate = "vtysh -C -f %s"
+
+  depends_on = [pveguest_apt_packages.router2]
+}
+
+resource "pveguest_systemd_unit" "frr" {
+  node = local.router2.node
+  vmid = local.router2.vmid
+  kind = local.router2_kind
+
+  name    = "frr.service"
+  enabled = true
+  active  = true
+
+  restart_on = {
+    daemons = pveguest_file.frr_daemons.write_id
+    conf    = pveguest_file.frr_conf.write_id
+  }
+
+  depends_on = [pveguest_systemd_unit.announced_prefix]
+}
+
 variable "service_mapping" { type = object({
   router2_suburban = object({
-    vmid         = number
-    hostname     = string
-    ipv4_transit = string
+    node                = string
+    vmid                = number
+    hostname            = string
+    ipv4_transit        = string
+    ipv6_transit        = string
+    ipv4_uplink         = string
+    ipv6_uplink         = string
+    announced_prefix_v6 = string
+  })
+  mwan_suburban = object({
     ipv6_transit = string
-    ipv4_uplink  = string
-    ipv6_uplink  = string
+  })
+  mwan_failover_suburban = object({
+    ipv6_transit = string
   })
   vmbr1_suburban = object({
     ipv4 = string
@@ -121,6 +233,11 @@ variable "ssh_keys" { type = string }
 
 variable "host_networks" { type = map(string) }
 
+variable "bgp_asn" {
+  description = "The bgp_asn variable specifies the iBGP AS number shared by the simulator and the MWAN speakers."
+  type        = number
+}
+
 locals { service_mapping = var.service_mapping }
 
 terraform {
@@ -129,6 +246,10 @@ terraform {
       source  = "bpg/proxmox"
       version = ">= 0.106.0"
 
+    }
+    pveguest = {
+      source  = "tofu.home.arpa/agoodkind/pveguest"
+      version = ">= 0.1.3"
     }
   }
 }

@@ -1,0 +1,67 @@
+frr defaults traditional
+hostname ${hostname}
+log syslog informational
+!
+%{ for peer in peers ~}
+%{ for prefix in peer.import_prefixes ~}
+ipv6 prefix-list PL-${peer.id}-IN permit ${prefix}
+%{ endfor ~}
+%{ for prefix in peer.export_prefixes ~}
+ipv6 prefix-list PL-${peer.id}-OUT permit ${prefix}
+%{ endfor ~}
+%{ endfor ~}
+%{ for tracked in tracked_routes ~}
+ipv6 prefix-list PL-TRACKED-${tracked.interface} permit ${tracked.prefix}
+%{ endfor ~}
+!
+%{ if default_route_interface != null ~}
+! zebra installs this route only while the service interface is up. bgpd
+! announces the default network only while import-check finds this route.
+ipv6 route ${default_route} ${default_route_interface}
+!
+%{ endif ~}
+%{ for index, tracked in tracked_routes ~}
+! The interface match excludes every other kernel route to the prefix.
+route-map RM-TRACKED permit ${(index + 1) * 10}
+ match ipv6 address prefix-list PL-TRACKED-${tracked.interface}
+ match interface ${tracked.interface}
+!
+%{ endfor ~}
+router bgp ${asn}
+ bgp router-id ${router_id}
+ no bgp default ipv4-unicast
+ bgp network import-check
+%{ if graceful_restart_stalepath_seconds != null ~}
+ ! The gateway advertises its restart time. bgpd keeps the stale gateway
+ ! paths for that time, then waits for the gateway End-of-RIB marker at most
+ ! the stale path time after the session returns.
+ bgp graceful-restart
+ bgp graceful-restart stalepath-time ${graceful_restart_stalepath_seconds}
+%{ endif ~}
+%{ for peer in peers ~}
+ neighbor ${peer.address} remote-as ${peer.asn}
+ neighbor ${peer.address} description ${peer.id}
+ neighbor ${peer.address} update-source ${peer.update_source}
+ neighbor ${peer.address} timers ${peer.keepalive_seconds} ${peer.hold_seconds}
+%{ if peer.multihop_ttl > 0 ~}
+ neighbor ${peer.address} ebgp-multihop ${peer.multihop_ttl}
+%{ endif ~}
+%{ endfor ~}
+ !
+ address-family ipv6 unicast
+%{ for prefix in networks ~}
+  network ${prefix}
+%{ endfor ~}
+%{ if default_route_interface != null ~}
+  network ${default_route}
+%{ endif ~}
+%{ if length(tracked_routes) > 0 ~}
+  redistribute kernel route-map RM-TRACKED
+%{ endif ~}
+%{ for peer in peers ~}
+  neighbor ${peer.address} activate
+  neighbor ${peer.address} prefix-list PL-${peer.id}-IN in
+  neighbor ${peer.address} prefix-list PL-${peer.id}-OUT out
+%{ endfor ~}
+ exit-address-family
+!

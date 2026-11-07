@@ -64,6 +64,8 @@ module "base" {
 
   scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
   scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
+
+  depends_on = [module.suburban]
 }
 
 module "ispsim" {
@@ -72,6 +74,8 @@ module "ispsim" {
   node          = local.guests["isp_att_suburban"].node
   vmid          = local.guests["isp_att_suburban"].vmid
   configuration = module.configuration.simulator
+
+  depends_on = [module.suburban]
 }
 
 module "suburban" {

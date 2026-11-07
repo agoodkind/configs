@@ -122,7 +122,7 @@ variable "guest_keys" { type = set(string) }
 
 variable "routing_networks" { type = map(object({ bridge = string, ipv4_net = string, ipv6_net = string })) }
 
-variable "service_mapping" { type = map(object({ hostname = optional(string), vmid = optional(number), ipv4 = optional(string), ipv6 = optional(string), routing_interfaces = optional(map(object({ name = string, network = string, mac_address = string, ipv4 = string, ipv6 = string }))) })) }
+variable "service_mapping" { type = map(object({ hostname = optional(string), node = optional(string), vmid = optional(number), ipv4 = optional(string), ipv6 = optional(string), routing_interfaces = optional(map(object({ name = string, network = string, mac_address = string, ipv4 = string, ipv6 = string }))) })) }
 
 variable "ssh_keys" { type = string }
 
@@ -137,7 +137,143 @@ terraform {
       version = ">= 0.106.0"
 
     }
+    pveguest = {
+      source = "tofu.home.arpa/agoodkind/pveguest"
+      # pveguest 0.1.3 adds allow_missing to pveguest_systemd_unit.
+      version = ">= 0.1.3"
+    }
   }
 }
 
 variable "routing_management" { type = object({ forwarding = bool, ipv4_default_route = bool, ipv6_default_route = bool }) }
+
+# Each key identifies a guest in guest_keys that runs bgpd with this configuration.
+# The module stops and disables frr.service on every other guest.
+variable "frr" {
+  type = map(object({
+    asn                                = number
+    router_id                          = string
+    graceful_restart_stalepath_seconds = optional(number)
+    default_route_interface            = optional(string)
+    networks                           = list(string)
+    tracked_routes = list(object({
+      prefix    = string
+      interface = string
+    }))
+    peers = list(object({
+      id                = string
+      address           = string
+      asn               = number
+      update_source     = string
+      keepalive_seconds = number
+      hold_seconds      = number
+      multihop_ttl      = number
+      import_prefixes   = list(string)
+      export_prefixes   = list(string)
+    }))
+  }))
+  default = {}
+
+  validation {
+    condition     = alltrue([for key in keys(var.frr) : contains(var.guest_keys, key)])
+    error_message = "Each frr key must be a guest key in guest_keys."
+  }
+}
+
+locals {
+  routing_guest_kind = "lxc"
+
+  frr_guests     = { for name, guest in local.routing_guests : name => guest if contains(keys(var.frr), name) }
+  non_frr_guests = { for name, guest in local.routing_guests : name => guest if !contains(keys(var.frr), name) }
+
+  # When default_route_interface is set, FRR installs this static route on that
+  # interface and announces it in BGP.
+  frr_default_route = "::/0"
+}
+
+resource "pveguest_apt_packages" "frr" {
+  for_each = local.frr_guests
+
+  node = each.value.node
+  vmid = each.value.vmid
+  kind = local.routing_guest_kind
+
+  packages = toset(["frr"])
+
+  depends_on = [proxmox_virtual_environment_container.routing_simulator]
+}
+
+resource "pveguest_file" "frr_daemons" {
+  for_each = local.frr_guests
+
+  node = each.value.node
+  vmid = each.value.vmid
+  kind = local.routing_guest_kind
+
+  path    = "/etc/frr/daemons"
+  content = file("${path.module}/files/frr-daemons")
+  mode    = "0640"
+  owner   = "frr"
+  group   = "frr"
+
+  depends_on = [pveguest_apt_packages.frr]
+}
+
+resource "pveguest_file" "frr_conf" {
+  for_each = local.frr_guests
+
+  node = each.value.node
+  vmid = each.value.vmid
+  kind = local.routing_guest_kind
+
+  path = "/etc/frr/frr.conf"
+  content = templatefile("${path.module}/files/frr.conf.tftpl", {
+    hostname                           = split(".", each.value.hostname)[0]
+    asn                                = var.frr[each.key].asn
+    router_id                          = var.frr[each.key].router_id
+    graceful_restart_stalepath_seconds = var.frr[each.key].graceful_restart_stalepath_seconds
+    default_route                      = local.frr_default_route
+    default_route_interface            = var.frr[each.key].default_route_interface
+    networks                           = var.frr[each.key].networks
+    tracked_routes                     = var.frr[each.key].tracked_routes
+    peers                              = var.frr[each.key].peers
+  })
+  mode     = "0640"
+  owner    = "frr"
+  group    = "frr"
+  validate = "vtysh -C -f %s"
+
+  depends_on = [pveguest_apt_packages.frr]
+}
+
+resource "pveguest_systemd_unit" "frr" {
+  for_each = local.frr_guests
+
+  node = each.value.node
+  vmid = each.value.vmid
+  kind = local.routing_guest_kind
+
+  name    = "frr.service"
+  enabled = true
+  active  = true
+
+  restart_on = {
+    daemons = pveguest_file.frr_daemons[each.key].write_id
+    conf    = pveguest_file.frr_conf[each.key].write_id
+  }
+}
+
+resource "pveguest_systemd_unit" "frr_disabled" {
+  for_each = local.non_frr_guests
+
+  node = each.value.node
+  vmid = each.value.vmid
+  kind = local.routing_guest_kind
+
+  name          = "frr.service"
+  enabled       = false
+  active        = false
+  allow_missing = true
+
+  depends_on = [proxmox_virtual_environment_container.routing_simulator]
+}
