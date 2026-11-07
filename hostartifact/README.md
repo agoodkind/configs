@@ -179,6 +179,8 @@ The command accepts these cases:
 | `member-mode` | A member has setuid mode bits that differ from the manifest mode. |
 | `recovery-v1` | The first version of 300 target A files for interrupted installation and recovery. |
 | `recovery-v2` | The second version of 300 target A files for interrupted installation and recovery. |
+| `unit-v1` | The archive includes the `valid-v1` target A files and [/etc/systemd/system/hostartifact-acceptance-unit.service](tests/fixtures/unit/one/hostartifact-acceptance-unit.service). |
+| `unit-v2` | The second version changes an environment value in the [service file](tests/fixtures/unit/two/hostartifact-acceptance-unit.service) to test restarts after installation. |
 
 All six program cases start from `valid-v2` and add `opnsensectl` at `/srv/hostartifact-acceptance/opnsensectl`.
 
