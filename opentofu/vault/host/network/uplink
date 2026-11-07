@@ -1,6 +1,6 @@
 # ifupdown2 creates the bridge. systemd-networkd manages its addresses.
-auto vmbr1
-iface vmbr1 inet manual
+auto uplink
+iface uplink inet manual
     address-purge no
     ip-forward on
     bridge-ports enp4s0

@@ -28,7 +28,7 @@ resource "proxmox_virtual_environment_container" "tack" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "vmbr0"
+    bridge      = "vmnet"
     mac_address = "BC:24:11:A3:52:17"
   }
 
@@ -107,7 +107,7 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "vmbr0"
+    bridge      = "vmnet"
     mac_address = local.service_mapping.tack_app2.mac_address
   }
 
@@ -173,7 +173,7 @@ resource "proxmox_virtual_environment_container" "tack_data1" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "vmbr0"
+    bridge      = "vmnet"
     mac_address = local.service_mapping.tack_data1.mac_address
   }
 
@@ -239,7 +239,7 @@ resource "proxmox_virtual_environment_container" "tack_data2" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "vmbr0"
+    bridge      = "vmnet"
     mac_address = local.service_mapping.tack_data2.mac_address
   }
 
@@ -305,7 +305,7 @@ resource "proxmox_virtual_environment_container" "tack_data3" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "vmbr0"
+    bridge      = "vmnet"
     mac_address = local.service_mapping.tack_data3.mac_address
   }
 
@@ -371,7 +371,7 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "vmbr0"
+    bridge      = "vmnet"
     mac_address = local.service_mapping.tack_search1.mac_address
   }
 

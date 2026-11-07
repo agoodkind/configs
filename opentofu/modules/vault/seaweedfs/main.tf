@@ -29,7 +29,7 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "vmbr0"
+    bridge      = "vmnet"
     mac_address = "BC:24:11:00:01:18"
   }
 
