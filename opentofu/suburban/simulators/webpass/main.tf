@@ -64,6 +64,8 @@ module "base" {
 
   scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
   scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
+
+  depends_on = [module.suburban]
 }
 
 module "ispsim" {
