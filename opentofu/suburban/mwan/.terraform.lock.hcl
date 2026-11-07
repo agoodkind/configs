@@ -83,11 +83,11 @@ provider "tofu.home.arpa/agoodkind/mwan" {
 }
 
 provider "tofu.home.arpa/agoodkind/pveguest" {
-  version     = "0.1.5"
-  constraints = ">= 0.1.1, 0.1.5"
+  version     = "0.1.6"
+  constraints = ">= 0.1.1, 0.1.6"
   hashes = [
-    "h1:ovLW5KxAU9lwMCn6MAojIfd4g07/oOh4zClRBk56M3s=",
-    "h1:q1+Xfh04+63+uLDtNNTsUYOlALm82pd09Xaj1bjfi/0=",
-    "h1:zVi+7oLpdFqViJxsWSP1rWZa1M4MiJGc0u+Br/WdJZ4=",
+    "h1:1PNIv9ADY3L0n4UjEsM1ZCKrdxbJZ8jkFAR00EqGwMw=",
+    "h1:4MKuGTjGiU4BTyWay8/xUjrkazgv24ZIjTzzq8pzMzc=",
+    "h1:nyWls5rZ5C8vqQwK2pxuJzo/8ZK0LH+p+iFVkuzQX00=",
   ]
 }
