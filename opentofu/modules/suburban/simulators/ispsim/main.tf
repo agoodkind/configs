@@ -2,8 +2,7 @@ terraform {
   required_providers {
     pveguest = {
       source = "tofu.home.arpa/agoodkind/pveguest"
-      # pveguest 0.1.3 adds the masked and allow_missing attributes of
-      # pveguest_systemd_unit.
+      # pveguest 0.1.3 adds masked and allow_missing to pveguest_systemd_unit.
       version = ">= 0.1.3"
     }
   }
@@ -42,8 +41,8 @@ variable "configuration" {
     ra_prefix_preferred_lifetime_seconds = string
     ra_prefix_valid_lifetime_seconds     = string
 
-    # kea-dhcp4-server serves this configuration when dynamic_v4 is true. A null
-    # renew_seconds or rebind_seconds leaves the timer out of the Kea file.
+    # kea-dhcp4-server uses this configuration when dynamic_v4 is true.
+    # A null renew_seconds or rebind_seconds omits that timer from the Kea file.
     dhcp4 = optional(object({
       valid_lifetime_seconds         = number
       renew_seconds                  = optional(number)
@@ -59,9 +58,9 @@ variable "configuration" {
       }))
     }))
 
-    # kea-dhcp6-server serves this configuration when ipv6_enabled is true. It
-    # delegates pd_prefix at the length of pd_prefix. A non-null address_pool
-    # also assigns IA_NA addresses from slaac_prefix.
+    # kea-dhcp6-server uses this configuration when ipv6_enabled is true.
+    # Kea delegates pd_prefix at its prefix length. A non-null address_pool also
+    # assigns IA_NA addresses from slaac_prefix.
     dhcp6 = optional(object({
       preferred_lifetime_seconds     = number
       valid_lifetime_seconds         = number
@@ -116,9 +115,8 @@ locals {
   # and remains empty for other simulators.
   radvd_units = local.simulator.ipv6_enabled ? toset(["radvd.service"]) : toset([])
 
-  # These maps use the Kea unit name as the key and the Kea configuration as
-  # the value. A map is empty when the simulator does not serve that DHCP
-  # family.
+  # Each map uses a Kea unit name as the key and its configuration as the value.
+  # A map is empty when the simulator does not serve that DHCP family.
   dhcp4_units = {
     for dhcp4 in local.simulator.dhcp4[*] : "kea-dhcp4-server.service" => dhcp4
   }
@@ -126,9 +124,8 @@ locals {
     for dhcp6 in local.simulator.dhcp6[*] : "kea-dhcp6-server.service" => dhcp6
   }
 
-  # A simulator without IPv6 keeps kea-dhcp6-server and radvd stopped and
-  # disabled. The module does not install either package on that simulator,
-  # so each unit can be absent.
+  # When IPv6 is disabled, the module stops and disables these units.
+  # allow_missing permits their absence because the module does not install their packages.
   disabled_ipv6_units = (
     local.simulator.ipv6_enabled
     ? toset([])
@@ -406,8 +403,8 @@ resource "pveguest_systemd_unit" "disabled_ipv6" {
 }
 
 # Kea serves DHCP on every simulator. Some LXC base images enable dnsmasq,
-# which binds the DHCP socket and fails at every boot. The module masks
-# dnsmasq and clears its failed state. The unit can be absent.
+# which conflicts with Kea for the DHCP socket and fails at every boot.
+# The module masks dnsmasq.service and clears its failed state if the unit exists.
 resource "pveguest_systemd_unit" "dnsmasq" {
   node = var.node
   vmid = var.vmid

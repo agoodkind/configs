@@ -3,7 +3,8 @@ locals {
   frr_remote_prefix = "2001:db8:280:1::/64"
   frr_default_route = "::/0"
 
-  # The gateway peers with the provider router from its etheric interface.
+  # This address identifies the MWAN gateway on the etheric link, where it peers
+  # with the provider router.
   frr_gateway_address = "2001:db8:2ff:20::2"
 
   frr_router_interfaces   = local.service_mapping.routing_etheric_native_router_suburban.routing_interfaces

@@ -1,7 +1,6 @@
-! FRR config for the router-2 simulator.
-! The simulator peers with both MWAN speakers over iBGP on the transit link
-! and announces the prefix that announced-prefix.service adds to lo. The
-! network statement originates the prefix only while that connected route exists.
+! The router-2 simulator peers with both MWAN speakers over iBGP on the transit link.
+! announced-prefix.service adds the announced prefix to lo.
+! FRR originates the prefix only while the connected route exists.
 frr defaults traditional
 hostname ${hostname}
 !

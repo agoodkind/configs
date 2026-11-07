@@ -3,8 +3,8 @@ locals {
   frr_remote_prefix = "2001:db8:380:1::/64"
   frr_default_route = "::/0"
 
-  # The VPS announces the home prefix while its kernel routes that prefix
-  # through this tunnel interface.
+  # FRR on the VPS redistributes the kernel route to the home prefix only when
+  # the route uses this tunnel interface.
   frr_home_tunnel_interface = "sit-sonic1"
 
   frr_vps_interfaces      = local.service_mapping.routing_tunnel_static_vps_suburban.routing_interfaces

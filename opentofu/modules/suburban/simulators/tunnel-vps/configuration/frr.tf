@@ -3,8 +3,8 @@ locals {
   frr_remote_prefix = "2001:db8:580:1::/64"
   frr_default_route = "::/0"
 
-  # The gateway peers with the VPS over one tunnel through each provider. Each
-  # tunnel uses a gateway address and a VPS address.
+  # The VPS opens one BGP session to the gateway per provider tunnel.
+  # Each entry specifies the session ID and both tunnel addresses.
   frr_home_tunnels = [
     { id = "tunnel_vps_home_sonic_1", gateway = "2001:db8:5ff:1::1", vps = "2001:db8:5ff:1::2" },
     { id = "tunnel_vps_home_astound", gateway = "2001:db8:5ff:2::1", vps = "2001:db8:5ff:2::2" },

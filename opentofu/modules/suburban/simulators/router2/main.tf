@@ -1,6 +1,7 @@
-# Router-2 simulator: an FRR speaker on the transit link that proves router
-# N+1 onboarding needs no MWAN change. One interface, on the transit bridge;
-# announced-prefix.service adds the announced prefix to the loopback.
+# The router2 simulator runs FRR on the transit link to verify that another
+# router can join without an MWAN change. The container also has a management
+# interface. announced-prefix.service adds the first address of the announced
+# prefix to lo.
 resource "proxmox_virtual_environment_container" "router2_suburban" {
   node_name = "hypervisor"
   vm_id     = local.service_mapping.router2_suburban.vmid
@@ -90,9 +91,8 @@ resource "proxmox_virtual_environment_container" "router2_suburban" {
   start_on_boot = true
   unprivileged  = true
 
-  # The simulator does not store state worth protecting. This module writes
-  # the FRR configuration and the loopback unit, and one apply restores a
-  # recreated guest.
+  # The guest does not store state worth protecting. One apply restores a
+  # recreated guest, including its FRR configuration and announced-prefix.service.
   lifecycle {
     prevent_destroy = false
     ignore_changes = [
@@ -112,7 +112,8 @@ locals {
     local.service_mapping.mwan_failover_suburban.ipv6_transit,
   ]
 
-  # announced-prefix.service adds the first address of the announced /64 to lo.
+  # announced-prefix.service adds the first host address of announced_prefix_v6
+  # to lo with a /64 prefix length.
   router2_loopback_address = "${cidrhost(local.router2.announced_prefix_v6, 1)}/${split("/", local.router2.announced_prefix_v6)[1]}"
 }
 
@@ -233,7 +234,7 @@ variable "ssh_keys" { type = string }
 variable "host_networks" { type = map(string) }
 
 variable "bgp_asn" {
-  description = "The bgp_asn variable specifies the iBGP AS that the simulator shares with the MWAN speakers."
+  description = "The bgp_asn variable specifies the iBGP AS number shared by the simulator and the MWAN speakers."
   type        = number
 }
 

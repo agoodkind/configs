@@ -4,7 +4,7 @@ locals {
   frr_default_route = "::/0"
 
   # The upstream router peers with the gateway tunnel address two hops away
-  # through the VPS.
+  # through the VPS, using ebgp-multihop 2.
   frr_gateway_tunnel_address = "2001:db8:4ff:1::1"
   frr_gateway_multihop_ttl   = 2
 

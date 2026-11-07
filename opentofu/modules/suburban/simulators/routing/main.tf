@@ -139,7 +139,7 @@ terraform {
     }
     pveguest = {
       source = "tofu.home.arpa/agoodkind/pveguest"
-      # pveguest 0.1.3 adds the allow_missing attribute of pveguest_systemd_unit.
+      # pveguest 0.1.3 adds allow_missing to pveguest_systemd_unit.
       version = ">= 0.1.3"
     }
   }
@@ -147,8 +147,8 @@ terraform {
 
 variable "routing_management" { type = object({ forwarding = bool, ipv4_default_route = bool, ipv6_default_route = bool }) }
 
-# Each key is a guest key from guest_keys. FRR runs bgpd on that guest with
-# this configuration. FRR stays stopped and disabled on every other guest.
+# Each key identifies a guest in guest_keys that runs bgpd with this configuration.
+# The module stops and disables frr.service on every other guest.
 variable "frr" {
   type = map(object({
     asn                                = number
@@ -186,7 +186,8 @@ locals {
   frr_guests     = { for name, guest in local.routing_guests : name => guest if contains(keys(var.frr), name) }
   non_frr_guests = { for name, guest in local.routing_guests : name => guest if !contains(keys(var.frr), name) }
 
-  # The template originates this route from the service interface.
+  # When default_route_interface is set, FRR installs this static route on that
+  # interface and announces it in BGP.
   frr_default_route = "::/0"
 }
 
