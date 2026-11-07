@@ -1051,6 +1051,16 @@ import {
 }
 
 import {
+  to = module.mwan.pveguest_file.role["/etc/systemd/system/systemd-networkd.service.d/override.conf"]
+  id = "${local.guests["mwan_suburban"].node}/${local.guests["mwan_suburban"].vmid}/${local.guests["mwan_suburban"].kind}//etc/systemd/system/systemd-networkd.service.d/override.conf"
+}
+
+import {
+  to = module.mwan.pveguest_systemd_unit.role["systemd-networkd.service"]
+  id = "${local.guests["mwan_suburban"].node}/${local.guests["mwan_suburban"].vmid}/${local.guests["mwan_suburban"].kind}/systemd-networkd.service"
+}
+
+import {
   to = module.mwan_failover.pveguest_file.runtime_config
   id = "${local.guests["mwan_failover_suburban"].node}/${local.guests["mwan_failover_suburban"].vmid}/${local.guests["mwan_failover_suburban"].kind}//etc/mwan/config.toml"
 }
