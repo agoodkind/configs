@@ -6,6 +6,3 @@ iface vmbr1 inet manual
     bridge-ports enp4s0
     bridge-stp off
     bridge-fd 0
-
-iface vmbr1 inet6 manual
-    address-purge no
