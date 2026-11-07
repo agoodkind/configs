@@ -26,7 +26,7 @@ resource "proxmox_virtual_environment_container" "proxy" {
 
   network_interface {
     name        = "eth0"
-    bridge      = "vmbr0"
+    bridge      = "vmnet"
     mac_address = "bc:24:11:1d:2c:0f"
   }
 

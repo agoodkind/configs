@@ -12,7 +12,7 @@ resource "proxmox_sdn_zone_simple" "vault" {
 }
 
 resource "proxmox_sdn_vnet" "vault" {
-  id   = "vmbr0"
+  id   = "vmnet"
   zone = proxmox_sdn_zone_simple.vault.id
 }
 

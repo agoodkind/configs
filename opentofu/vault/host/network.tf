@@ -5,8 +5,8 @@ locals {
       source = "cloudflared.service"
     }
     bridge = {
-      path   = "/etc/network/interfaces.d/vmbr1"
-      source = "vmbr1"
+      path   = "/etc/network/interfaces.d/uplink"
+      source = "uplink"
     }
     uplink = {
       path   = "/etc/systemd/network/20-vault-uplink.network"
