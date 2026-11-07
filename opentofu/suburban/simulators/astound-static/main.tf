@@ -69,7 +69,7 @@ module "base" {
 module "suburban" {
   source = "../../../modules/suburban/simulators/routing"
 
-  providers = { proxmox = proxmox.suburban }
+  providers = { proxmox = proxmox.suburban, pveguest = pveguest }
 
   ssh_keys           = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping    = local.service_mapping
