@@ -8,6 +8,10 @@ resource "proxmox_virtual_environment_container" "tack" {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack.hostname)[0]
     }
     ip_config {
+      ipv4 {
+        address = "10.250.0.117/24"
+        gateway = "10.250.0.254"
+      }
       ipv6 {
         address = "3d06:bad:b01::117/64"
         gateway = local.service_mapping.vault_hypervisor.ipv6
@@ -83,6 +87,10 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_app2.hostname)[0]
     }
     ip_config {
+      ipv4 {
+        address = "10.250.0.123/24"
+        gateway = "10.250.0.254"
+      }
       ipv6 {
         address = "${local.service_mapping.tack_app2.ipv6}/64"
         gateway = local.service_mapping.vault_hypervisor.ipv6
