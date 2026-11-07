@@ -3,8 +3,9 @@
 set -euo pipefail
 
 readonly CONFIGSCTL_PACKAGE="goodkind.io/configsctl/cmd/configsctl"
+readonly CONFIGSCTL_VERSION="main"
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   cd "$(dirname "${BASH_SOURCE[0]}")"
-  exec go run "${CONFIGSCTL_PACKAGE}@main" "$@"
+  exec go run "${CONFIGSCTL_PACKAGE}@${CONFIGSCTL_VERSION}" "$@"
 fi
