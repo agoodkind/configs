@@ -45,7 +45,6 @@ nft destroy table inet vault_guests
 sysctl --load=/etc/sysctl.d/70-vault-guest-network.conf
 systemctl enable --now systemd-networkd.service
 networkctl reload
-networkctl reconfigure mbrains
 
 systemctl enable cloudflared.service
 systemctl restart cloudflared.service
