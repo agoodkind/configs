@@ -37,14 +37,15 @@ if [[ "$#" -ne 1 || "$1" != --apply ]]; then
 fi
 
 systemctl daemon-reload
-nft --check --file /etc/vault-guest-network.nft
-systemd-analyze verify /etc/systemd/system/vault-guest-network.service
+if [[ -e /etc/systemd/system/vault-guest-network.service ]]; then
+    systemctl disable --now vault-guest-network.service
+fi
+nft destroy table ip vault_guests
+nft destroy table inet vault_guests
 sysctl --load=/etc/sysctl.d/70-vault-guest-network.conf
 systemctl enable --now systemd-networkd.service
 networkctl reload
 networkctl reconfigure mbrains
 
-systemctl enable vault-guest-network.service
-systemctl restart vault-guest-network.service
 systemctl enable cloudflared.service
 systemctl restart cloudflared.service
