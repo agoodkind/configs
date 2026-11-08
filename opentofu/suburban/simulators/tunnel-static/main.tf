@@ -81,6 +81,7 @@ module "suburban" {
   guest_keys           = module.configuration.guest_keys
   frr                  = module.configuration.frr
   network              = module.configuration.network
+  route_trackers       = module.configuration.route_trackers
   unreachable_prefixes = module.routing.unreachable_prefixes
 }
 
