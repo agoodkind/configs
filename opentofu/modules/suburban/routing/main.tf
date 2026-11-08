@@ -1,4 +1,4 @@
-output "networks" { value = {
+locals { networks = {
   "management" = {
     "bridge"   = "vmbr1"
     "ipv4_net" = "10.240.200.0/24"
@@ -70,6 +70,33 @@ output "networks" { value = {
     "ipv6_net" = "2001:db8:580:1::/64"
   }
 } }
+output "networks" { value = local.networks }
+
+locals {
+  home_prefix          = "3d06:bad:b01:210::/60"
+  documentation_prefix = "2001:db8::/32"
+
+  # Keep this order to match the existing guest files and preserve their hashes.
+  unreachable_ipv4_networks = ["outer", "sonic_1", "sonic_2", "etheric"]
+}
+
+# Each guest installs unreachable routes or rules for these prefixes. IPv4 routes
+# use metric 65000. IPv6 rules run after the main table lookup because zebra
+# prefers a kernel route over a BGP route for the same prefix.
+output "unreachable_prefixes" {
+  value = concat(
+    [local.home_prefix, local.documentation_prefix],
+    [for name in local.unreachable_ipv4_networks : local.networks[name].ipv4_net],
+  )
+
+  precondition {
+    condition = toset(local.unreachable_ipv4_networks) == toset([
+      for name, network in local.networks : name
+      if name != "management" && network.ipv4_net != ""
+    ])
+    error_message = "unreachable_ipv4_networks must list every network except management that has an ipv4_net value."
+  }
+}
 output "management" { value = {
   "forwarding"         = false
   "ipv4_default_route" = true

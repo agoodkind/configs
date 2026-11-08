@@ -1,0 +1,13 @@
+[Match]
+Name=${name}
+
+[Network]
+IPv6AcceptRA=no
+Address=${address}
+Address=${link_local}/64
+%{ for route in routes ~}
+
+[Route]
+Destination=${route.destination}
+Gateway=${route.gateway}
+%{ endfor ~}
