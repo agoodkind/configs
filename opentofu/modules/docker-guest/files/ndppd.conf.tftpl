@@ -1,0 +1,9 @@
+route-ttl 30000
+proxy ${interface} {
+   router yes
+   timeout 500
+   ttl 30000
+   rule ${prefix} {
+      auto
+   }
+}
