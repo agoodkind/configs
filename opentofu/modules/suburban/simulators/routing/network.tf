@@ -91,8 +91,8 @@ locals {
         guest     = name
         interface = guest.interfaces[interface_name]
         first     = index == 0
-        routes = [
-          for route in guest.routes : route
+        route_indexes = [
+          for route_index, route in guest.routes : route_index
           if try(cidrcontains(local.network_interface_prefixes[name][interface_name][strcontains(route.gateway, ":") ? "ipv6" : "ipv4"], route.gateway), false)
         ]
       }
@@ -120,16 +120,31 @@ locals {
         guest  = name
         tunnel = tunnel
         octets = [for part in concat(split(".", tunnel.outer_ipv4), split(".", tunnel.peer_outer_ipv4)) : tonumber(part)]
-        routes = [for route in guest.routes : route if route.gateway == tunnel.peer_inner_ipv6]
+        route_indexes = [
+          for route_index, route in guest.routes : route_index
+          if route.gateway == tunnel.peer_inner_ipv6
+        ]
       }
     }
   ]...)
 
-  network_placed_routes = {
+  # Count the interface and tunnel files that receive each route index for each guest.
+  # Each index identifies a separate route, even when two routes have equal values.
+  # The networkd_conf precondition requires exactly one file for each route.
+  network_placed_route_indexes = {
     for name, guest in local.network_guests : name => concat(
-      flatten([for key, file in local.network_interface_files : file.routes if file.guest == name]),
-      flatten([for key, file in local.network_tunnel_files : file.routes if file.guest == name]),
+      flatten([for file in values(local.network_interface_files) : file.route_indexes if file.guest == name]),
+      flatten([for file in values(local.network_tunnel_files) : file.route_indexes if file.guest == name]),
     )
+  }
+
+  network_route_placement_counts = {
+    for name, guest in local.network_guests : name => [
+      for route_index in range(length(guest.routes)) : length([
+        for placed_index in local.network_placed_route_indexes[name] : placed_index
+        if placed_index == route_index
+      ])
+    ]
   }
 }
 
@@ -159,7 +174,7 @@ resource "pveguest_file" "networkd_conf" {
 
   lifecycle {
     precondition {
-      condition     = length(local.network_placed_routes[each.key]) == length(each.value.routes)
+      condition     = alltrue([for count in local.network_route_placement_counts[each.key] : count == 1])
       error_message = "Each route of guest ${each.key} must use a gateway in exactly one interface network or the peer inner address of one tunnel."
     }
   }
@@ -179,7 +194,7 @@ resource "pveguest_file" "interface_network" {
       each.value.interface.ipv4 != "" ? ["${each.value.interface.ipv4}/${split("/", local.network_interface_prefixes[each.value.guest][each.value.interface.name].ipv4)[1]}"] : [],
       each.value.interface.ipv6 != "" ? ["${each.value.interface.ipv6}/${split("/", local.network_interface_prefixes[each.value.guest][each.value.interface.name].ipv6)[1]}"] : [],
     )
-    routes                    = each.value.routes
+    routes                    = [for route_index in each.value.route_indexes : local.network_guests[each.value.guest].routes[route_index]]
     unreachable_prefixes      = each.value.first ? var.unreachable_prefixes : []
     unreachable_rule_priority = local.network_unreachable_rule_priority
     unreachable_metric        = local.network_unreachable_metric
@@ -226,7 +241,7 @@ resource "pveguest_file" "tunnel_network" {
       each.value.octets[4] * 256 + each.value.octets[5],
       each.value.octets[6] * 256 + each.value.octets[7],
     )
-    routes = each.value.routes
+    routes = [for route_index in each.value.route_indexes : local.network_guests[each.value.guest].routes[route_index]]
   })
 
   depends_on = [proxmox_virtual_environment_container.routing_simulator]
