@@ -73,7 +73,8 @@ output "guest_keys" { value = local.guest_keys }
 locals {
   lock_targets = merge({
     "module_hosts" = {
-      "module.suburban" = "suburban"
+      "module.suburban"       = "suburban"
+      "module.tack_data1_fdb" = local.service_mapping.tack_data1_suburban.hostname
     }
   }, { guest_hosts = { for key, service in local.guest_services : "suburban/${service.vmid}" => service.hostname }, module_key_hosts = { "module.base" = { for key, service in local.guest_services : key => service.hostname } } })
 }
