@@ -1,7 +1,6 @@
 terraform {
   required_providers {
-    docker   = { source = "kreuzwerker/docker" }
-    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest" }
+    docker = { source = "kreuzwerker/docker" }
   }
 }
 
@@ -55,21 +54,9 @@ locals {
   )
 }
 
-resource "pveguest_systemd_unit" "docker" {
-  node = var.node
-  vmid = var.vmid
-  kind = var.kind
-
-  name    = "docker.service"
-  enabled = true
-  active  = true
-}
-
 resource "docker_image" "app" {
   name         = "${local.image_repository}:${var.commit}"
   keep_locally = true
-
-  depends_on = [pveguest_systemd_unit.docker]
 
   lifecycle {
     postcondition {

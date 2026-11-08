@@ -1,18 +1,3 @@
-variable "node" {
-  description = "Provider node key of the guest."
-  type        = string
-}
-
-variable "vmid" {
-  description = "Proxmox ID of the guest."
-  type        = number
-}
-
-variable "kind" {
-  description = "Guest kind."
-  type        = string
-}
-
 variable "commit" {
   description = "Tack commit with 40 characters used as the image tag."
   type        = string

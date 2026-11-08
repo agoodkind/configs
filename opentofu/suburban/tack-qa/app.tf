@@ -3,10 +3,6 @@ module "tack_app" {
 
   providers = { docker = docker.tack_app2_suburban }
 
-  node = local.guests["tack_app2_suburban"].node
-  vmid = local.guests["tack_app2_suburban"].vmid
-  kind = local.guests["tack_app2_suburban"].kind
-
   commit        = local.tack_release.commit
   server_digest = local.tack_release.server_digest
 
@@ -17,7 +13,7 @@ module "tack_app" {
 
   compose_writer_active = module.tack_release_app.compose_writer_active
 
-  depends_on = [module.base["tack_app2_suburban"], module.tack_release]
+  depends_on = [module.base["tack_app2_suburban"], module.docker_guest["tack_app2_suburban"], module.tack_release]
 }
 
 import {
