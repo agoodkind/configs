@@ -1,18 +1,14 @@
 module "dns64_suburban" { source = "../../services/dns64_suburban" }
 module "opnsense_suburban" { source = "../../services/opnsense_suburban" }
 module "proxy" { source = "../../../vault/services/proxy" }
+module "seaweedfs_suburban" { source = "../../services/seaweedfs_suburban" }
 module "suburban_hypervisor" { source = "../../services/suburban_hypervisor" }
 locals {
   service_mapping = {
-    dns64_suburban    = module.dns64_suburban.value
-    opnsense_suburban = module.opnsense_suburban.value
-    proxy             = module.proxy.value
-    seaweedfs_suburban = {
-      "hostname" = "seaweedfs.suburban.goodkind.io"
-      "node"     = "suburban"
-      "vmid"     = 218
-      "ipv6"     = "3d06:bad:b01:210::218"
-    }
+    dns64_suburban      = module.dns64_suburban.value
+    opnsense_suburban   = module.opnsense_suburban.value
+    proxy               = module.proxy.value
+    seaweedfs_suburban  = module.seaweedfs_suburban.value
     suburban_hypervisor = module.suburban_hypervisor.value
   }
 }
