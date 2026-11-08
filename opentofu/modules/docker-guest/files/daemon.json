@@ -1,0 +1,7 @@
+{
+  "ipv6": true,
+  "ip6tables": true,
+  "features": {
+    "containerd-snapshotter": true
+  }
+}

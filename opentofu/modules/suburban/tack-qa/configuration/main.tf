@@ -76,7 +76,7 @@ locals {
       "module.suburban" = "suburban"
       "module.tack_app" = local.service_mapping.tack_app2_suburban.hostname
     }
-  }, { guest_hosts = { for key, service in local.guest_services : "suburban/${service.vmid}" => service.hostname }, module_key_hosts = { "module.base" = { for key, service in local.guest_services : key => service.hostname } } })
+  }, { guest_hosts = { for key, service in local.guest_services : "suburban/${service.vmid}" => service.hostname }, module_key_hosts = { "module.base" = { for key, service in local.guest_services : key => service.hostname }, "module.docker_guest" = { for key in keys(local.docker_guests) : key => local.service_mapping[key].hostname } } })
 }
 module "suburban_host" { source = "../.." }
 output "lock_targets" { value = merge(local.lock_targets, { node_hosts = { for node in toset([for key in local.guest_keys : local.service_mapping[key].node]) : node => "suburban" }, lock_endpoints = merge({ suburban = module.suburban_host.lock_endpoint }, { for key, service in local.guest_services : service.hostname => { user = "root", address = service.ipv6 } }) }) }
