@@ -1,4 +1,9 @@
-locals { tack_data1_fdb = module.configuration.tack_fdb["tack_data1_suburban"] }
+locals {
+  tack_data1_fdb = module.configuration.tack_fdb["tack_data1_suburban"]
+
+  # Increment this value to download the overlay again with the current repository read token.
+  tack_qa_repo_read_token_version = 1
+}
 
 module "tack_data1_fdb" {
   source = "../../modules/tack-fdb"
@@ -9,6 +14,11 @@ module "tack_data1_fdb" {
   vmid = local.guests["tack_data1_suburban"].vmid
   kind = local.guests["tack_data1_suburban"].kind
 
+  tack_commit                   = local.tack_release.commit
+  overlay                       = local.tack_data1_fdb.overlay
+  repository_read_token         = var.vault_tack_qa_repo_read_token
+  repository_read_token_version = local.tack_qa_repo_read_token_version
+
   image             = local.tack_data1_fdb.image
   public_address    = local.tack_data1_fdb.public_address
   locality_id       = local.tack_data1_fdb.locality_id
@@ -16,13 +26,21 @@ module "tack_data1_fdb" {
   blobstore_address = local.tack_data1_fdb.blobstore_address
   volumes           = local.tack_data1_fdb.volumes
 
-  depends_on = [module.base["tack_data1_suburban"]]
+  depends_on = [module.base["tack_data1_suburban"], module.docker_guest["tack_data1_suburban"]]
 }
 
 import {
   for_each = local.tack_data1_fdb.volumes
   to       = module.tack_data1_fdb.docker_volume.fdb[each.key]
   id       = each.value.name
+}
+
+# Import the existing overlay file on the first Tack QA data guest. On the first apply after import,
+# pveguest_download keeps the file without downloading it when its hash, mode, owner, and group match
+# the configuration.
+import {
+  to = module.tack_data1_fdb.pveguest_download.overlay
+  id = "${local.docker_guest_import_prefixes["tack_data1_suburban"]}/${local.tack_data1_fdb.overlay.path}"
 }
 
 # The plan replaces both imported containers to apply their environment, labels, and mounts.

@@ -6,27 +6,30 @@ terraform {
 }
 
 locals {
-  image_repository       = "foundationdb/foundationdb"
-  compose_project        = "tack"
-  server_service         = "fdb"
-  agent_service          = "fdb-backup-agent"
-  server_container_name  = "tack-fdb-1"
-  agent_container_name   = "tack-fdb-backup-agent-1"
-  server_port            = 4500
-  server_memory_mib      = 2048
-  server_memory_swap_mib = 4096
-  agent_memory_mib       = 512
-  agent_memory_swap_mib  = 1024
-  stop_grace_seconds     = 10
-  cluster_directory      = "/etc/foundationdb"
-  cluster_file           = "${local.cluster_directory}/fdb.cluster"
-  state_directory        = "/var/fdb"
-  data_directory         = "${local.state_directory}/data"
-  overlay_source         = "/root/tack/fdb-overlay/fdb.bash"
-  overlay_target         = "${local.state_directory}/scripts/fdb.bash"
-  blobstore_host         = "fdb-blobstore-host"
-  agent_entrypoint       = ["/usr/bin/backup_agent"]
-  agent_command          = ["-C", local.cluster_file]
+  image_repository        = "foundationdb/foundationdb"
+  compose_project         = "tack"
+  server_service          = "fdb"
+  agent_service           = "fdb-backup-agent"
+  server_container_name   = "tack-fdb-1"
+  agent_container_name    = "tack-fdb-backup-agent-1"
+  server_port             = 4500
+  server_memory_mib       = 2048
+  server_memory_swap_mib  = 4096
+  agent_memory_mib        = 512
+  agent_memory_swap_mib   = 1024
+  stop_grace_seconds      = 10
+  cluster_directory       = "/etc/foundationdb"
+  cluster_file            = "${local.cluster_directory}/fdb.cluster"
+  state_directory         = "/var/fdb"
+  data_directory          = "${local.state_directory}/data"
+  overlay_target          = "${local.state_directory}/scripts/fdb.bash"
+  overlay_mode            = "0755"
+  overlay_repository_url  = "https://api.github.com/repos/agoodkind/tack"
+  overlay_repository_path = "fdb-overlay/fdb.bash"
+  overlay_media_type      = "application/vnd.github.raw"
+  blobstore_host          = "fdb-blobstore-host"
+  agent_entrypoint        = ["/usr/bin/backup_agent"]
+  agent_command           = ["-C", local.cluster_file]
 
   # The overlay writes this invalid connection string if the cluster file is missing or empty.
   # FoundationDB then fails to start instead of starting a new cluster.
@@ -62,21 +65,28 @@ locals {
   }
 }
 
-resource "pveguest_systemd_unit" "docker" {
+# The server container mounts this overlay as its startup script.
+# The mount references this resource to create or adopt the file before creating the container.
+resource "pveguest_download" "overlay" {
   node = var.node
   vmid = var.vmid
   kind = var.kind
 
-  name    = "docker.service"
-  enabled = true
-  active  = true
+  url    = "${local.overlay_repository_url}/contents/${local.overlay_repository_path}?ref=${var.tack_commit}"
+  sha256 = var.overlay.sha256
+  path   = var.overlay.path
+  mode   = local.overlay_mode
+
+  request_headers_wo = {
+    Accept        = local.overlay_media_type
+    Authorization = "Bearer ${var.repository_read_token}"
+  }
+  request_headers_wo_version = var.repository_read_token_version
 }
 
 resource "docker_image" "fdb" {
   name         = "${local.image_repository}:${var.image.version}"
   keep_locally = true
-
-  depends_on = [pveguest_systemd_unit.docker]
 
   lifecycle {
     postcondition {
@@ -157,7 +167,7 @@ resource "docker_container" "server" {
 
   mounts {
     type      = "bind"
-    source    = local.overlay_source
+    source    = pveguest_download.overlay.path
     target    = local.overlay_target
     read_only = true
   }

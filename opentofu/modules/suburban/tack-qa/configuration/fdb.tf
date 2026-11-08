@@ -6,6 +6,11 @@ locals {
     id      = "sha256:1db13771714a1b2cc565c893e2ba768b5a3c33d101c84f2f6fda32f075cc8763"
   }
 
+  tack_fdb_overlay = {
+    path   = "/root/tack/fdb-overlay/fdb.bash"
+    sha256 = "3b53cee50929e7d94fa24e97d3b39ae955c2840684a3b07ba0d31e4e228b98e8"
+  }
+
   tack_fdb_state_volume_labels = {
     "com.docker.compose.config-hash" = "06ae176e9a7db15ed7b03a744d11d53c4d6762705741f9b81b9c9c9e4762caf8"
     "com.docker.compose.project"     = "tack"
@@ -29,6 +34,7 @@ locals {
   tack_fdb = {
     for key, member in local.tack_fdb_members : key => {
       image             = local.tack_fdb_image
+      overlay           = local.tack_fdb_overlay
       public_address    = local.service_mapping[key].ipv6
       locality_id       = local.service_mapping[key].hostname
       blobstore_address = module.seaweedfs_suburban.value.ipv6

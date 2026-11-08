@@ -31,6 +31,41 @@ variable "image" {
   }
 }
 
+variable "tack_commit" {
+  description = "Tack commit that the module uses to download the overlay."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}$", var.tack_commit))
+    error_message = "Commit must contain exactly 40 lowercase hexadecimal characters."
+  }
+}
+
+variable "overlay" {
+  description = "Absolute guest path and expected SHA-256 of the overlay file at the Tack commit."
+  type = object({
+    path   = string
+    sha256 = string
+  })
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{64}$", var.overlay.sha256))
+    error_message = "Overlay SHA-256 must contain exactly 64 lowercase hexadecimal characters."
+  }
+}
+
+variable "repository_read_token" {
+  description = "GitHub token with read access to agoodkind/tack for downloading the overlay."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "repository_read_token_version" {
+  description = "Version of the repository read token. Changing it downloads the overlay again on the next apply."
+  type        = number
+}
+
 variable "public_address" {
   description = "Address that the FoundationDB server announces on port 4500 to peers and clients."
   type        = string

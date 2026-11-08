@@ -18,6 +18,13 @@ variable "vault_suburban_testbed_pve_token_secret" {
   ephemeral   = true
 }
 
+variable "vault_tack_qa_repo_read_token" {
+  description = "GitHub repository read token for Tack QA."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
 variable "docker_hosts" {
   description = "Docker Engine unix:// socket address for each Docker provider alias. configsctl starts a bridge for each docker_bridges entry and sets this value. Operators must not set it."
   type        = map(string)
