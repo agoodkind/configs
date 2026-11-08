@@ -389,6 +389,46 @@ resource "pveguest_systemd_unit" "kea_dhcp6" {
   depends_on = [pveguest_apt_packages.simulator]
 }
 
+resource "pveguest_file" "kea_rebind_script" {
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path    = "/usr/local/sbin/kea-rebind"
+  content = file("${path.module}/files/kea-rebind.sh")
+  mode    = "0755"
+}
+
+resource "pveguest_file" "kea_rebind_unit" {
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  path    = "/etc/systemd/system/kea-rebind.service"
+  content = file("${path.module}/files/kea-rebind.service")
+}
+
+resource "pveguest_systemd_unit" "kea_rebind" {
+  node = var.node
+  vmid = var.vmid
+  kind = local.kind
+
+  name    = "kea-rebind.service"
+  enabled = true
+  active  = true
+
+  restart_on = {
+    script = pveguest_file.kea_rebind_script.write_id
+    unit   = pveguest_file.kea_rebind_unit.write_id
+  }
+
+  depends_on = [
+    pveguest_systemd_unit.kea_dhcp4,
+    pveguest_systemd_unit.kea_dhcp6,
+    pveguest_systemd_unit.pd_route,
+  ]
+}
+
 resource "pveguest_systemd_unit" "disabled_ipv6" {
   for_each = local.disabled_ipv6_units
 
