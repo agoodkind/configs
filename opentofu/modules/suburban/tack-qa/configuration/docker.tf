@@ -8,15 +8,13 @@ locals {
       node_name = "hypervisor"
     }
   }
-
-  docker_guests = toset(["tack_app2_suburban"])
 }
 
 output "proxmox_nodes" { value = local.proxmox_nodes }
 
 output "docker_bridges" {
   value = {
-    for key in local.docker_guests : key => merge(local.proxmox_nodes[local.service_mapping[key].node], {
+    for key in keys(local.docker_guests) : key => merge(local.proxmox_nodes[local.service_mapping[key].node], {
       node            = local.service_mapping[key].node
       vmid            = local.service_mapping[key].vmid
       kind            = lookup(local.service_mapping[key], "kind", "lxc")
