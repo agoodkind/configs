@@ -65,6 +65,9 @@ applying it. Require unchanged repeat plans for each completed target.
    ./configsctl tofu shared/cloudflare-zero-trust apply '-var=tack_k3s_environments=["qa"]' '-target=module.tack_cloudflared["qa"]'
    ```
 
+   Keep the accepted environment set explicit on unrelated zero-trust applies
+   until production connector acceptance.
+
 5. Verify connector cold startup and reconnection with IPv4-only Internet access
    and with IPv6-only Internet access. Preserve internal IPv6 during both checks.
    Use production-like DNS resolvers and expired caches. Verify the origin
@@ -120,8 +123,9 @@ applying it. Require unchanged repeat plans for each completed target.
    `tack_hostname_cutover=private`. Verify private and public resolution and
    authenticated requests after that stage.
 4. Require unchanged repeat plans with both tunnel environments and the accepted
-   hostname stage. Keep `tack_hostname_cutover=legacy` explicit on unrelated DNS
-   applies before the first public cutover.
+   hostname stage. Keep the currently accepted `tack_hostname_cutover` stage
+   explicit on every unrelated DNS apply until private hostname acceptance.
+   Use `legacy` before the first public cutover.
 
 If a hostname check fails, plan and apply its preceding stage. Use `aliases` to
 remove the explicit private CNAME, or `legacy` to restore all previous targets.
