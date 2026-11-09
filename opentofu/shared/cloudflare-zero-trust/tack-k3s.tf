@@ -7,6 +7,16 @@ locals {
     prod = var.vault_proxmox_token_secret
     qa   = var.vault_suburban_testbed_pve_token_secret
   }
+  tack_ingress = {
+    prod = concat([
+      for hostname in concat(["tack.goodkind.io", "tack.home.goodkind.io"], sort(keys(module.contracts.tack_domain_aliases))) : {
+        hostname       = hostname
+        service        = "http://tack-app.tack.svc.cluster.local:8000"
+        origin_request = { http_host_header = "tack.home.goodkind.io" }
+      }
+    ], [{ service = "http_status:404" }])
+    qa = [{ service = "http://tack-app.tack.svc.cluster.local:8000" }]
+  }
 }
 
 resource "cloudflare_zero_trust_tunnel_cloudflared" "tack_k3s" {
@@ -30,15 +40,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "tack_k3s" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.tack_k3s[each.key].id
   source     = "cloudflare"
   config = {
-    ingress = each.key == "prod" ? concat([
-      for hostname in concat(["tack.goodkind.io", "tack.home.goodkind.io"], sort(keys(module.contracts.tack_domain_aliases))) : {
-        hostname       = hostname
-        service        = "http://tack-app.tack.svc.cluster.local:8000"
-        origin_request = { http_host_header = "tack.home.goodkind.io" }
-      }
-      ], [{ service = "http_status:404" }]) : [
-      { service = "http://tack-app.tack.svc.cluster.local:8000" },
-    ]
+    ingress = local.tack_ingress[each.key]
   }
 }
 
