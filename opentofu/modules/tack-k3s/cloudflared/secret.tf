@@ -1,3 +1,7 @@
+locals {
+  token_secret_name = "cloudflared-token-${var.tunnel_id}-v${var.token_version}"
+}
+
 resource "terraform_data" "tunnel_identity" {
   triggers_replace = var.tunnel_id
 }
@@ -11,7 +15,7 @@ resource "pveguest_file" "token" {
   content_wo = yamlencode({
     apiVersion = "v1"
     kind       = "Secret"
-    metadata   = { name = "cloudflared-token", namespace = "tack" }
+    metadata   = { name = local.token_secret_name, namespace = "tack" }
     type       = "Opaque"
     data       = { token = base64encode(var.token) }
   })

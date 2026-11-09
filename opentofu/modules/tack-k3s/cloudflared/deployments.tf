@@ -50,7 +50,7 @@ locals {
         }]
         volumes = [{
           name   = "token"
-          secret = { secretName = "cloudflared-token", defaultMode = 288 }
+          secret = { secretName = local.token_secret_name, defaultMode = 288 }
         }]
       }
     }
