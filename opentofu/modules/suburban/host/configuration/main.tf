@@ -19,6 +19,7 @@ locals {
       "proxmox_acme_account.suburban"     = "suburban"
       "proxmox_acme_certificate.suburban" = "suburban"
       "proxmox_acme_dns_plugin.suburban"  = "suburban"
+      "proxmox_storage_directory.local"   = "suburban"
     }
   }
 }
