@@ -8,6 +8,7 @@ locals {
     opnsense_suburban   = module.opnsense_suburban.value
     proxy               = module.proxy.value
     suburban_hypervisor = module.suburban_hypervisor.value
+    tack_k3s_suburban   = local.tack_k3s_guest
     tack_app2_suburban = {
       "hostname"          = "tack-app2.suburban.goodkind.io"
       "node"              = "suburban"
@@ -66,18 +67,20 @@ locals {
 }
 output "service_mapping" { value = local.service_mapping }
 locals {
-  guest_keys     = toset(["tack_app2_suburban", "tack_data1_suburban", "tack_data2_suburban", "tack_data3_suburban", "tack_qa_suburban", "tack_search1_suburban"])
-  guest_services = { for key in local.guest_keys : key => local.service_mapping[key] }
+  guest_keys          = toset(["tack_app2_suburban", "tack_data1_suburban", "tack_data2_suburban", "tack_data3_suburban", "tack_qa_suburban", "tack_search1_suburban"])
+  guest_services      = { for key in local.guest_keys : key => local.service_mapping[key] }
+  lock_guest_services = merge(local.guest_services, { tack_k3s_suburban = local.tack_k3s_guest })
 }
 output "guest_keys" { value = local.guest_keys }
 locals {
   lock_targets = merge({
     "module_hosts" = {
       "module.suburban" = "suburban"
+      "module.tack_k3s" = "suburban"
     }
-  }, { guest_hosts = { for key, service in local.guest_services : "suburban/${service.vmid}" => service.hostname }, module_key_hosts = { "module.base" = { for key, service in local.guest_services : key => service.hostname }, "module.docker_guest" = { for key in keys(local.docker_guests) : key => local.service_mapping[key].hostname } } })
+  }, { guest_hosts = { for key, service in local.lock_guest_services : "suburban/${service.vmid}" => service.hostname }, module_key_hosts = { "module.base" = { for key, service in local.guest_services : key => service.hostname }, "module.docker_guest" = { for key in keys(local.docker_guests) : key => local.service_mapping[key].hostname } } })
 }
 module "suburban_host" { source = "../.." }
-output "lock_targets" { value = merge(local.lock_targets, { node_hosts = { for node in toset([for key in local.guest_keys : local.service_mapping[key].node]) : node => "suburban" }, lock_endpoints = merge({ suburban = module.suburban_host.lock_endpoint }, { for key, service in local.guest_services : service.hostname => { user = "root", address = service.ipv6 } }) }) }
+output "lock_targets" { value = merge(local.lock_targets, { node_hosts = { for node in toset([for key in local.guest_keys : local.service_mapping[key].node]) : node => "suburban" }, lock_endpoints = merge({ suburban = module.suburban_host.lock_endpoint }, { for key, service in local.lock_guest_services : service.hostname => { user = "root", address = service.ipv6 } }) }) }
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
