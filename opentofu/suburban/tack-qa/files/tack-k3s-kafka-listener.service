@@ -1,0 +1,14 @@
+[Unit]
+Description=Enable the private QA Kafka listener for k3s
+Requires=docker.service tack-k3s-kafka-firewall.service
+After=docker.service tack-k3s-kafka-firewall.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/tack
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.k3s-kafka.yml up -d --no-deps --no-build kafka
+RemainAfterExit=yes
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

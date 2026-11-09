@@ -108,6 +108,10 @@ resource "pveguest_systemd_unit" "server" {
     configuration        = pveguest_file.configuration.write_id
     server_token         = pveguest_file.server_token.write_id
     snapshot_credentials = pveguest_file.snapshot_credentials.write_id
+    registry             = pveguest_file.registry.write_id
+    application_files    = pveguest_file.application_files_order.write_id
     service              = pveguest_file.service.write_id
   }, { for key, certificate in pveguest_file.snapshot_ca : key => certificate.write_id })
+
+  depends_on = [pveguest_systemd_unit.application_files]
 }

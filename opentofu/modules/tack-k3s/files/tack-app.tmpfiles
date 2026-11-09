@@ -1,0 +1,3 @@
+d /etc/foundationdb 0755 root root -
+C /etc/foundationdb/fdb.cluster 0600 root root - /var/lib/tack/bootstrap/fdb.cluster
+d /var/log/tack/app 0755 root root -
