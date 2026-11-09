@@ -17,7 +17,7 @@ resource "pveguest_file" "application_secret" {
   kind               = "qemu"
   path               = each.value
   mode               = "0600"
-  content_wo         = "${trimspace(var.application_secrets[each.key])}\n"
+  content_wo         = "${chomp(var.application_secrets[each.key])}\n"
   content_wo_version = var.application_secret_versions[each.key]
 
   depends_on = [module.base]
