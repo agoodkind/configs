@@ -1,6 +1,6 @@
 [Unit]
 Description=Restrict the Kafka listener to the k3s VM
-Before=docker.service tack-k3s-kafka-listener.service
+Before=tack-k3s-kafka-listener.service
 
 [Service]
 Type=oneshot

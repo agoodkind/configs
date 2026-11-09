@@ -1,5 +1,6 @@
 services:
   kafka:
+    restart: "no"
     environment:
       KAFKA_LISTENERS: PLAINTEXT://[::]:9092,CONTROLLER://[::]:9093,K3S://[::]:29092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,K3S://[3d06:bad:b01:0:7ac::4]:29092
