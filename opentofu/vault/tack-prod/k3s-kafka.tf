@@ -8,8 +8,6 @@ resource "pveguest_file" "k3s_kafka_overlay" {
   kind    = local.k3s_kafka_guest.kind
   path    = "/root/tack/docker-compose.k3s-kafka.yml"
   content = file("${path.module}/files/k3s-kafka.compose.yml")
-
-  depends_on = [module.tack_release]
 }
 
 resource "pveguest_file" "k3s_kafka_firewall" {
@@ -19,8 +17,6 @@ resource "pveguest_file" "k3s_kafka_firewall" {
   path     = "/etc/nftables.d/tack-k3s-kafka.nft"
   content  = file("${path.module}/files/k3s-kafka.nft")
   validate = "/usr/sbin/nft --check --file %s"
-
-  depends_on = [module.tack_release]
 }
 
 resource "pveguest_file" "k3s_kafka_unit" {
@@ -31,8 +27,6 @@ resource "pveguest_file" "k3s_kafka_unit" {
   kind    = local.k3s_kafka_guest.kind
   path    = "/etc/systemd/system/${each.value}"
   content = file("${path.module}/../../modules/tack-k3s/files/${each.value}")
-
-  depends_on = [module.tack_release]
 }
 
 resource "pveguest_systemd_unit" "k3s_kafka_firewall" {
