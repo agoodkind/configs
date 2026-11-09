@@ -30,7 +30,7 @@ resource "pveguest_file" "k3s_kafka_unit" {
   vmid    = local.k3s_kafka_guest.vmid
   kind    = local.k3s_kafka_guest.kind
   path    = "/etc/systemd/system/${each.value}"
-  content = file("${path.module}/files/${each.value}")
+  content = file("${path.module}/../../modules/tack-k3s/files/${each.value}")
 
   depends_on = [module.docker_guest]
 }

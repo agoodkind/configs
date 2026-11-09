@@ -1,5 +1,5 @@
 [Unit]
-Description=Restrict the QA Kafka listener to the k3s VM
+Description=Restrict the Kafka listener to the k3s VM
 Before=docker.service tack-k3s-kafka-listener.service
 
 [Service]
