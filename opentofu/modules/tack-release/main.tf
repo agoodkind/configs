@@ -1,4 +1,4 @@
-# This module updates the Tack app and audit-consumer images on one guest and runs audited checks. Each systemd unit is a oneshot, and pveguest_systemd_unit restarts it when its unit file changes. The module does not change the Compose file, overrides, migrations, or credentials; a release that changes any of them needs another change. The provider limits each systemctl command to 300 seconds, and each unit stops after 280 seconds.
+# This module updates the Tack app and audit-consumer images on one guest and runs audited checks. With writer = compose, the pull and up units pull the release images and recreate the services with docker compose. With writer = docker, the module stops those units, deletes their unit files, and runs tack-release-ready.service and the verify unit after each change to runtime_revision. The Docker provider in another module creates the app container. Each systemd unit is a oneshot, and pveguest_systemd_unit restarts it when its unit file changes. The module does not change the Compose file, overrides, migrations, or credentials. A release that changes any of them needs another change. The provider limits each systemctl command to 300 seconds, and each unit stops after 280 seconds.
 
 terraform {
   required_providers {
@@ -72,9 +72,38 @@ variable "accountable_email" {
   type        = string
 }
 
+variable "writer" {
+  description = "Choose the app container writer. The default, `compose`, uses the pull and up units. `docker` stops those units and deletes their unit files, and the Docker provider in tack-app creates the container. Each change to runtime_revision restarts the health check and verify units."
+  type        = string
+  default     = "compose"
+
+  validation {
+    condition     = contains(["compose", "docker"], var.writer)
+    error_message = "The writer must be `compose` or `docker`."
+  }
+
+  validation {
+    condition     = var.writer == "compose" || var.role == "app"
+    error_message = "Use the `docker` writer only with the `app` role."
+  }
+}
+
+variable "runtime_revision" {
+  description = "Set the app container ID for the `docker` writer and use null for the `compose` writer. A change to this value restarts the health check and verify units."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = (var.writer == "docker") == (var.runtime_revision != null)
+    error_message = "Set runtime_revision for the `docker` writer and use null for the `compose` writer."
+  }
+}
+
 locals {
   install_dir        = "/root/tack"
   docker             = "/usr/bin/docker compose"
+  compose_writer     = var.writer == "compose"
+  health_check       = "/usr/bin/curl --fail --silent --show-error --max-time 5 --retry 40 --retry-delay 5 --retry-all-errors --retry-max-time 200 http://[::1]:8000/healthz"
   is_owner           = var.role == "owner"
   services           = local.is_owner ? "app audit-consumer" : "app"
   operator_namespace = "0a6f7572-cafe-dead-beef-000000000004"
@@ -84,7 +113,7 @@ locals {
   verify_scope       = local.is_owner ? "--tack-audit-consumer-digest ${var.consumer_digest}" : "--service app"
   audit_reader_files = "-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml"
 
-  stage_units = {
+  compose_units = {
     "tack-release-pull.service" = {
       description = "Pull Tack release images"
       lines = [
@@ -98,16 +127,35 @@ locals {
         "ExecStartPre=/usr/bin/grep -q ^TACK_IMAGE_TAG= .env",
         "ExecStartPre=/usr/bin/sed -i -E s/^TACK_IMAGE_TAG=.*/TACK_IMAGE_TAG=${var.commit}/ .env",
         "ExecStart=${local.docker} up -d --wait --wait-timeout 60 --no-deps --no-build ${local.services}",
-        "ExecStartPost=/usr/bin/curl --fail --silent --show-error --max-time 5 --retry 40 --retry-delay 5 --retry-all-errors --retry-max-time 200 http://[::1]:8000/healthz",
-      ]
-    }
-    "tack-release-verify.service" = {
-      description = "Verify that the Tack containers use the release images"
-      lines = [
-        "ExecStart=${local.docker} run --rm tack-ops ops deploy verify --execute --tag ${var.commit} --tack-server-digest ${var.server_digest} ${local.verify_scope} ${local.identity}",
+        "ExecStartPost=${local.health_check}",
       ]
     }
   }
+
+  docker_units = {
+    "tack-release-ready.service" = {
+      description = "Check the Tack app health endpoint"
+      lines = [
+        "ExecStart=${local.health_check}",
+      ]
+    }
+  }
+
+  # The verify unit sets TACK_IMAGE_TAG to select the release image for tack-ops. This environment variable takes precedence over /root/tack/.env, which the docker writer does not update.
+  verify_lines = concat(
+    local.compose_writer ? [] : ["Environment=TACK_IMAGE_TAG=${var.commit}"],
+    ["ExecStart=${local.docker} run --rm tack-ops ops deploy verify --execute --tag ${var.commit} --tack-server-digest ${var.server_digest} ${local.verify_scope} ${local.identity}"],
+  )
+
+  stage_units = merge(local.compose_writer ? local.compose_units : local.docker_units, {
+    "tack-release-verify.service" = {
+      description = "Verify that the Tack containers use the release images"
+      lines       = local.verify_lines
+    }
+  })
+
+  docker_units_enabled = local.compose_writer ? {} : local.docker_units
+  runtime_restart      = local.compose_writer ? {} : { runtime = var.runtime_revision }
 
   check_units = local.is_owner ? {
     "tack-release-search-verify.service" = {
@@ -148,16 +196,18 @@ resource "pveguest_file" "unit" {
   ], each.value.lines, [""]))
 }
 
+# With the docker writer, these resources stop the pull and up units before OpenTofu deletes their unit files. allow_missing accepts the missing units on later plans and these resources keep them stopped.
 resource "pveguest_systemd_unit" "pull" {
   node = var.node
   vmid = var.vmid
   kind = var.kind
 
-  name    = "tack-release-pull.service"
-  enabled = false
-  active  = true
+  name          = "tack-release-pull.service"
+  enabled       = false
+  active        = local.compose_writer
+  allow_missing = !local.compose_writer
 
-  restart_on = { unit = pveguest_file.unit["tack-release-pull.service"].write_id }
+  restart_on = local.compose_writer ? { unit = pveguest_file.unit["tack-release-pull.service"].write_id } : null
 }
 
 resource "pveguest_systemd_unit" "up" {
@@ -165,13 +215,30 @@ resource "pveguest_systemd_unit" "up" {
   vmid = var.vmid
   kind = var.kind
 
-  name    = "tack-release-up.service"
+  name          = "tack-release-up.service"
+  enabled       = false
+  active        = local.compose_writer
+  allow_missing = !local.compose_writer
+
+  restart_on = local.compose_writer ? { unit = pveguest_file.unit["tack-release-up.service"].write_id } : null
+
+  depends_on = [pveguest_systemd_unit.pull]
+}
+
+resource "pveguest_systemd_unit" "ready" {
+  for_each = local.docker_units_enabled
+
+  node = var.node
+  vmid = var.vmid
+  kind = var.kind
+
+  name    = each.key
   enabled = false
   active  = true
 
-  restart_on = { unit = pveguest_file.unit["tack-release-up.service"].write_id }
+  restart_on = merge({ unit = pveguest_file.unit[each.key].write_id }, local.runtime_restart)
 
-  depends_on = [pveguest_systemd_unit.pull]
+  depends_on = [pveguest_systemd_unit.up]
 }
 
 resource "pveguest_systemd_unit" "verify" {
@@ -183,9 +250,9 @@ resource "pveguest_systemd_unit" "verify" {
   enabled = false
   active  = true
 
-  restart_on = { unit = pveguest_file.unit["tack-release-verify.service"].write_id }
+  restart_on = merge({ unit = pveguest_file.unit["tack-release-verify.service"].write_id }, local.runtime_restart)
 
-  depends_on = [pveguest_systemd_unit.up]
+  depends_on = [pveguest_systemd_unit.up, pveguest_systemd_unit.ready]
 }
 
 resource "pveguest_systemd_unit" "check" {
@@ -202,4 +269,12 @@ resource "pveguest_systemd_unit" "check" {
   restart_on = { unit = pveguest_file.unit[each.key].write_id }
 
   depends_on = [pveguest_systemd_unit.verify]
+}
+
+output "compose_writer_active" {
+  description = "Map of Compose pull and up unit names to their active states. The tack-app module checks these states before creating the container."
+  value = {
+    "tack-release-pull.service" = pveguest_systemd_unit.pull.active
+    "tack-release-up.service"   = pveguest_systemd_unit.up.active
+  }
 }
