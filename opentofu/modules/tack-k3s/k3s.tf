@@ -2,6 +2,7 @@ locals {
   node_ipv6 = split("/", var.guest.ipv6_cidr)[0]
   cluster_configuration = merge({
     "cluster-init"                = true
+    "secrets-encryption"          = true
     "node-name"                   = var.guest.hostname
     "node-ip"                     = local.node_ipv6
     "advertise-address"           = local.node_ipv6
