@@ -15,6 +15,9 @@ LinkLocalAddressing=ipv6
 UseDNS=no
 RouteMetric=50
 
+[DHCPv6]
+UseDelegatedPrefix=no
+
 [IPv6AcceptRA]
 UseDNS=no
 UseGateway=yes
