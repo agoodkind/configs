@@ -1,0 +1,22 @@
+[Unit]
+Description=Run Kafka after the private listener firewall
+BindsTo=docker.service tack-k3s-kafka-firewall.service
+PartOf=docker.service tack-k3s-kafka-firewall.service
+After=docker.service tack-k3s-kafka-firewall.service
+AssertPathExists=/root/tack/docker-compose.yml
+AssertPathExists=/root/tack/docker-compose.override.yml
+AssertPathExists=/root/tack/.env
+
+[Service]
+Type=simple
+WorkingDirectory=/root/tack
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.k3s-kafka.yml up --no-deps --no-build --exit-code-from kafka kafka
+ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.k3s-kafka.yml stop kafka
+Restart=always
+RestartSec=5s
+SuccessExitStatus=130 143
+TimeoutStartSec=120
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target docker.service tack-k3s-kafka-firewall.service

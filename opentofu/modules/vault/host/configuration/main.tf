@@ -11,6 +11,7 @@ locals {
       "proxmox_acme_account.vault"            = "vault"
       "proxmox_acme_certificate.vault"        = "vault"
       "proxmox_acme_dns_plugin.vault"         = "vault"
+      "proxmox_storage_directory.local"       = "vault"
       "proxmox_virtual_environment_dns.vault" = "vault"
       "proxmox_sdn_applier.vault"             = "vault"
       "proxmox_sdn_applier.vault_finalizer"   = "vault"

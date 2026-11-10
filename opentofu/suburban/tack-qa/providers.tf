@@ -3,6 +3,15 @@ provider "proxmox" {
   endpoint  = var.suburban_proxmox_endpoint
   api_token = "${local.proxmox_token_principal}=${var.vault_suburban_testbed_pve_token_secret}"
   insecure  = true
+
+  ssh {
+    agent    = true
+    username = "root"
+    node {
+      name    = "hypervisor"
+      address = local.service_mapping.suburban_hypervisor.ipv6
+    }
+  }
 }
 
 provider "pveguest" {

@@ -1,0 +1,11 @@
+[Unit]
+Description=Initialize Tack application directories and FoundationDB descriptor
+Before=k3s.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemd-tmpfiles --create /etc/tmpfiles.d/tack-app.conf
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

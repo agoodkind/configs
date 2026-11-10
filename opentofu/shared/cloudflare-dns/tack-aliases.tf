@@ -5,7 +5,7 @@ resource "cloudflare_dns_record" "tack_aliases" {
   zone_id = each.value
   name    = each.key
   type    = "CNAME"
-  content = "${module.contracts.tack_tunnel_id}.cfargotunnel.com"
+  content = "${local.tack_alias_tunnel_id}.cfargotunnel.com"
   ttl     = 1
   proxied = true
 

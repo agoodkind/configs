@@ -2,6 +2,15 @@ provider "proxmox" {
   endpoint  = var.proxmox_endpoint
   api_token = "${local.proxmox_token_principal}=${var.vault_proxmox_token_secret}"
   insecure  = true
+
+  ssh {
+    agent    = true
+    username = "root"
+    node {
+      name    = "vault"
+      address = local.service_mapping.vault_hypervisor.ipv6
+    }
+  }
 }
 
 provider "pveguest" {

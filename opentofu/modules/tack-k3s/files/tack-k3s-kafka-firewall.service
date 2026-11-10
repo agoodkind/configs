@@ -1,0 +1,12 @@
+[Unit]
+Description=Restrict the Kafka listener to the k3s VM
+Before=tack-k3s-kafka-listener.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/sbin/nft --check --file /etc/nftables.d/tack-k3s-kafka.nft
+ExecStart=/usr/sbin/nft --file /etc/nftables.d/tack-k3s-kafka.nft
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

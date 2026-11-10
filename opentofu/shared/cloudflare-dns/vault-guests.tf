@@ -34,7 +34,7 @@ resource "cloudflare_dns_record" "tack_public" {
   zone_id = local.cloudflare_zone_ids["goodkind.io"]
   name    = "tack.goodkind.io"
   type    = "CNAME"
-  content = "${module.contracts.tack_tunnel_id}.cfargotunnel.com"
+  content = "${local.tack_public_tunnel_id}.cfargotunnel.com"
   ttl     = 1
   proxied = true
 

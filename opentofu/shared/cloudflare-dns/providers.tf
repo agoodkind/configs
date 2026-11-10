@@ -17,6 +17,11 @@ provider "cloudflare" {
   api_token = var.vault_cloudflare_tack_dns_api_token
 }
 
+provider "cloudflare" {
+  alias     = "tunnels"
+  api_token = var.vault_cloudflare_tunnel_api_token
+}
+
 terraform {
   required_version = ">= 1.11"
   required_providers {

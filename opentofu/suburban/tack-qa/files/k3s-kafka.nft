@@ -1,0 +1,8 @@
+destroy table inet tack_k3s_kafka
+
+table inet tack_k3s_kafka {
+    chain forward {
+        type filter hook forward priority -10; policy accept;
+        ip6 daddr 3d06:bad:b01:210:7ac::3 tcp dport 29092 ip6 saddr != 3d06:bad:b01:210::228 drop
+    }
+}
