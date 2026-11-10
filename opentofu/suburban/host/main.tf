@@ -68,7 +68,7 @@ locals {
     kernel_modules = null
 
     additional_patches = {
-      pve-manager-acme = "patches/compat/pve-manager-acme-node.patch"
+      pve-manager-acme = "patches/pve-manager-acme.patch"
     }
 
     container_options = null
