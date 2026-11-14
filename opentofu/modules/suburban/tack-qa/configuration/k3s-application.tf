@@ -18,7 +18,7 @@ locals {
       LOG_MAX_AGE_DAYS                = "0"
       LOG_MAX_SIZE_MB                 = "100"
       AUDIT_VALID_SIGNERS             = "ed25519:12bdb0b77570f79e"
-      AUDIT_KAFKA_BROKERS             = "[3d06:bad:b01:210:7ac::3]:29092"
+      AUDIT_KAFKA_BROKERS             = "[3d06:bad:b01:210::217]:29092"
     }
     ledger_hosts = {
       yb1 = "3d06:bad:b01:210::220"

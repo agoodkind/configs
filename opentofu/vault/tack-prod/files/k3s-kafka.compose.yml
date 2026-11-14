@@ -3,7 +3,7 @@ services:
     restart: "no"
     environment:
       KAFKA_LISTENERS: PLAINTEXT://[::]:9092,CONTROLLER://[::]:9093,K3S://[::]:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,K3S://[3d06:bad:b01:0:7ac::4]:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,K3S://[3d06:bad:b01::117]:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,K3S:PLAINTEXT
       KAFKA_LOG_DIRS: /var/lib/kafka/data
     networks:
@@ -11,5 +11,6 @@ services:
         ipv6_address: 3d06:bad:b01:0:7ac::4
     ports:
       - target: 29092
+        published: 29092
         host_ip: "::"
         protocol: tcp
