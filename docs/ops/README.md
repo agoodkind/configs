@@ -42,4 +42,3 @@ auto-approved `apply` or `destroy` write to a file.
 - [Configuration checks](ansible/quality.md)
 - [Infrastructure](infra/access.md)
 - [Deploy Tack on k3s](infra/tack-k3s.md)
-- [Configure PowerEdge NIC firmware](infra/firmware.md)

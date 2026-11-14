@@ -137,19 +137,6 @@ The [workspace separation design](../specs/2026-10-23-workspace-separation-desig
 defines workspace ownership, deployment checks, host prerequisites, encryption,
 and the coordinated state transfer.
 
-The PowerEdge routing root orders its guest operations after its host
-prerequisite read.
-
-1. The read-only host module data source checks the required loaded modules.
-2. The containers declare `bpfdelegate`, nesting, and `hostnicN` for WAN port
-   `nic2` and inter-container virtual functions `nic1v0` and `nic1v1`.
-3. OpenTofu installs the mwan binary and package bundle.
-4. OpenTofu installs the YANG files and sysrepo modules and data.
-5. `pveguest_file` writes `/etc/mwan/network.json` and the firewall files.
-   `validate` runs `mwan deploy-gate check-network` and
-   `mwan deploy-gate check-firewall`.
-6. OpenTofu applies the units with `restart_on` from those file writes.
-
 A plan fails before apply when a guest configuration requires a host or peer
 setting that the declared host configuration lacks. In MWAN-564, the
 hypervisor configuration omitted `[bgp]`. The watchdog never started a
@@ -158,14 +145,6 @@ failover because it required `BGP.Enabled`.
 The mwan [network plan specification](https://github.com/agoodkind/mwan/pull/202)
 defines the network document and route plan semantics, schema authority, and
 validation boundary.
-
-For PowerEdge with the LAN dormant, a `lifecycle` precondition fails the plan
-when the gateway network document declares an interface outside the
-provider, parent, internal, and management roles, or a route on such an
-interface. A precondition on the container fails the plan when any gateway
-interface binds to `nic0`, `nic3`, or `ens1f1`, or to a bridge with one of
-those LAN ports. LAN client traffic, LAN forwarding, and LAN-facing services
-stay disabled until a separate user instruction.
 
 ### 11. Approaches
 
@@ -294,12 +273,6 @@ qualifies existing implementations before assigning new code.
   Alpine guest preparation remains outside this scope.
 - Use the provider's chunked transfer for large files. Do not bypass its command
   input or captured-output limits.
-- For the PowerEdge gateway, OpenTofu writes `/etc/mwan/network.json` and
-  the firewall file. The first apply requires deletion of the gateway's
-  Ansible `network.json` render and install task. The daemon owns
-  `/etc/systemd/network/10-mwan-*.link` and the `20-<interface>.*` files.
-  A configuration change restarts the unit through `restart_on`. Live reload
-  is deferred and is not part of this design.
 - The MWAN deploy and the hypervisor watchdog also use the guest agent of the
   gateway VM. An apply for an MWAN guest runs only in a window agreed with
   the MWAN deploy owner. The guest agent is unavailable for about 30 seconds
@@ -342,21 +315,6 @@ qualifies existing implementations before assigning new code.
   state instead of the watchdog log. The regression case is
   `mwan watchdog failover` sending both withdraw and announce to the primary
   agent without sending a request to container 216.
-- AC14: On PowerEdge with the LAN dormant, the preflight passes checks of
-  LAN forward drop counters, LAN forwarding sysctls of 0 in both containers,
-  absent DHCP, DNS, and router advertisement listeners on LAN, and a packet
-  capture on a LAN port. `mwan` starts with a ruleset equal to the rendered
-  configuration. BGP between the gateway and LAN container adds, replaces,
-  and withdraws `198.51.100.0/24` and `2001:db8:5::/48`.
-  `ip route show proto bgp table all` checks both documentation prefixes
-  after each operation. One WAN link down and up replaces and deletes the
-  provider-table default route. A firewall rule change restarts the unit
-  with the new ruleset and unchanged routes. The postflight equals the
-  preflight.
-- AC15: Before the gateway container starts, a plan reports the 18 poweredge
-  modules as loaded. `PUT /nodes/{node}/kernel-modules` rejects a token with
-  only `Sys.KernelModules.Audit` with HTTP 403. The HTTP 403 check passed on
-  poweredge on 2026-10-06 in pveguest pull request 7.
 - AC16: Tack and MWAN reuse generic provider resources and the shared guest
   module. Applicable AC1 through AC8 pass. Every custom resource has the
   section 12 justification. A shared capability passes acceptance for each
@@ -370,7 +328,7 @@ qualifies existing implementations before assigning new code.
   interrupted apply recovery pass. The next plan reports zero changes, and a
   second apply does not perform extra work.
 - AC18: MWAN passes installation, configuration, update, recovery, and
-  applicable AC11 through AC15 checks without invoking Ansible. Coverage
+  applicable AC11 through AC13 checks without invoking Ansible. Coverage
   includes production, the test environment, ISP and routing simulators,
   failover guests, host services, observers, and required OPNsense operations.
   Simulator acceptance verifies addresses, routes, and client traffic.
@@ -441,6 +399,6 @@ below are recorded for reconsideration. None of them is selected or scheduled.
 | --- | --- | --- | --- |
 | Root SSH to the hypervisor with `pct exec` and `qm guest exec` | The owner rejects root SSH as a design. | The option does not require an overlay and works on stock Proxmox. It grants root on every hypervisor to the machine that runs OpenTofu. | The owner changes the root SSH rule. |
 | SSH into each guest | A guest with broken SSH requires a second repair path. | The option does not require hypervisor privileges. Each guest needs sshd and an authorized key before OpenTofu manages it. | The overlay guest methods stop applying to a Proxmox release and a patch is not feasible. |
-| Upstream the guest methods to Proxmox | The overlay patches each Proxmox release. | Upstream methods remove the overlay maintenance. Acceptance and timing depend on the Proxmox maintainers. | The overlay methods run on all three hypervisors without a change for one Proxmox minor release. |
+| Upstream the guest methods to Proxmox | The overlay patches each Proxmox release. | Upstream methods remove the overlay maintenance. Acceptance and timing depend on the Proxmox maintainers. | The overlay methods run on all managed hypervisors without a change for one Proxmox minor release. |
 | A Debian package for the overlay | `pve-overlay` installs Perl modules and AppArmor profiles from patch files. | A package can install binaries and units and uses dpkg triggers. It needs a build pipeline and a package source. | The overlay needs a compiled helper, or it installs more than ten host files. |
 | A liveness check for exec workers | A pvedaemon restart during a command leaves its result missing, and `exec-status` reports a running command for up to two hours. | A check of the worker process detects the loss at once. It adds a process identity record per command. | A guest workspace apply fails or waits on a lost worker. |

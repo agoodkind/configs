@@ -18,7 +18,7 @@
 - Preserve guest identities, database identities, signing identities, disks, and data volumes during import.
 - Assign one writer to each managed field. Retire only the matching Ansible writer after replacement acceptance.
 - Develop Tack and MWAN independently. Give tertiary MWAN deployments priority when operations require the same host or guest.
-- Preserve current production authorization and other owners' active locks. This plan does not authorize a production outage or change the PowerEdge assignment.
+- Preserve current production authorization and other owners' active locks. This plan does not authorize a production outage.
 - Keep secrets absent from plans, state, logs, and public reports. Use the existing protected credential interfaces.
 - Keep task ledgers and runtime receipts in private harness state. Publish durable requirements, source contracts, and completed acceptance references in the owning issue or PR.
 - Preserve Ansible deployment of other services under LAB-96.
@@ -75,7 +75,6 @@ The coordinator closes each workstream only when its task checks and the applica
 | Reuse, guest preparation, bootstrap, secret handling; AC1 through AC11 and AC16 where applicable | Shared tasks S1 through S4 |
 | Tack runtime, databases, search, audit, protection, and adoption; AC17 | Tack tasks T1 through T5 and the approved Tack deployment specification |
 | MWAN gateway, failover, hosts, observers, OPNsense, and simulators; AC12, AC13, AC18 | MWAN tasks M1 through M5 |
-| Existing PowerEdge AC14 and AC15 obligations | Preserve the separate routing owner's evidence and authority; do not schedule that host through this plan |
 | Writer retirement, controller independence, and all supported lifecycle commands; AC19 | Shared S4, Tack T5, and MWAN M5 |
 
 Completion requires a manifest for each service and environment with the source revision, provider releases, state root, imported identities, former writer, passing task checks, final plan, recovery result, and reservation release. Keep secret values out of the manifest. A partial simulator migration or a successful application release does not establish full service migration.

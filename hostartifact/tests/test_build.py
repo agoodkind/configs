@@ -22,7 +22,6 @@ RENDER_ROOT = "opentofu/render/host-artifact"
 PRODUCER_PATHS = (RENDER_ROOT, "opentofu/modules/host-artifact-targets")
 SUBURBAN = "suburban/mwan"
 VAULT = "vault/mwan"
-POWEREDGE_CERTIFICATE = "poweredge/idrac-certificate"
 DESCRIPTOR_NAME = "host-artifact-target.json"
 IGNORED_COPIES = (".terraform", "*.tfplan", "*.tfstate")
 EXTRA_SELECTORS = (
@@ -1879,29 +1878,19 @@ def test_affected_selects_targets_by_dependency(
     [
         pytest.param(
             "configsctl",
-            [POWEREDGE_CERTIFICATE, SUBURBAN, VAULT],
+            [SUBURBAN, VAULT],
             id="controller-launcher",
-        ),
-        pytest.param(
-            "opentofu/modules/poweredge/config.tf",
-            [POWEREDGE_CERTIFICATE],
-            id="poweredge-config",
-        ),
-        pytest.param(
-            "opentofu/modules/poweredge/endpoint.tf",
-            [POWEREDGE_CERTIFICATE],
-            id="poweredge-endpoint",
         ),
     ],
 )
-def test_affected_selects_certificate_source_inputs(
+def test_affected_selects_controller_launcher(
     tmp_path: Path, changed: str, expected: list[str]
 ) -> None:
     changed_file = write_changed_list(tmp_path, [changed])
     selected = run_affected_command(
         REPOSITORY_ROOT,
         changed_file,
-        workspaces=(POWEREDGE_CERTIFICATE, SUBURBAN, VAULT),
+        workspaces=(SUBURBAN, VAULT),
     )
 
     assert selected.returncode == 0, selected.stderr

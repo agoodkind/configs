@@ -22,18 +22,6 @@ variable "cloudflare_owner_email" {
   default     = "alex@goodkind.io"
 }
 
-variable "poweredge_beacon" {
-  description = "TLS endpoint and public certificate fingerprint for the PowerEdge LAN beacon."
-  type = object({
-    tls_sockaddr = string
-    sha256       = string
-  })
-  default = {
-    tls_sockaddr = "10.230.255.253:443"
-    sha256       = "24d5ca5094d5fb28ae2b340d107e3c2f26f12631c81d30b5f6e81976292ad70d"
-  }
-}
-
 variable "vault_cloudflare_tunnel_api_token" {
   description = "Cloudflare API token that manages cloudflared tunnels in the homelab account."
   type        = string

@@ -21,7 +21,6 @@ module "cloudflare" {
 
   berylax_beacon_sockaddr = var.berylax_beacon_sockaddr
   berylax_beacon_sha256   = var.berylax_beacon_sha256
-  poweredge_beacon        = var.poweredge_beacon
 
   dns_search_suffix = "home.goodkind.io"
 
@@ -48,9 +47,6 @@ module "cloudflare" {
     { host = "*.cloudflareaccess.com" },
   ]
 
-  # LAB-151: Keep 10.230.0.0/24 and 3d06:bad:b01:300::/56 outside WARP during
-  # the BerylAX-to-PowerEdge cutover. Restore them after the cutover and beacon
-  # profile checks pass.
   tun_only_include = [
     { address = "3d06:bad:b01::/56", description = "home" },
     { address = "3d06:bad:b01:6400::/56", description = "production NAT64" },
@@ -64,11 +60,6 @@ module "cloudflare" {
     { address = "10.240.0.0/16", description = "suburban-v4" },
     { host = "*.cloudflareaccess.com" },
   ]
-}
-
-output "poweredge_tunnel_ids" {
-  description = "PowerEdge tunnel identifiers keyed by host or mwan."
-  value       = module.cloudflare.poweredge_tunnel_ids
 }
 
 module "configuration" { source = "../../modules/shared/cloudflare-zero-trust/configuration" }
