@@ -1,8 +1,0 @@
-{
-  "identity_variables": {
-    "node": "idrac_artifact_node",
-    "environment": "idrac_artifact_environment"
-  },
-  "variable_overrides": {},
-  "forbidden_toml_keys": ["password", "token_secret", "vault_passphrase"]
-}

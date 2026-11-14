@@ -24,17 +24,16 @@ locals {
   }
 }
 
-# Both LAN beacons select this profile, which omits their shared LAN prefix.
+# The Berylax LAN beacon selects this profile, which omits its LAN prefix.
 # Precedence 499 puts it ahead of the away profile.
 resource "cloudflare_zero_trust_device_custom_profile" "berylax_lan" {
   account_id  = var.account_id
   name        = "tun-only on Berylax LAN"
   description = "Use direct LAN routing for 3d06:bad:b01:300::/64"
   match = format(
-    "identity.email == %q and (network == %q or network == %q)",
+    "identity.email == %q and network == %q",
     var.owner_email,
     cloudflare_zero_trust_device_managed_networks.berylax_lan.name,
-    cloudflare_zero_trust_device_managed_networks.poweredge_lan.name,
   )
   precedence = 499
 
@@ -59,14 +58,14 @@ resource "cloudflare_zero_trust_device_custom_profile" "berylax_lan" {
     { suffix = var.dns_search_suffix },
   ]
 
-  include = concat(var.berylax_include, local.poweredge_mwan_include)
+  include = var.berylax_include
 
   lifecycle {
     prevent_destroy = true
   }
 }
 
-# Applies when neither the BerylAX nor PowerEdge LAN beacon matches.
+# Applies when the Berylax LAN beacon does not match.
 resource "cloudflare_zero_trust_device_custom_profile" "tun_only" {
   account_id = var.account_id
   name       = "tun-only"
@@ -94,7 +93,7 @@ resource "cloudflare_zero_trust_device_custom_profile" "tun_only" {
     { suffix = var.dns_search_suffix },
   ]
 
-  include = concat(var.tun_only_include, local.poweredge_mwan_include)
+  include = var.tun_only_include
 
   lifecycle {
     prevent_destroy = true

@@ -12,7 +12,7 @@
 
 ## Global constraints
 
-Apply every coordination-plan constraint. Preserve current WAN addressing, authentication, selection, failover, and observer policy. Deployment migration does not require new networking features. Keep PowerEdge with its existing owner and preserve tertiary deployment priority.
+Apply every coordination-plan constraint. Preserve current WAN addressing, authentication, selection, failover, and observer policy. Deployment migration does not require new networking features. Preserve tertiary deployment priority.
 
 ## Review focus
 
@@ -82,4 +82,4 @@ Track testbed adoption under [MWAN-587](https://tack.home.goodkind.io/browse/MWA
 - [ ] Import/review a ready Suburban group, retire its competing writer, and apply through the controller. Run applicable AC11/AC12/AC13/AC18 checks, including observed primary withdrawal/failover announcement and real client return traffic. Release each reservation when its operation ends.
 - [ ] Adopt the corresponding Vault group after Suburban acceptance and within current authorization. Verify installed revisions, services, application traffic, final plans, and lock release. Preserve production failure-test limits.
 - [ ] Verify install/configure/update/recover entrypoints with Ansible unavailable. Retire their inventory/vault-command/preparation-marker/playbook dependencies while preserving other services.
-- [ ] Commit writer retirement with accepted declarations and evidence. Close MWAN-585 only after both environments and Suburban simulators satisfy AC18/AC19. Preserve the separate PowerEdge owner's AC14/AC15 obligations without blocking independent work.
+- [ ] Commit writer retirement with accepted declarations and evidence. Close MWAN-585 only after both environments and Suburban simulators satisfy AC18/AC19.

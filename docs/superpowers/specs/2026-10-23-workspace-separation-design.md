@@ -4,7 +4,7 @@ Each independently deployed system has a root configuration, encrypted backend s
 
 ## Ownership
 
-An application environment owns its guest creation, guest disks, base guest setup, and application services. Tack QA and Tack production are separate environments. Each host's MWAN deployment owns its routing guests and services. PowerEdge's primary gateway, LAN container, and failover container stay together in one routing workspace.
+An application environment owns its guest creation, guest disks, base guest setup, and application services. Tack QA and Tack production are separate environments. Each host's MWAN deployment owns its routing guests and services.
 
 A physical host workspace owns shared host networking, bridges, storage pools, overlays, and permission policies. Firmware has a separate workspace when it has an independent maintenance lifecycle. The application owns a guest's attachment to an allocated host interface; the host owns the interface and its allowed use. Exactly one resource owns each managed field.
 
@@ -14,7 +14,7 @@ All currently managed resources participate in one coordinated migration. Existi
 
 ## Workspace layout
 
-Host folders organize the roots. The proposed root identifiers are `poweredge/host`, `poweredge/firmware`, `poweredge/routing`, `suburban/host`, `suburban/mwan`, `suburban/tack-qa`, `vault/host`, and `vault/tack-prod`. Other existing applications and shared services receive equivalent roots under their current host or a shared-service group. Independently deployed routing simulator scenarios receive their own roots instead of joining the gateway's state.
+Host folders organize the roots. The proposed root identifiers are `suburban/host`, `suburban/mwan`, `suburban/tack-qa`, `vault/host`, and `vault/tack-prod`. Other existing applications and shared services receive equivalent roots under their current host or a shared-service group. Independently deployed routing simulator scenarios receive their own roots instead of joining the gateway's state.
 
 Each root declares its own backend key under the existing bucket. Keys use the root identifier plus `.tfstate`. Every current resource must appear once in the migration manifest, including resources that retain their existing workspace. The complete manifest derives from the actual source-state inventory and the frozen configuration revision, not names alone.
 
@@ -25,8 +25,6 @@ The source split declares 39 destination roots. The three existing backend roots
 ## Guest preparation and host prerequisites
 
 An application root uses the shared base module only for its existing enrolled guests. Guest creation retains its existing initialization settings and lifecycle exclusions. The base module owns the enrolled guest's authorized-key file, guest files, packages, units, and existing mail relay. A host root owns its permission roles, container access policies, kernel-module allowlist, and persistent host module configuration.
-
-The PowerEdge routing root uses the read-only `pveguest_host_kernel_modules` data source. Its `node` input selects the host, and its computed `modules` and `loaded` values report the configured module list and actual loaded state. A postcondition rejects missing or unloaded required modules before guest operations. The cutover must install the reviewed provider release that supports this read interface before planning PowerEdge routing.
 
 Application modules receive explicit nonsecret bridge, interface, datastore, and service identifiers from backendless configuration. The existing creation APIs validate guest attachments. These identifiers do not establish an additional live readiness check. Application roots do not read another root's state, and they do not apply host resources to satisfy a prerequisite.
 
@@ -82,7 +80,3 @@ Use real OpenTofu local backends and the existing configsctl CLI tests. Do not u
 8. A deliberately interrupted transfer retains the pause and resumes from verified backend state. A changed source serial, altered manifest, duplicate destination ownership, or unexpected destination state refuses execution.
 9. An injected interruption followed by restoration recovers the complete source set. State and logs do not expose the synthetic secret marker. No new resource is created and no existing resource is destroyed.
 10. Live cutover accounts for every managed source resource exactly once. Tack and MWAN plan independently afterward. Deployment checks retain their actual host prerequisites without planning another system.
-
-## Execution ownership
-
-The PowerEdge chat finishes its approved functional changes before the coordinated migration. Deferred host organization commit `9ea98388` is a reference, not an automatically accepted source baseline. This task owns the eventual complete source split, configsctl changes, independent review, and sole state transfer. Audit and parent-integrity work continue independently.

@@ -16,7 +16,6 @@
 - Give every root a distinct backend key and every managed field exactly one writer.
 - Preserve native encryption and protected credential delivery. Exclude attributes and credentials from visible output and Git.
 - Use the existing Go tooling and real OpenTofu backends. Add no shell scripts or replacement test framework.
-- Complete the current PowerEdge functional work before freezing the migration baseline. Preserve its deferred organization as review input.
 - Reject the address-only workaround. Do not disable the deployment check or bypass a failed plan.
 
 ## Review focus
@@ -84,7 +83,7 @@
 
 **Interfaces:** Consume the tested configsctl release. Produce the complete root/backend map and reviewed resource migration manifest. Preserve approved routing groups and firmware ownership.
 
-- [ ] Freeze the actual source baseline after the PowerEdge functional work completes. Inventory all states through supported tooling without displaying attributes.
+- [ ] Freeze the actual source baseline. Inventory all states through supported tooling without displaying attributes.
 - [x] Assign every existing managed resource once under the approved application, host, and shared-service rules. Separate independently deployed simulator scenarios.
 - [x] Declare explicit nonsecret prerequisite inputs; application deployment must not read another root's full state or invoke its plan.
 - [x] Validate backend-key uniqueness and field ownership.
