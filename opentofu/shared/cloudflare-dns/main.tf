@@ -146,6 +146,22 @@ removed {
 locals {
 
   cloudflare_static_dns_records = {
+    "goodkind.io/A/poweredge.home.goodkind.io/561deda2" = {
+      zone    = "goodkind.io"
+      name    = "poweredge.home.goodkind.io"
+      type    = "A"
+      content = "10.230.0.254"
+      ttl     = 1
+      proxied = false
+    }
+    "goodkind.io/AAAA/poweredge.home.goodkind.io/6e3b4e4f" = {
+      zone    = "goodkind.io"
+      name    = "poweredge.home.goodkind.io"
+      type    = "AAAA"
+      content = "3d06:bad:b01:300::254"
+      ttl     = 1
+      proxied = false
+    }
     "goodkind.io/A/*.home.goodkind.io/f078473b" = {
       zone    = "goodkind.io"
       name    = "*.home.goodkind.io"
