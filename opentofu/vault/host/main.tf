@@ -50,9 +50,13 @@ locals {
   overlay_hosts = { vault = {
     ssh_host       = "hypervisor.home.goodkind.io"
     node_name      = "vault"
-    commit         = "2b0a332d39a8876d083c195f7081f73e3988a644"
+    commit         = "95540a7f37c0458c8382decfbb4cf77c0f571239"
     guest_api      = true
     kernel_modules = null
+
+    additional_patches = {
+      pve-manager-acme = "patches/pve-manager-acme.patch"
+    }
 
     container_options = null
 
@@ -65,14 +69,15 @@ module "overlay" {
   source   = "../../modules/overlay"
   for_each = local.overlay_hosts
 
-  ssh_host        = each.value.ssh_host
-  node_name       = each.value.node_name
-  commit          = each.value.commit
-  guest_api       = each.value.guest_api
-  automation_user = local.shared_vars.proxmox_api_user
-  kernel_modules  = each.value.kernel_modules
-  acme_account    = local.acme_account
-  acme_plugin     = local.acme_plugin
+  ssh_host           = each.value.ssh_host
+  node_name          = each.value.node_name
+  commit             = each.value.commit
+  guest_api          = each.value.guest_api
+  automation_user    = local.shared_vars.proxmox_api_user
+  additional_patches = each.value.additional_patches
+  kernel_modules     = each.value.kernel_modules
+  acme_account       = local.acme_account
+  acme_plugin        = local.acme_plugin
 
   container_options = each.value.container_options
 
