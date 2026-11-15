@@ -45,7 +45,7 @@ module "tack_k3s" {
   }
   registry_credentials_version = module.configuration.tack_k3s_application.registry_credentials_version
 
-  depends_on = [pveguest_systemd_unit.k3s_kafka_listener, pveguest_systemd_unit.legacy_proxy_origin]
+  depends_on = [pveguest_systemd_unit.k3s_kafka_listener, pveguest_systemd_unit.legacy_proxy_origin, module.search_caller]
 }
 
 output "tack_k3s" {
