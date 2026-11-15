@@ -73,7 +73,7 @@ locals {
 }
 output "service_mapping" { value = local.service_mapping }
 locals {
-  guest_keys     = toset(["mwan_failover_suburban", "mwan_suburban"])
+  guest_keys     = toset([])
   guest_services = { for key in local.guest_keys : key => local.service_mapping[key] }
 }
 output "guest_keys" { value = local.guest_keys }
@@ -88,6 +88,6 @@ locals {
   }, { guest_hosts = { for key, service in local.guest_services : "suburban/${service.vmid}" => service.hostname }, module_key_hosts = { "module.base" = { for key, service in local.guest_services : key => service.hostname } } })
 }
 module "suburban_host" { source = "../.." }
-output "lock_targets" { value = merge(local.lock_targets, { node_hosts = { for node in toset([for key in local.guest_keys : local.service_mapping[key].node]) : node => "suburban" }, lock_endpoints = merge({ suburban = module.suburban_host.lock_endpoint }, { for key, service in local.guest_services : service.hostname => { user = "root", address = service.ipv6 } }) }) }
+output "lock_targets" { value = merge(local.lock_targets, { node_hosts = { suburban = "suburban" }, lock_endpoints = merge({ suburban = module.suburban_host.lock_endpoint }, { for key, service in local.guest_services : service.hostname => { user = "root", address = service.ipv6 } }) }) }
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
