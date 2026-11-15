@@ -72,22 +72,19 @@ locals {
   }
 }
 output "service_mapping" { value = local.service_mapping }
-locals {
-  guest_keys     = toset([])
-  guest_services = { for key in local.guest_keys : key => local.service_mapping[key] }
-}
+locals { guest_keys = toset([]) }
 output "guest_keys" { value = local.guest_keys }
 locals {
-  lock_targets = merge({
+  lock_targets = {
     "module_hosts" = {
       "module.mwan"          = "suburban"
       "module.mwan_failover" = "suburban"
       "module.suburban"      = "suburban"
     }
     "lock_free_types" = ["mwan_network_config", "terraform_data"]
-  }, { guest_hosts = { for key, service in local.guest_services : "suburban/${service.vmid}" => service.hostname }, module_key_hosts = { "module.base" = { for key, service in local.guest_services : key => service.hostname } } })
+  }
 }
 module "suburban_host" { source = "../.." }
-output "lock_targets" { value = merge(local.lock_targets, { node_hosts = { suburban = "suburban" }, lock_endpoints = merge({ suburban = module.suburban_host.lock_endpoint }, { for key, service in local.guest_services : service.hostname => { user = "root", address = service.ipv6 } }) }) }
+output "lock_targets" { value = merge(local.lock_targets, { node_hosts = { suburban = "suburban" }, lock_endpoints = { suburban = module.suburban_host.lock_endpoint } }) }
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
