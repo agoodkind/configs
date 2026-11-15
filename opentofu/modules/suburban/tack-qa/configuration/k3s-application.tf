@@ -28,7 +28,7 @@ locals {
     secret_versions = {
       database_url       = 1
       audit_operator_dsn = 1
-      search_password    = 1
+      search_password    = 2
       search_cursor_key  = 1
       search_ca          = 1
       fdb_bootstrap      = 1
