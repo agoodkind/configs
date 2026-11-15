@@ -15,11 +15,16 @@ module "tack_release" {
   kind = local.guests["tack_qa_suburban"].kind
   role = "owner"
 
+  additional_compose_files = ["docker-compose.k3s-kafka.yml"]
+  health_url               = "http://[3d06:bad:b01:210:7ac::2]:8000/healthz"
+
   commit          = local.tack_release.commit
   server_digest   = local.tack_release.server_digest
   consumer_digest = local.tack_release.consumer_digest
 
   accountable_email = local.tack_release.accountable
+
+  depends_on = [pveguest_systemd_unit.k3s_kafka_listener]
 }
 
 module "tack_release_app" {
@@ -35,7 +40,7 @@ module "tack_release_app" {
 
   accountable_email = local.tack_release.accountable
 
-  depends_on = [module.tack_release]
+  depends_on = [module.tack_release, pveguest_systemd_unit.legacy_app_kafka]
 }
 
 moved {

@@ -104,6 +104,8 @@ module "base" {
   kind = "qemu"
   name = var.guest.service_key
 
+  networkd_wait_online_enabled = true
+
   public_keys                              = var.preparation.public_keys
   restricted_key_lines                     = var.preparation.restricted_key_lines
   timezone                                 = var.preparation.timezone
