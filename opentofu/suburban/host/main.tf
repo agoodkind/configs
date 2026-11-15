@@ -76,7 +76,7 @@ locals {
     grub_cmdline_linux_default = null
     network_interfaces_file    = null
 
-    host_artifact_workspaces = ["suburban/mwan"]
+    host_artifact_workspaces = []
   } }
 }
 

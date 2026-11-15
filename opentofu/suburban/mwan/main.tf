@@ -18,3 +18,13 @@ removed {
   from = module.suburban
   lifecycle { destroy = true }
 }
+
+removed {
+  from = pveguest_host_artifact.mwan_host
+  lifecycle { destroy = false }
+}
+
+removed {
+  from = pveguest_host_secret.smtp2go
+  lifecycle { destroy = false }
+}
