@@ -57,5 +57,5 @@ resource "pveguest_systemd_unit" "k3s_kafka_listener" {
     unit     = pveguest_file.k3s_kafka_unit["tack-k3s-kafka-listener.service"].write_id
   }
 
-  depends_on = [pveguest_systemd_unit.k3s_kafka_firewall]
+  depends_on = [pveguest_systemd_unit.compose_network]
 }
