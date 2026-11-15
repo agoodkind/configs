@@ -1,6 +1,6 @@
 locals {
   docker_guests = {
-    tack_app2_suburban = {
+    for guest_key in local.guest_keys : guest_key => {
       engine_versions = {
         "containerd.io"             = "2.3.4-2~debian.13~trixie"
         "docker-buildx-plugin"      = "0.37.0-1~debian.13~trixie"
@@ -14,7 +14,7 @@ locals {
         architecture = "amd64"
       }
       uplink_interface = "eth0"
-      ndp_proxy_prefix = local.service_mapping.tack_app2_suburban.docker_v6_subnet
+      ndp_proxy_prefix = local.service_mapping[guest_key].docker_v6_subnet
       sysctl_path      = "/etc/sysctl.d/99-tack-ipv6.conf"
     }
   }

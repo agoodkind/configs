@@ -5,7 +5,7 @@ locals {
       PORT                            = "8000"
       FDB_TRANSACTION_TIMEOUT         = "5s"
       TACK_DATAGEN_ALLOW_TARGET       = "qa"
-      OPENSEARCH_ENDPOINT             = "https://[3d06:bad:b01:210::5]:9200"
+      OPENSEARCH_ENDPOINT             = "https://[3d06:bad:b01:210::227]:9200"
       OPENSEARCH_USERNAME             = "tack_runtime"
       OPENSEARCH_PUBLIC_ENABLED       = "true"
       OPENSEARCH_MODEL_REPAIR_ENABLED = "true"
@@ -17,21 +17,18 @@ locals {
       LOG_MAX_BACKUPS                 = "0"
       LOG_MAX_AGE_DAYS                = "0"
       LOG_MAX_SIZE_MB                 = "100"
-      AUDIT_VALID_SIGNERS             = "ed25519:12bdb0b77570f79e"
-      AUDIT_KAFKA_BROKERS             = "[3d06:bad:b01:210:7ac::3]:29092"
+      AUDIT_KAFKA_BROKERS             = "[3d06:bad:b01:210::217]:9092"
     }
     ledger_hosts = {
-      yb1 = "3d06:bad:b01:210::220"
-      yb2 = "3d06:bad:b01:210::221"
-      yb3 = "3d06:bad:b01:210::222"
+      yb1 = "3d06:bad:b01:210::217"
     }
     secret_versions = {
-      database_url       = 1
-      audit_operator_dsn = 1
+      database_url       = 2
+      audit_operator_dsn = 2
       search_password    = 2
       search_cursor_key  = 1
       search_ca          = 1
-      fdb_bootstrap      = 1
+      fdb_bootstrap      = 2
     }
     registry_credentials_version = 1
   }

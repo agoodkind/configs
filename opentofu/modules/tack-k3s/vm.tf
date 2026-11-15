@@ -52,15 +52,15 @@ resource "proxmox_virtual_environment_vm" "server" {
   scsi_hardware = "virtio-scsi-single"
 
   cpu {
-    cores = 4
+    cores = var.vm_capacity.cores
     type  = "host"
   }
-  memory { dedicated = 8192 }
+  memory { dedicated = var.vm_capacity.memory_mib }
   disk {
     datastore_id = var.guest.datastore_id
     import_from  = proxmox_download_file.cloud_image.id
     interface    = "scsi0"
-    size         = 40
+    size         = var.vm_capacity.disk_gib
     discard      = "on"
     iothread     = true
   }

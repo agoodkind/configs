@@ -17,7 +17,7 @@ locals {
       ipv6_cidr         = "${local.tack_k3s_guest.ipv6}/64"
       ipv6_gateway      = module.opnsense_suburban.value.ipv6_vmnet
       dns_servers       = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"]
-      datastore_id      = "slow-zfs"
+      datastore_id      = "local-zfs"
       image_datastore   = "local"
       snippet_datastore = "local"
     })
@@ -36,14 +36,6 @@ locals {
       service_cidr = "fd42:7461:636b:200::/112"
       dns_address  = "fd42:7461:636b:200::a"
     }
-    snapshot = {
-      endpoint = "[3d06:bad:b01:210::218]:8333"
-      bucket   = "tack-backups"
-      folder   = "k3s/qa"
-      region   = "us-east-1"
-      insecure = true
-    }
-    snapshot_credentials_version             = 1
     server_token_version                     = 1
     scripts_updater_activation_run           = true
     scripts_updater_randomized_delay_seconds = 300

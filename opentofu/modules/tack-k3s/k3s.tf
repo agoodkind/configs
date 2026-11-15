@@ -1,33 +1,34 @@
 locals {
   node_ipv6 = split("/", var.guest.ipv6_cidr)[0]
   cluster_configuration = merge({
-    "cluster-init"                = true
-    "secrets-encryption"          = true
-    "node-name"                   = var.guest.hostname
-    "node-ip"                     = local.node_ipv6
-    "advertise-address"           = local.node_ipv6
-    "bind-address"                = "::"
-    "tls-san"                     = [var.guest.hostname, local.node_ipv6]
-    "cluster-cidr"                = var.cluster_network.pod_cidr
-    "service-cidr"                = var.cluster_network.service_cidr
-    "cluster-dns"                 = var.cluster_network.dns_address
-    "flannel-ipv6-masq"           = true
-    "disable"                     = ["traefik", "servicelb"]
-    "token-file"                  = "/etc/rancher/k3s/server-token"
-    "write-kubeconfig-mode"       = "0600"
-    "etcd-snapshot-compress"      = true
-    "etcd-snapshot-schedule-cron" = "0 */12 * * *"
-    "etcd-snapshot-retention"     = 5
-    "etcd-s3"                     = true
-    "etcd-s3-endpoint"            = var.snapshot.endpoint
-    "etcd-s3-insecure"            = var.snapshot.insecure
-    "etcd-s3-bucket"              = var.snapshot.bucket
-    "etcd-s3-folder"              = var.snapshot.folder
-    "etcd-s3-retention"           = 5
-    "etcd-s3-bucket-lookup-type"  = "path"
-    }, var.snapshot.region == null ? {} : {
-    "etcd-s3-region" = var.snapshot.region
-    }, var.snapshot.ca_pem == null ? {} : {
+    "cluster-init"          = true
+    "secrets-encryption"    = true
+    "node-name"             = var.guest.hostname
+    "node-ip"               = local.node_ipv6
+    "advertise-address"     = local.node_ipv6
+    "bind-address"          = "::"
+    "tls-san"               = [var.guest.hostname, local.node_ipv6]
+    "cluster-cidr"          = var.cluster_network.pod_cidr
+    "service-cidr"          = var.cluster_network.service_cidr
+    "cluster-dns"           = var.cluster_network.dns_address
+    "flannel-ipv6-masq"     = true
+    "disable"               = ["traefik", "servicelb"]
+    "token-file"            = "/etc/rancher/k3s/server-token"
+    "write-kubeconfig-mode" = "0600"
+    }, var.snapshots_enabled ? {
+    "etcd-snapshot-compress"       = true
+    "etcd-snapshot-schedule-cron"  = "0 */12 * * *"
+    "etcd-snapshot-retention"      = 5
+    "etcd-s3"                      = true
+    "etcd-s3-endpoint"             = var.snapshot.endpoint
+    "etcd-s3-insecure"             = var.snapshot.insecure
+    "etcd-s3-bucket"               = var.snapshot.bucket
+    "etcd-s3-folder"               = var.snapshot.folder
+    "etcd-s3-retention"            = 5
+    "etcd-s3-bucket-lookup-type"   = "path"
+    } : { "etcd-disable-snapshots" = true }, !var.snapshots_enabled || try(var.snapshot.region, null) == null ? {} : {
+    "etcd-s3-region"               = try(var.snapshot.region, null)
+    }, !var.snapshots_enabled || try(var.snapshot.ca_pem, null) == null ? {} : {
     "etcd-s3-endpoint-ca" = "/etc/rancher/k3s/s3-ca.pem"
   })
 }
@@ -65,11 +66,12 @@ resource "pveguest_file" "server_token" {
 }
 
 resource "pveguest_file" "snapshot_credentials" {
-  node = var.guest.node
-  vmid = proxmox_virtual_environment_vm.server.vm_id
-  kind = "qemu"
-  path = "/etc/rancher/k3s/config.yaml.d/90-s3-credentials.yaml"
-  mode = "0600"
+  count = var.snapshots_enabled ? 1 : 0
+  node  = var.guest.node
+  vmid  = proxmox_virtual_environment_vm.server.vm_id
+  kind  = "qemu"
+  path  = "/etc/rancher/k3s/config.yaml.d/90-s3-credentials.yaml"
+  mode  = "0600"
   content_wo = yamlencode({
     "etcd-s3-access-key" = var.snapshot_credentials.access_key
     "etcd-s3-secret-key" = var.snapshot_credentials.secret_key
@@ -78,7 +80,7 @@ resource "pveguest_file" "snapshot_credentials" {
 }
 
 resource "pveguest_file" "snapshot_ca" {
-  for_each = var.snapshot.ca_pem == null ? {} : { ca = var.snapshot.ca_pem }
+  for_each = !var.snapshots_enabled || try(var.snapshot.ca_pem, null) == null ? {} : { ca = var.snapshot.ca_pem }
 
   node    = var.guest.node
   vmid    = proxmox_virtual_environment_vm.server.vm_id
@@ -108,11 +110,16 @@ resource "pveguest_systemd_unit" "server" {
     binary               = pveguest_download.k3s.write_id
     configuration        = pveguest_file.configuration.write_id
     server_token         = pveguest_file.server_token.write_id
-    snapshot_credentials = pveguest_file.snapshot_credentials.write_id
+    snapshot_credentials = try(pveguest_file.snapshot_credentials[0].write_id, "disabled")
     registry             = pveguest_file.registry.write_id
     application_files    = pveguest_file.application_files_order.write_id
     service              = pveguest_file.service.write_id
   }, { for key, certificate in pveguest_file.snapshot_ca : key => certificate.write_id })
 
   depends_on = [pveguest_systemd_unit.application_files]
+}
+
+moved {
+  from = pveguest_file.snapshot_credentials
+  to   = pveguest_file.snapshot_credentials[0]
 }

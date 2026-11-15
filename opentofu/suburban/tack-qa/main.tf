@@ -65,16 +65,7 @@ module "base" {
 
   scripts_updater_activation_run           = each.value.scripts_updater_timer.activation_run
   scripts_updater_randomized_delay_seconds = each.value.scripts_updater_timer.randomized_delay_seconds
-}
-
-# Ansible created the SMTP2GO user and /etc/msmtprc on each guest.
-# The pveguest provider imports the existing mail configuration and keeps the
-# SMTP2GO password. A new pveguest_mail_relay resource would rotate the
-# password.
-import {
-  for_each = module.guest_inputs.mail_relay_import_ids
-  to       = module.base[each.key].pveguest_mail_relay.smtp["smtp2go"]
-  id       = each.value
+  depends_on                               = [module.suburban]
 }
 
 module "suburban" {
@@ -85,7 +76,6 @@ module "suburban" {
   ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping = local.service_mapping
   host_networks   = module.suburban_config.bridges
-  tack_search     = module.configuration.tack_search
 }
 
 output "tack_qa_suburban_vmid" {

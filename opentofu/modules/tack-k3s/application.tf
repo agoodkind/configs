@@ -16,12 +16,12 @@ locals {
     kind       = "Deployment"
     metadata   = { name = "tack-app", namespace = "tack" }
     spec = {
-      replicas = 2
+      replicas = var.application_replicas
       selector = { matchLabels = local.application_labels }
-      strategy = {
-        type          = "RollingUpdate"
-        rollingUpdate = { maxUnavailable = 0, maxSurge = 1 }
-      }
+      strategy = merge(
+        { type = var.application_replicas == 1 ? "Recreate" : "RollingUpdate" },
+        var.application_replicas == 1 ? {} : { rollingUpdate = { maxUnavailable = 0, maxSurge = 1 } },
+      )
       template = {
         metadata = {
           labels = local.application_labels

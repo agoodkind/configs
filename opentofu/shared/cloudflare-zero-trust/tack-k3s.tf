@@ -56,10 +56,11 @@ module "tack_cloudflared" {
   source   = "../../modules/tack-k3s/cloudflared"
   for_each = local.tack_connectors
 
-  guest         = each.value.guest
-  tunnel_id     = cloudflare_zero_trust_tunnel_cloudflared.tack_k3s[each.key].id
-  token         = data.cloudflare_zero_trust_tunnel_cloudflared_token.tack_k3s[each.key].token
-  token_version = each.value.token_version
+  guest           = each.value.guest
+  tunnel_id       = cloudflare_zero_trust_tunnel_cloudflared.tack_k3s[each.key].id
+  token           = data.cloudflare_zero_trust_tunnel_cloudflared_token.tack_k3s[each.key].token
+  token_version   = each.value.token_version
+  connector_count = each.value.connector_count
 
   depends_on = [cloudflare_zero_trust_tunnel_cloudflared_config.tack_k3s]
 }

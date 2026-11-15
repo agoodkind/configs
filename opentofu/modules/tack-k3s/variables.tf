@@ -109,9 +109,10 @@ variable "snapshot" {
     region   = optional(string)
     insecure = optional(bool, false)
   })
+  default = null
 
   validation {
-    condition = (
+    condition = var.snapshot == null ? !var.snapshots_enabled : (
       length(trimspace(var.snapshot.endpoint)) > 0 &&
       !strcontains(var.snapshot.endpoint, "://") &&
       length(trimspace(var.snapshot.bucket)) > 0 &&
@@ -129,9 +130,10 @@ variable "snapshot_credentials" {
   })
   sensitive = true
   ephemeral = true
+  default   = null
 
   validation {
-    condition     = length(var.snapshot_credentials.access_key) > 0 && length(var.snapshot_credentials.secret_key) > 0
+    condition     = var.snapshot_credentials == null ? !var.snapshots_enabled : (length(var.snapshot_credentials.access_key) > 0 && length(var.snapshot_credentials.secret_key) > 0)
     error_message = "Supply both S3 access and secret keys from the protected credential source."
   }
 }
@@ -139,6 +141,7 @@ variable "snapshot_credentials" {
 variable "snapshot_credentials_version" {
   description = "Increment this version when the protected S3 credentials change."
   type        = number
+  default     = 1
 
   validation {
     condition     = var.snapshot_credentials_version >= 1 && floor(var.snapshot_credentials_version) == var.snapshot_credentials_version

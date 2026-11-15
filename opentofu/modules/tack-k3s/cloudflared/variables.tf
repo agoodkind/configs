@@ -5,6 +5,16 @@ terraform {
   }
 }
 
+variable "connector_count" {
+  description = "Number of cloudflared connectors for the cluster."
+  type        = number
+  default     = 2
+  validation {
+    condition     = contains([1, 2], var.connector_count)
+    error_message = "Set connector_count to one or two."
+  }
+}
+
 variable "guest" {
   description = "Existing k3s VM identity and node DNS resolvers."
   type = object({

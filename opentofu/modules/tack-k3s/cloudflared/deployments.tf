@@ -1,6 +1,6 @@
 locals {
   image      = "docker.io/cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba"
-  connectors = { a = 2000, b = 2001 }
+  connectors = { for key, port in { a = 2000, b = 2001 } : key => port if key == "a" || var.connector_count == 2 }
   pod_templates = {
     for connector, port in local.connectors : connector => {
       metadata = { labels = { app = "cloudflared-${connector}" } }
