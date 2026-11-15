@@ -58,27 +58,6 @@
       "group": "root"
     },
     {
-      "destination": "/etc/systemd/system/mwan-opnsense-host.service",
-      "source": "asset:agoodkind/opnsensectl:cmd/opnsensectl/mwan-opnsense-host.service",
-      "mode": "0644",
-      "owner": "root",
-      "group": "root"
-    },
-    {
-      "destination": "/etc/systemd/system/mwan-opnsense-drain.service",
-      "source": "asset:agoodkind/opnsensectl:cmd/opnsensectl/mwan-opnsense-drain.service",
-      "mode": "0644",
-      "owner": "root",
-      "group": "root"
-    },
-    {
-      "destination": "/etc/systemd/system/mwan-watchdog-testbed.service",
-      "source": "template:proxmox/services/mwan-watchdog.service.j2",
-      "mode": "0644",
-      "owner": "root",
-      "group": "root"
-    },
-    {
       "destination": "/etc/systemd/system/mwan-ifmgr.service.d/suburban-host-ipv6-policy.conf",
       "source": "asset:agoodkind/configs:proxmox/services/mwan-ifmgr-suburban-host-ipv6-policy.conf",
       "mode": "0644",
@@ -119,8 +98,7 @@
       "min_length": 16,
       "max_length": 128,
       "consumer_units": [
-        "mwan-ifmgr.service",
-        "mwan-watchdog-testbed.service"
+        "mwan-ifmgr.service"
       ]
     }
   ],
