@@ -1,0 +1,12 @@
+[Unit]
+Description=Restrict Tack QA Kafka clients
+Before=tack-qa-data.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/tack-qa/kafka.nft
+ExecReload=/usr/sbin/nft -f /etc/tack-qa/kafka.nft
+
+[Install]
+WantedBy=multi-user.target

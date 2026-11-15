@@ -1,0 +1,10 @@
+table inet tack_qa_kafka
+flush table inet tack_qa_kafka
+table inet tack_qa_kafka {
+  chain input {
+    type filter hook input priority -5; policy accept;
+    iifname "lo" tcp dport 9092 accept
+    ip6 saddr { ${application_address}, ${data_address}, ${operator_subnet} } tcp dport 9092 accept
+    tcp dport 9092 reject with tcp reset
+  }
+}

@@ -1,7 +1,7 @@
 locals {
   units = {
     data = join("\n", [
-      "[Unit]", "Description=Start fresh Tack QA data services", "After=docker.service", "Requires=docker.service",
+      "[Unit]", "Description=Start fresh Tack QA data services", "After=docker.service tack-qa-kafka.service", "Requires=docker.service tack-qa-kafka.service",
       "[Service]", "Type=oneshot", "RemainAfterExit=yes", "WorkingDirectory=/opt/tack-qa/data", "TimeoutStartSec=280",
       "ExecStartPre=/usr/bin/mkdir -p /etc/foundationdb",
       "ExecStartPre=/usr/bin/chown -R 1000:1000 /opt/tack-qa/ledger",
@@ -28,13 +28,14 @@ resource "pveguest_file" "unit" {
   content  = each.value
 }
 resource "pveguest_systemd_unit" "runtime" {
-  for_each = local.units
-  node     = local.guests[each.key].node
-  vmid     = local.guests[each.key].vmid
-  kind     = local.guests[each.key].kind
-  name     = "tack-qa-${each.key}.service"
-  enabled  = true
-  active   = true
+  for_each   = local.units
+  node       = local.guests[each.key].node
+  vmid       = local.guests[each.key].vmid
+  kind       = local.guests[each.key].kind
+  name       = "tack-qa-${each.key}.service"
+  enabled    = true
+  active     = true
+  depends_on = [pveguest_systemd_unit.kafka_firewall]
   restart_on = merge(
     { unit = pveguest_file.unit[each.key].write_id },
     { for key, value in pveguest_file.configuration : key => value.write_id },
@@ -68,5 +69,5 @@ resource "pveguest_apt_packages" "bootstrap" {
   node     = var.data_guest.node
   vmid     = var.data_guest.vmid
   kind     = var.data_guest.kind
-  packages = ["jq"]
+  packages = ["jq", "nftables"]
 }

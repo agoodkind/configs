@@ -68,9 +68,9 @@ locals {
         mem_limit = "768m"
         environment = {
           KAFKA_NODE_ID                                  = "1", KAFKA_PROCESS_ROLES = "broker,controller"
-          KAFKA_LISTENERS                                = "PLAINTEXT://[::]:9092,CONTROLLER://[::]:9093"
+          KAFKA_LISTENERS                                = "PLAINTEXT://[::]:9092,CONTROLLER://[::1]:9093"
           KAFKA_ADVERTISED_LISTENERS                     = "PLAINTEXT://[${var.data_guest.ipv6}]:9092"
-          KAFKA_CONTROLLER_QUORUM_VOTERS                 = "1@[${var.data_guest.ipv6}]:9093"
+          KAFKA_CONTROLLER_QUORUM_VOTERS                 = "1@[::1]:9093"
           KAFKA_LISTENER_SECURITY_PROTOCOL_MAP           = "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
           KAFKA_INTER_BROKER_LISTENER_NAME               = "PLAINTEXT", KAFKA_CONTROLLER_LISTENER_NAMES = "CONTROLLER"
           KAFKA_LOG_DIRS                                 = "/var/lib/kafka/data", KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR = "1"

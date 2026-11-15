@@ -11,6 +11,14 @@ variable "data_guest" {
 variable "search_guest" {
   type = object({ node = string, vmid = number, kind = string, ipv6 = string, subnet = string, gateway = string })
 }
+variable "application_address" {
+  description = "IPv6 address of the single Tack application VM permitted to use Kafka."
+  type        = string
+  validation {
+    condition     = can(cidrhost("${var.application_address}/128", 0)) && strcontains(var.application_address, ":")
+    error_message = "Set application_address to the application VM IPv6 address."
+  }
+}
 variable "release_commit" {
   type = string
   validation {
