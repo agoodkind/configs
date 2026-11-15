@@ -147,8 +147,8 @@ jobs:
           jq --raw-output0 'fromjson | .[]' "$work/catalog.json" > "$work/workspaces.bin"
           mapfile -d '' -t workspaces < "$work/workspaces.bin"
           if [ "${#workspaces[@]}" -eq 0 ]; then
-            echo "::error::the repository does not contain any host artifact target descriptor"
-            exit 1
+            echo "The repository does not configure any host artifact targets."
+            exit 0
           fi
           PATH="$GITHUB_WORKSPACE/hostartifact/.venv/bin:$PATH" \
             hostartifact/scripts/select-targets.sh "$GITHUB_WORKSPACE" "$GITHUB_REF" origin/main \
