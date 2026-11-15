@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import re
+import stat
 import sys
+import tempfile
 from pathlib import Path
 
 OLD_ORIGIN = "h2c://[3d06:bad:b01::117]:8000"
@@ -11,6 +14,26 @@ ROUTES_PATH = Path("/etc/traefik/dynamic/routes.yml")
 URL_PATTERN = re.compile(r'          - url: "([^"\r\n]+)"(?P<ending>\r?\n)?')
 HIERARCHY = ("http", "services", "tack-service", "loadBalancer", "servers")
 INDENT_WIDTH = 2
+
+
+def save_routes(path: Path, updated: bytes) -> None:
+    original_stat = path.stat()
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".tack-routes-", suffix=".tmp", dir=path.parent
+    )
+    temporary_path = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as temporary_file:
+            os.fchown(temporary_file.fileno(), original_stat.st_uid, original_stat.st_gid)
+            os.fchmod(temporary_file.fileno(), stat.S_IMODE(original_stat.st_mode))
+            temporary_file.write(updated)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        if temporary_path.read_bytes() != updated:
+            raise ValueError("Could not verify the temporary Tack routes")
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def find_block(
@@ -69,9 +92,7 @@ def replace_origin(path: Path) -> None:
     if verified is None or verified.group(1) != NEW_ORIGIN:
         raise ValueError("Could not verify the replacement Tack URL")
     updated = "".join(lines).encode("utf-8")
-    path.write_bytes(updated)
-    if path.read_bytes() != updated:
-        raise ValueError("Could not verify the saved Tack routes")
+    save_routes(path, updated)
 
 
 def main() -> None:
