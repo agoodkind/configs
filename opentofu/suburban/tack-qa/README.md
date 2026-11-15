@@ -3,14 +3,20 @@
 This root retains the existing encrypted backend and provider identities for state
 retirement. It does not provision QA guests or applications.
 
-1. Review a plan through `./configsctl tofu suburban/tack-qa plan` after approval
-   for state reconciliation. The removed blocks forget records on the deleted
-   guests without attempting guest access.
-2. Inspect deletions for the QA cloud-init snippet, cloud image, and hypervisor
-   search-caller files. These assets belong to the surviving hypervisor. Their
-   resource addresses do not have `destroy = false`; a later approved apply can
-   remove them. Verify that the image does not serve another VM before deletion.
-3. Review and apply the retirement plan only with separate operator approval.
+OpenTofu refreshes stale resources before processing removed blocks. Disable
+refresh during retirement planning to avoid contacting deleted guests.
+
+1. Choose a private absolute path for the encrypted saved plan. After approval
+   for state reconciliation, run
+   `./configsctl tofu suburban/tack-qa plan -refresh=false -out=<private-plan-path>`.
+2. Independently inspect the surviving hypervisor and verify the identities and
+   ownership of the QA cloud-init snippet, cloud image, and search-caller files.
+   The plan does not refresh these assets. Verify that another VM does not use
+   the image before approving deletion.
+3. Inspect the saved plan. Require the removed blocks to forget deleted guest
+   records. Require asset deletions to match the independent hypervisor checks.
+4. After separate operator approval, apply that exact saved plan with
+   `./configsctl tofu suburban/tack-qa apply <private-plan-path>`.
 
 The search-caller module added the QA address to an existing search proxy file.
 Deleting its script and unit does not remove that existing admission entry.
