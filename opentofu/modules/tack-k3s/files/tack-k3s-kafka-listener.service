@@ -10,7 +10,8 @@ AssertPathExists=/root/tack/.env
 [Service]
 Type=simple
 WorkingDirectory=/root/tack
-ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.k3s-kafka.yml up --no-deps --no-build --exit-code-from kafka kafka
+ExecStartPre=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.k3s-kafka.yml up -d --wait --wait-timeout 90 --no-deps --no-build kafka
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.k3s-kafka.yml up --no-recreate --no-deps --no-build --exit-code-from kafka kafka
 ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.k3s-kafka.yml stop kafka
 Restart=always
 RestartSec=5s

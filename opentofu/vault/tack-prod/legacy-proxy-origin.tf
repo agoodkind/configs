@@ -1,7 +1,15 @@
 locals {
-  legacy_proxy_origin    = "h2c://[3d06:bad:b01:0:7ac::2]:8000"
-  legacy_proxy_old_match = "h2c://[[]3d06:bad:b01::117[]]:8000"
-  legacy_proxy_match     = "h2c://[[]3d06:bad:b01:0:7ac::2[]]:8000"
+  legacy_proxy_origin = "h2c://[3d06:bad:b01:0:7ac::2]:8000"
+}
+
+resource "pveguest_file" "legacy_proxy_origin_script" {
+  node = "vault"
+  vmid = 110
+  kind = "lxc"
+
+  path    = "/usr/local/sbin/tack-legacy-proxy-origin.py"
+  content = file("${path.module}/files/tack-legacy-proxy-origin.py")
+  mode    = "0755"
 }
 
 resource "pveguest_file" "legacy_proxy_origin_unit" {
@@ -19,9 +27,7 @@ resource "pveguest_file" "legacy_proxy_origin_unit" {
     "Type=oneshot",
     "RemainAfterExit=yes",
     "TimeoutStartSec=30",
-    "ExecStartPre=/usr/bin/grep -q -e ${local.legacy_proxy_old_match} -e ${local.legacy_proxy_match} /etc/traefik/dynamic/routes.yml",
-    "ExecStart=/usr/bin/sed -i s|${local.legacy_proxy_old_match}|${local.legacy_proxy_origin}| /etc/traefik/dynamic/routes.yml",
-    "ExecStartPost=/usr/bin/grep -F -q ${local.legacy_proxy_origin} /etc/traefik/dynamic/routes.yml",
+    "ExecStart=/usr/bin/python3 /usr/local/sbin/tack-legacy-proxy-origin.py",
     "",
   ])
 }
@@ -38,6 +44,7 @@ resource "pveguest_systemd_unit" "legacy_proxy_origin" {
   restart_on = {
     unit   = pveguest_file.legacy_proxy_origin_unit.write_id
     origin = local.legacy_proxy_origin
+    script = pveguest_file.legacy_proxy_origin_script.write_id
   }
 
   depends_on = [
