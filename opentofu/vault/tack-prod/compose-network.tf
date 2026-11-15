@@ -18,6 +18,15 @@ resource "pveguest_file" "compose_network_unit" {
   content = file("${path.module}/../../modules/tack-k3s/files/tack-compose-network.service")
 }
 
+resource "pveguest_file" "compose_network_script" {
+  node    = local.k3s_kafka_guest.node
+  vmid    = local.k3s_kafka_guest.vmid
+  kind    = local.k3s_kafka_guest.kind
+  path    = "/usr/local/sbin/tack-compose-network"
+  mode    = "0755"
+  content = file("${path.module}/../../modules/tack-k3s/files/tack-compose-network.sh")
+}
+
 resource "pveguest_systemd_unit" "compose_network" {
   node    = local.k3s_kafka_guest.node
   vmid    = local.k3s_kafka_guest.vmid
@@ -28,6 +37,7 @@ resource "pveguest_systemd_unit" "compose_network" {
 
   restart_on = {
     compose = pveguest_download.compose_network.write_id
+    script  = pveguest_file.compose_network_script.write_id
     unit    = pveguest_file.compose_network_unit.write_id
   }
 

@@ -11,10 +11,6 @@ AssertPathExists=/etc/systemd/system/tack-k3s-kafka-listener.service
 [Service]
 Type=oneshot
 WorkingDirectory=/root/tack
-ExecStart=/usr/bin/systemctl daemon-reload
-ExecStart=/usr/bin/systemctl stop tack-k3s-kafka-listener.service
-ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.k3s-kafka.yml down
-ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.k3s-kafka.yml up -d --no-deps --no-build app audit-consumer
-ExecStart=/usr/bin/systemctl start tack-k3s-kafka-listener.service
+ExecStart=/usr/bin/timeout --signal=TERM --kill-after=10s 240 /usr/local/sbin/tack-compose-network
 RemainAfterExit=yes
 TimeoutStartSec=280
