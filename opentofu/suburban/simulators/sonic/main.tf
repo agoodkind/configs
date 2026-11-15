@@ -14,7 +14,6 @@ locals {
   }
 }
 
-# Retain the backend and providers until OpenTofu destroys the simulator guests.
 removed {
   from = module.suburban
   lifecycle { destroy = true }

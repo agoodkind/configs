@@ -14,7 +14,6 @@ locals {
   }
 }
 
-# Destroy the retired guests through the existing backend and provider identities.
 removed {
   from = module.suburban
   lifecycle { destroy = true }
