@@ -1,0 +1,25 @@
+cluster.name: tack-qa-search
+action.auto_create_index: "-node-pages-*,+*"
+node.name: tack-qa-search1
+network.host: "::"
+discovery.type: single-node
+plugins.security.ssl.transport.pemcert_filepath: tack/node.pem
+plugins.security.ssl.transport.pemkey_filepath: tack/node-key.pem
+plugins.security.ssl.transport.pemtrustedcas_filepath: tack/ca.pem
+plugins.security.ssl.transport.enforce_hostname_verification: false
+plugins.security.ssl.http.enabled: true
+plugins.security.ssl.http.pemcert_filepath: tack/node.pem
+plugins.security.ssl.http.pemkey_filepath: tack/node-key.pem
+plugins.security.ssl.http.pemtrustedcas_filepath: tack/ca.pem
+plugins.security.authcz.admin_dn:
+  - ${jsonencode(admin_dn)}
+plugins.security.nodes_dn:
+  - ${jsonencode(node_dn)}
+plugins.security.allow_default_init_securityindex: false
+plugins.security.restapi.roles_enabled: ["all_access"]
+plugins.ml_commons.only_run_on_ml_node: false
+search.max_open_pit_context: 3000
+cluster.routing.allocation.disk.watermark.low: 1gb
+cluster.routing.allocation.disk.watermark.high: 1gb
+cluster.routing.allocation.disk.watermark.flood_stage: 1gb
+plugins.ml_commons.disk_free_space_threshold: 1gb
