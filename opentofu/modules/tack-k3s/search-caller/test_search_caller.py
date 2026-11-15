@@ -49,6 +49,7 @@ class SearchCallerTest(unittest.TestCase):
             HEADER.replace("ipAllowList:", "ipAllowList: {}") + ENTRIES + SUFFIX,
             HEADER + '          - "invalid"\n' + SUFFIX,
             HEADER + ENTRIES + '    tack-search-callers: {}\n' + SUFFIX,
+            HEADER.replace("http:\n", "http:\n other:\n") + ENTRIES + SUFFIX,
         ):
             with self.subTest(configuration=configuration), tempfile.TemporaryDirectory() as folder:
                 path = Path(folder) / "traefik.yml"

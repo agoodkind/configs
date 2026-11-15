@@ -5,7 +5,6 @@ import ipaddress
 import os
 import re
 import stat
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -14,7 +13,6 @@ ROUTES_PATH = Path("/etc/tack-search-proxy/traefik.yml")
 CALLER_PATTERN = re.compile(r'          - "([^"\r\n]+)"(?P<ending>\r?\n)')
 HIERARCHY = ("http", "middlewares", "tack-search-callers", "ipAllowList", "sourceRange")
 INDENT_WIDTH = 2
-RESTART_TIMEOUT_SECONDS = 45
 
 
 def save_routes(path: Path, updated: bytes) -> None:
@@ -47,6 +45,11 @@ def find_block(
     )
     matches: list[int] = []
     for index in range(start, end):
+        line = lines[index]
+        if line.strip() and not line.lstrip().startswith("#"):
+            line_indent = len(line) - len(line.lstrip(" "))
+            if line_indent < indent:
+                raise ValueError(f"Unexpected child indentation before {key}")
         if key_pattern.match(lines[index]):
             matches.append(index)
     if len(matches) != 1:
@@ -103,12 +106,7 @@ def add_caller(path: Path, caller: str) -> bool:
 def main() -> None:
     if len(sys.argv) != 2:
         raise ValueError("Usage: tack-search-caller.py <node-ipv6-address>")
-    if add_caller(ROUTES_PATH, sys.argv[1]):
-        subprocess.run(
-            ["/usr/bin/systemctl", "restart", "tack-search-proxy.service"],
-            check=True,
-            timeout=RESTART_TIMEOUT_SECONDS,
-        )
+    add_caller(ROUTES_PATH, sys.argv[1])
 
 
 if __name__ == "__main__":

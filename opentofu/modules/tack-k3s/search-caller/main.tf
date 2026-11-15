@@ -35,6 +35,7 @@ locals {
         "RemainAfterExit=yes",
         "TimeoutStartSec=60",
         "ExecStart=/usr/bin/python3 /usr/local/sbin/tack-search-caller.py ${var.caller}",
+        "ExecStartPost=/usr/bin/timeout 45s /usr/bin/systemctl restart tack-search-proxy.service",
         "",
       ])
       mode = "0644"
