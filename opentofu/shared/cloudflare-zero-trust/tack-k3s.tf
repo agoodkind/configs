@@ -5,7 +5,6 @@ locals {
   }
   tack_proxmox_credentials = {
     prod = var.vault_proxmox_token_secret
-    qa   = var.vault_suburban_testbed_pve_token_secret
   }
   tack_ingress = {
     prod = concat([
@@ -15,7 +14,6 @@ locals {
         origin_request = { http_host_header = "tack.home.goodkind.io" }
       }
     ], [{ service = "http_status:404" }])
-    qa = [{ service = "http://tack-app.tack.svc.cluster.local:8000" }]
   }
 }
 

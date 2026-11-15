@@ -86,19 +86,12 @@ locals {
     "mwan_failover",
     "mwan_failover_suburban",
     "mwan_suburban",
-    "seaweedfs_suburban",
     "tack",
     "tack_app2",
-    "tack_app2_suburban",
     "tack_data1",
-    "tack_data1_suburban",
     "tack_data2",
-    "tack_data2_suburban",
     "tack_data3",
-    "tack_data3_suburban",
-    "tack_qa_suburban",
     "tack_search1",
-    "tack_search1_suburban",
   ]))
 
   default_mail_password_version = 1

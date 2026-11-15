@@ -2,7 +2,6 @@ locals {
   tack_tunnel_id = "4b602332-6413-4f95-8874-561ed6d9b266"
   tack_k3s_tunnel_names = {
     prod = "tack-k3s"
-    qa   = "tack-k3s-qa"
   }
 
   tack_domain_aliases = {

@@ -11,8 +11,8 @@ Run every tofu command through configsctl. configsctl reads the credentials
 from the Ansible vault.
 
 ```bash
-./configsctl tofu suburban/tack-qa plan
-./configsctl tofu suburban/tack-qa apply
+./configsctl tofu vault/tack-prod plan
+./configsctl tofu vault/tack-prod apply
 ```
 
 Each directory with a `backend` block defines a workspace with its own state
@@ -30,7 +30,7 @@ uses that configuration. Public providers retain direct registry installation.
 
 ```bash
 ./configsctl providers install
-./configsctl tofu suburban/tack-qa init
+./configsctl tofu vault/tack-prod init
 ```
 
 Run the installer again after a change to [providers.pin](guest/providers.pin).
