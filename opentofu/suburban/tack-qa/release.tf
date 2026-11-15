@@ -1,8 +1,8 @@
 locals {
   tack_release = {
-    commit          = "4e64ca7ab6a5b20563adaf6c1983ce0263bafc55"
-    server_digest   = "sha256:24be4b24f42bb57d3d55a0e97f0db587c4f3976a78ce1270b5d3f841b942185b"
-    consumer_digest = "sha256:8a398a4a49c003408b47bb967586e65640f6109f99bca14f16b93b609e128804"
+    commit          = "74576c94ab9ec6662e9634978d72cb6f06de4470"
+    server_digest   = "sha256:c588661aca86bc3cb943d231b5eb04a0fed76c02fbd4b9eb44e6ca191db2957e"
+    consumer_digest = "sha256:59911e352a6a7012c6b4b95461a4855fb46e11de250a2a210cb623f7e2d0e3e2"
     accountable     = "alex@goodkind.io"
   }
 }
