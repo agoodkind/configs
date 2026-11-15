@@ -72,17 +72,30 @@ variable "accountable_email" {
   type        = string
 }
 
+variable "health_url" {
+  description = "URL checked after the app restarts."
+  type        = string
+  default     = "http://[::1]:8000/healthz"
+}
+
+variable "additional_compose_files" {
+  description = "Compose files appended after the existing base and override files."
+  type        = list(string)
+  default     = []
+}
+
 locals {
-  install_dir        = "/root/tack"
-  docker             = "/usr/bin/docker compose"
-  is_owner           = var.role == "owner"
-  services           = local.is_owner ? "app audit-consumer" : "app"
-  operator_namespace = "0a6f7572-cafe-dead-beef-000000000004"
-  operator_email     = lower(var.accountable_email)
-  operator_id        = uuidv5(local.operator_namespace, local.operator_email)
-  identity           = "--operator-service tack-release --operator-session ${var.commit} --operator-id ${local.operator_id} --operator-email ${local.operator_email} --deploy-commit ${var.commit}"
-  verify_scope       = local.is_owner ? "--tack-audit-consumer-digest ${var.consumer_digest}" : "--service app"
-  audit_reader_files = "-f docker-compose.yml -f docker-compose.override.yml -f docker-compose.audit-reader.yml"
+  install_dir         = "/root/tack"
+  compose_files       = length(var.additional_compose_files) == 0 ? [] : concat(["docker-compose.yml", "docker-compose.override.yml"], var.additional_compose_files)
+  docker              = join(" ", concat(["/usr/bin/docker compose"], [for path in local.compose_files : "-f ${path}"]))
+  is_owner            = var.role == "owner"
+  services            = local.is_owner ? "app audit-consumer" : "app"
+  operator_namespace  = "0a6f7572-cafe-dead-beef-000000000004"
+  operator_email      = lower(var.accountable_email)
+  operator_id         = uuidv5(local.operator_namespace, local.operator_email)
+  identity            = "--operator-service tack-release --operator-session ${var.commit} --operator-id ${local.operator_id} --operator-email ${local.operator_email} --deploy-commit ${var.commit}"
+  verify_scope        = local.is_owner ? "--tack-audit-consumer-digest ${var.consumer_digest}" : "--service app"
+  audit_reader_docker = join(" ", concat(["/usr/bin/docker compose"], [for path in concat(["docker-compose.yml", "docker-compose.override.yml", "docker-compose.audit-reader.yml"], var.additional_compose_files) : "-f ${path}"]))
 
   stage_units = {
     "tack-release-pull.service" = {
@@ -98,7 +111,7 @@ locals {
         "ExecStartPre=/usr/bin/grep -q ^TACK_IMAGE_TAG= .env",
         "ExecStartPre=/usr/bin/sed -i -E s/^TACK_IMAGE_TAG=.*/TACK_IMAGE_TAG=${var.commit}/ .env",
         "ExecStart=${local.docker} up -d --wait --wait-timeout 60 --no-deps --no-build ${local.services}",
-        "ExecStartPost=/usr/bin/curl --fail --silent --show-error --max-time 5 --retry 40 --retry-delay 5 --retry-all-errors --retry-max-time 200 http://[::1]:8000/healthz",
+        "ExecStartPost=/usr/bin/curl --fail --silent --show-error --max-time 5 --retry 40 --retry-delay 5 --retry-all-errors --retry-max-time 200 ${var.health_url}",
       ]
     }
     "tack-release-verify.service" = {
@@ -119,7 +132,7 @@ locals {
     "tack-release-dlq-inspect.service" = {
       description = "Run ops audit dlq inspect after the release"
       lines = [
-        "ExecStart=${local.docker} ${local.audit_reader_files} run --rm audit-ops ops audit dlq inspect --execute ${local.identity}",
+        "ExecStart=${local.audit_reader_docker} run --rm audit-ops ops audit dlq inspect --execute ${local.identity}",
       ]
     }
   } : {}

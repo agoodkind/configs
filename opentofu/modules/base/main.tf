@@ -129,6 +129,12 @@ variable "timezone" {
   default     = null
 }
 
+variable "networkd_wait_online_enabled" {
+  description = "Whether systemd-networkd-wait-online.service stays enabled while inactive."
+  type        = bool
+  default     = false
+}
+
 variable "mail_relay" {
   description = "The guest mail relay uses this username, host, port, from address, and password_version. A null value omits the mail relay resource."
   type = object({
@@ -424,7 +430,7 @@ resource "pveguest_systemd_unit" "networkd_wait_online" {
   kind = var.kind
 
   name    = "systemd-networkd-wait-online.service"
-  enabled = false
+  enabled = var.networkd_wait_online_enabled
   active  = false
 }
 
