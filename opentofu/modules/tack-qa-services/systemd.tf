@@ -12,7 +12,7 @@ locals {
     search = join("\n", [
       "[Unit]", "Description=Start fresh Tack QA search", "After=docker.service", "Requires=docker.service",
       "[Service]", "Type=oneshot", "RemainAfterExit=yes", "WorkingDirectory=/opt/tack-qa/search", "TimeoutStartSec=280",
-      "ExecStartPre=/usr/sbin/sysctl -w vm.max_map_count=262144",
+      "ExecStartPre=/opt/tack-qa/search/check-host.sh",
       "ExecStartPre=/usr/bin/chown -R 1000:1000 /opt/tack-qa/search",
       "ExecStart=/usr/bin/docker compose up -d opensearch",
       "ExecStartPost=/opt/tack-qa/search/security.sh", "[Install]", "WantedBy=multi-user.target", ""

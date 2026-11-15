@@ -6,7 +6,7 @@ if [[ ! -f /var/lib/tack-qa/bootstrap/fdb.complete ]]; then
     docker compose exec -T fdb fdbcli -C /etc/foundationdb/fdb.cluster --timeout 20 --exec 'status json' > /var/lib/tack-qa/bootstrap/fdb-status.json
     if jq -e '.client.database_status.available == true' /var/lib/tack-qa/bootstrap/fdb-status.json; then
         printf 'FoundationDB already configured.\n'
-    elif jq -e '.cluster.recovery_state.name == "configuration_missing" or .cluster.recovery_state.name == "configuration_never_created"' /var/lib/tack-qa/bootstrap/fdb-status.json; then
+    elif jq -e '.cluster.recovery_state.name == "configuration_never_created"' /var/lib/tack-qa/bootstrap/fdb-status.json; then
         docker compose exec -T fdb fdbcli -C /etc/foundationdb/fdb.cluster --timeout 30 --exec 'configure new single ssd'
     else
         printf 'FoundationDB status does not establish an unconfigured database; initialization refused.\n' >&2
@@ -14,7 +14,11 @@ if [[ ! -f /var/lib/tack-qa/bootstrap/fdb.complete ]]; then
         exit 1
     fi
     for i in {1..12}; do
-        if docker compose exec -T fdb fdbcli -C /etc/foundationdb/fdb.cluster --timeout 5 --exec 'status minimal'; then
+        if ! docker compose exec -T fdb fdbcli -C /etc/foundationdb/fdb.cluster --timeout 5 --exec 'status json' > /var/lib/tack-qa/bootstrap/fdb-status.json; then
+            printf 'FoundationDB status request failed during readiness verification.\n' >&2
+            exit 1
+        fi
+        if jq -e '.client.database_status.available == true' /var/lib/tack-qa/bootstrap/fdb-status.json; then
             break
         fi
         printf 'FoundationDB readiness attempt %s failed.\n' "$i" >&2
@@ -26,12 +30,12 @@ if [[ ! -f /var/lib/tack-qa/bootstrap/fdb.complete ]]; then
     install -m 0600 /dev/null /var/lib/tack-qa/bootstrap/fdb.complete
 fi
 if [[ ! -f /var/lib/tack-qa/bootstrap/ledger.complete ]]; then
-    docker compose run --rm ledger-bootstrap ops ledger audit-bootstrap --execute --operator-service tack-qa-bootstrap
+    docker compose run -T --rm ledger-bootstrap ops provision --execute --operator-service tack-qa-bootstrap
     install -m 0600 /dev/null /var/lib/tack-qa/bootstrap/ledger.complete
 fi
 docker compose up -d audit-consumer
 if [[ ! -f /var/lib/tack-qa/bootstrap/seed.complete ]]; then
-    docker compose run --rm operator seed --execute --operator-service tack-qa-bootstrap
+    docker compose run -T --rm operator seed --execute --operator-service tack-qa-bootstrap > /dev/null
     install -m 0600 /dev/null /var/lib/tack-qa/bootstrap/seed.complete
 fi
 if [[ ! -f /var/lib/tack-qa/bootstrap/search.complete ]]; then

@@ -33,6 +33,7 @@ locals {
     "data/yugabyte-healthcheck.sh" = file("${path.module}/files/yugabyte-healthcheck.sh")
     "data/tserver.flags"           = file("${path.module}/files/tserver.flags")
     "search/security.sh"           = file("${path.module}/files/security.sh")
+    "search/check-host.sh"         = file("${path.module}/files/check-host.sh")
     "search/roles.yml"             = file("${path.module}/files/roles.yml")
     "search/roles_mapping.yml"     = yamlencode({ _meta = { type = "rolesmapping", config_version = 2 }, all_access = { reserved = false, users = [var.search_username] } })
     "search/config.yml"            = file("${path.module}/files/security-config.yml")

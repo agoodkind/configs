@@ -17,6 +17,7 @@ locals {
     OPENSEARCH_CURSOR_KEY_FILE           = "/run/secrets/OPENSEARCH_CURSOR_KEY"
     OPENSEARCH_REPLICAS                  = "0"
     OPENSEARCH_SHARDS                    = "1"
+    OPENSEARCH_ROUTING_SHARDS            = "8"
     SEED_EMAIL                           = var.seed_email
     SEED_NAME                            = var.seed_name
     SEED_API_TOKEN_FILE                  = "/run/secrets/SEED_API_TOKEN"
@@ -94,8 +95,21 @@ locals {
         }
         volumes = local.operator.volumes
       }
-      operator         = local.operator
-      ledger-bootstrap = merge(local.operator, { environment = merge(local.operator_environment, { DATABASE_URL_FILE = "/run/secrets/SUPERUSER_DATABASE_URL", AUDIT_KAFKA_BROKERS = "" }) })
+      operator = local.operator
+      ledger-bootstrap = merge(local.operator, {
+        volumes = concat(local.operator.volumes, ["/var/run/docker.sock:/var/run/docker.sock"])
+        environment = merge(local.operator_environment, {
+          DATABASE_URL_FILE            = "/run/secrets/SUPERUSER_DATABASE_URL"
+          AUDIT_KAFKA_BROKERS          = ""
+          SEED_EMAIL                   = ""
+          SEED_NAME                    = ""
+          TACK_BACKUP_FDB_CONTINUOUS   = "false"
+          TACK_OPS_FDB_REDUNDANCY_MODE = "single"
+          TACK_OPS_FDB_CLUSTER_DIR     = "/etc/foundationdb"
+          TACK_BACKUP_FDB_NETWORK      = "host"
+          TACK_BACKUP_FDB_IMAGE        = "foundationdb/foundationdb:7.4.6@sha256:1db13771714a1b2cc565c893e2ba768b5a3c33d101c84f2f6fda32f075cc8763"
+        })
+      })
     }
     volumes = { fdb = {}, yugabyte = {}, kafka = {} }
     networks = { default = {
