@@ -53,7 +53,8 @@ locals {
 }
 
 module "tack_qa_services" {
-  source = "../../modules/tack-qa-services"
+  source              = "../../modules/tack-qa-services"
+  application_address = module.configuration.tack_k3s.guest.ipv6
   data_guest = merge(local.guests.tack_qa_suburban, {
     ipv6    = local.service_mapping.tack_qa_suburban.ipv6
     subnet  = local.service_mapping.tack_qa_suburban.docker_v6_subnet
