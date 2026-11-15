@@ -106,7 +106,8 @@ resource "proxmox_virtual_environment_container" "tack_data1_suburban" {
   }
 
   cpu {
-    cores = 2
+    cores = 8
+    limit = 2
   }
 
   tags = ["lxc", "tack", "tack-data", "qa", "docker"]
@@ -172,7 +173,8 @@ resource "proxmox_virtual_environment_container" "tack_data2_suburban" {
   }
 
   cpu {
-    cores = 2
+    cores = 8
+    limit = 2
   }
 
   tags = ["lxc", "tack", "tack-data", "qa", "docker"]
@@ -238,7 +240,8 @@ resource "proxmox_virtual_environment_container" "tack_data3_suburban" {
   }
 
   cpu {
-    cores = 2
+    cores = 8
+    limit = 2
   }
 
   tags = ["lxc", "tack", "tack-data", "qa", "docker"]
