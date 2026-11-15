@@ -17,6 +17,9 @@ variable "caller" {
 }
 
 locals {
+  # remote_file builds the SSH address as <host>:<port>.
+  remote_host = strcontains(var.host, ":") ? "[${var.host}]" : var.host
+
   files = {
     script = {
       path    = "/usr/local/sbin/tack-search-caller.py"
@@ -46,7 +49,7 @@ locals {
 resource "remote_file" "caller" {
   for_each = local.files
   conn {
-    host  = var.host
+    host  = local.remote_host
     user  = "root"
     agent = true
   }
