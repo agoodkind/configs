@@ -26,8 +26,17 @@ resource "pveguest_systemd_unit" "kafka_firewall" {
   enabled = true
   active  = true
   restart_on = {
-    rules = pveguest_file.kafka_firewall.write_id
-    unit  = pveguest_file.kafka_firewall_unit.write_id
+    rules        = pveguest_file.kafka_firewall.write_id
+    unit         = pveguest_file.kafka_firewall_unit.write_id
+    docker_order = pveguest_file.docker_firewall_order.write_id
   }
   depends_on = [pveguest_apt_packages.bootstrap]
+}
+
+resource "pveguest_file" "docker_firewall_order" {
+  node    = var.data_guest.node
+  vmid    = var.data_guest.vmid
+  kind    = var.data_guest.kind
+  path    = "/etc/systemd/system/docker.service.d/tack-qa-kafka.conf"
+  content = file("${path.module}/files/docker-kafka.conf")
 }
