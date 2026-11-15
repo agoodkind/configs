@@ -375,6 +375,7 @@ resource "proxmox_virtual_environment_container" "tack_search1_suburban" {
 
   cpu {
     cores = local.tack_search.tack_search_guest_cores
+    limit = local.tack_search.tack_search_guest_cpu_limit
   }
 
   tags = ["lxc", "tack", "tack-search", "qa", "docker"]
@@ -448,7 +449,7 @@ variable "host_networks" { type = map(string) }
 
 locals { service_mapping = var.service_mapping }
 
-variable "tack_search" { type = object({ tack_search_guest_memory_mib = number, tack_search_guest_cores = number, tack_search_guest_disk_gib = number }) }
+variable "tack_search" { type = object({ tack_search_guest_memory_mib = number, tack_search_guest_cores = number, tack_search_guest_cpu_limit = number, tack_search_guest_disk_gib = number }) }
 
 locals { tack_search = var.tack_search }
 
