@@ -33,8 +33,8 @@ resource "pveguest_host_systemd_unit" "mwan" {
   node       = "suburban"
   workspace  = "suburban/mwan"
   name       = each.key
-  enabled    = true
-  active     = true
+  enabled    = each.key == "mwan-ifmgr.service"
+  active     = each.key == "mwan-ifmgr.service"
   restart_on = { for path in each.value : path => pveguest_host_artifact.mwan_host.write_ids[path] }
 
   depends_on = [pveguest_host_secret.smtp2go]
@@ -44,8 +44,8 @@ resource "pveguest_host_systemd_unit" "opnsense_drain" {
   node       = "suburban"
   workspace  = "suburban/mwan"
   name       = "mwan-opnsense-drain.service"
-  enabled    = true
-  active     = true
+  enabled    = false
+  active     = false
   restart_on = { for path in local.opnsense_drain_unit_inputs : path => pveguest_host_artifact.mwan_host.write_ids[path] }
 }
 
@@ -53,8 +53,8 @@ resource "pveguest_host_systemd_unit" "opnsense_bridge" {
   node       = "suburban"
   workspace  = "suburban/mwan"
   name       = "mwan-opnsense-host.service"
-  enabled    = true
-  active     = true
+  enabled    = false
+  active     = false
   restart_on = { for path in local.opnsense_bridge_unit_inputs : path => pveguest_host_artifact.mwan_host.write_ids[path] }
 
   depends_on = [pveguest_host_systemd_unit.opnsense_drain]

@@ -1,54 +1,21 @@
-locals { repository_root = abspath("${path.module}/../../..") }
-
-module "suburban_config" {
-  source = "../../modules/suburban"
-}
-
-module "contracts" {
-  source = "../../modules/contracts"
-}
+module "contracts" { source = "../../modules/contracts" }
+module "hypervisor" { source = "../../modules/suburban/services/suburban_hypervisor" }
+module "configuration" { source = "../../modules/suburban/opnsense/configuration" }
 
 locals {
-  shared_vars     = module.contracts.shared_vars
-  service_mapping = module.configuration.service_mapping
-}
-
-module "suburban" {
-  source = "../../modules/suburban/opnsense"
-
-  providers = { proxmox = proxmox.suburban }
-
-  ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
-  service_mapping = local.service_mapping
-  host_networks   = module.suburban_config.bridges
-}
-
-output "opnsense_suburban_vmid" {
-  description = "VMID assigned to the suburban OPNsense VM"
-  value       = module.suburban.opnsense_suburban_vmid
-}
-
-data "http" "github_ssh_keys" {
-  url = "https://github.com/${local.shared_vars.github_ssh_keys_user}.keys"
-
-  lifecycle {
-    postcondition {
-      condition = self.status_code == 200 && length([
-        for line in split("\n", replace(self.response_body, "\r", "")) : line
-        if trimspace(line) != ""
-        ]) > 0 && alltrue([
-        for line in split("\n", replace(self.response_body, "\r", "")) :
-        can(regex(
-          "^(ssh-[A-Za-z0-9@._+-]+|ecdsa-[A-Za-z0-9@._+-]+|sk-[A-Za-z0-9@._+-]+) [A-Za-z0-9+/]+={0,3}( .*)?$",
-          trimspace(line),
-        ))
-        if trimspace(line) != ""
-      ])
-      error_message = "GitHub returned an invalid SSH public key response for ${local.shared_vars.github_ssh_keys_user}."
+  proxmox_token_principal = module.contracts.proxmox_token_principal
+  nodes = {
+    suburban = {
+      endpoint  = "https://[${module.hypervisor.value.ipv6}]:8006"
+      api_token = "${local.proxmox_token_principal}=${var.vault_suburban_testbed_pve_token_secret}"
+      insecure  = true
+      node_name = "hypervisor"
     }
   }
 }
 
-locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
-
-module "configuration" { source = "../../modules/suburban/opnsense/configuration" }
+# Destroy the retired guests through the existing backend and provider identities.
+removed {
+  from = module.suburban
+  lifecycle { destroy = true }
+}
