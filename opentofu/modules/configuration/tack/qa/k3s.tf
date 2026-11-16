@@ -5,15 +5,15 @@ locals {
     node        = "suburban"
     vmid        = 228
     kind        = "qemu"
-    ipv4        = "10.240.4.10"
+    ipv4        = cidrhost(module.suburban_host.vmnet.ipv4_cidr, 10)
     ipv6        = "3d06:bad:b01:210::228"
     mac_address = "BC:24:11:04:02:28"
   }
   tack_k3s = {
     guest = merge(local.tack_k3s_guest, {
       node_name         = module.suburban_host.guest.node_name
-      ipv4_cidr         = "${local.tack_k3s_guest.ipv4}/24"
-      ipv4_gateway      = module.opnsense_suburban.value.ipv4_vmnet
+      ipv4_cidr         = "${local.tack_k3s_guest.ipv4}/${split("/", module.suburban_host.vmnet.ipv4_cidr)[1]}"
+      ipv4_gateway      = module.suburban_host.vmnet.ipv4_gateway
       ipv6_cidr         = "${local.tack_k3s_guest.ipv6}/64"
       ipv6_gateway      = module.suburban_host.vmnet.ipv6_gateway
       dns_servers       = module.suburban_host.guest.dns_servers

@@ -1,11 +1,9 @@
-module "opnsense_suburban" { source = "../../services/opnsense_suburban" }
 module "proxy" { source = "../../services/proxy" }
 module "suburban_hypervisor" { source = "../../services/suburban_hypervisor" }
 module "suburban_host" { source = "../../hosts/suburban" }
 
 locals {
   service_mapping = {
-    opnsense_suburban   = module.opnsense_suburban.value
     proxy               = module.proxy.value
     suburban_hypervisor = module.suburban_hypervisor.value
     tack_k3s_suburban   = local.tack_k3s_guest
