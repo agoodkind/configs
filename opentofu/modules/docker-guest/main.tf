@@ -101,6 +101,7 @@ locals {
       interface = var.uplink_interface
       prefix    = var.ndp_proxy_prefix
     })
+    ndppd_service = file("${path.module}/files/ndppd.service")
     prune_service = file("${path.module}/files/docker-prune.service")
     prune_timer   = file("${path.module}/files/docker-prune.timer")
   }
@@ -157,7 +158,8 @@ resource "pveguest_systemd_unit" "ndppd" {
   active  = true
 
   restart_on = {
-    ndppd = pveguest_file.docker["ndppd"].write_id
+    ndppd   = pveguest_file.docker["ndppd"].write_id
+    service = pveguest_file.docker["ndppd_service"].write_id
   }
 
   depends_on = [pveguest_apt_packages.docker, pveguest_systemd_unit.sysctl]
