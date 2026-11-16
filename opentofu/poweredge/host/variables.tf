@@ -10,12 +10,6 @@ variable "cloudflare_owner_email" {
   default     = "alex@goodkind.io"
 }
 
-variable "poweredge_proxmox_endpoint" {
-  description = "Proxmox API base URL for the poweredge host including port"
-  type        = string
-  default     = "https://poweredge.home.goodkind.io:8006/"
-}
-
 variable "vault_poweredge_acme_cloudflare_token" {
   description = "Cloudflare DNS token that the poweredge host uses for ACME DNS challenges"
   type        = string
@@ -29,9 +23,8 @@ variable "vault_poweredge_pve_token_secret" {
 }
 
 variable "vault_smtp2go_api_key" {
-  description = "SMTP2GO API key for host mail"
-  type        = string
-  sensitive   = true
+  type      = string
+  sensitive = true
 }
 
 variable "vault_tofu_state_passphrase" {

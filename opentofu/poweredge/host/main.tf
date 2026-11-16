@@ -27,7 +27,7 @@ resource "proxmox_acme_certificate" "poweredge" {
 
   domains = [
     {
-      domain = "poweredge.home.goodkind.io"
+      domain = local.host.hostname
       plugin = proxmox_acme_dns_plugin.poweredge.plugin
     }
   ]
@@ -61,7 +61,7 @@ resource "pveguest_host_kernel_modules" "poweredge" {
 locals {
 
   overlay_hosts = { poweredge = {
-    ssh_host  = "poweredge.home.goodkind.io"
+    ssh_host  = local.host.ipv6
     node_name = "poweredge"
     commit    = "b685157b778cf2fb9edcd79489d9743350c9db4b"
     guest_api = true
@@ -128,7 +128,7 @@ locals {
 locals {
   nodes = {
     poweredge = {
-      endpoint  = "https://${local.service_mapping.poweredge_hypervisor.ipv4}:8006"
+      endpoint  = "https://${local.host.ipv4}:8006"
       api_token = "${local.proxmox_token_principal}=${var.vault_poweredge_pve_token_secret}"
       insecure  = true
     }

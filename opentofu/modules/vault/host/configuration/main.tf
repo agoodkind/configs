@@ -1,6 +1,7 @@
+module "vault_hypervisor" { source = "../../services/vault_hypervisor" }
 locals {
   service_mapping = {
-
+    vault_hypervisor = module.vault_hypervisor.value
   }
 }
 output "service_mapping" { value = local.service_mapping }

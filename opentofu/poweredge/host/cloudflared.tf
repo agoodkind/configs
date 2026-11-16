@@ -18,51 +18,47 @@ locals {
   cloudflared_files = "${path.module}/../../modules/poweredge/cloudflared"
 }
 
-resource "system_file" "cloudflared_keyring" {
-  path   = "/usr/share/keyrings/cloudflare-main.gpg"
-  source = "https://pkg.cloudflare.com/cloudflare-main.gpg"
-  mode   = "644"
+resource "linux_download" "cloudflared_keyring" {
+  url  = "https://pkg.cloudflare.com/cloudflare-main.gpg"
+  path = "/usr/share/keyrings/cloudflare-main.gpg"
 }
 
-resource "system_file" "cloudflared_repository" {
+resource "linux_file" "cloudflared_repository" {
   path    = "/etc/apt/sources.list.d/cloudflared.list"
   content = file("${local.cloudflared_files}/cloudflared.list")
-  mode    = "644"
 
-  depends_on = [system_file.cloudflared_keyring]
+  depends_on = [linux_download.cloudflared_keyring]
 }
 
-resource "system_packages_apt" "cloudflared" {
-  package {
-    name = "cloudflared"
-  }
+resource "linux_package" "cloudflared" {
+  name = "cloudflared"
 
-  depends_on = [system_file.cloudflared_repository]
+  depends_on = [linux_file.cloudflared_repository]
 }
 
-resource "system_file" "cloudflared_token" {
-  path   = "/etc/cloudflared/token"
-  source = pathexpand(var.poweredge_host_tunnel_token_file)
-  mode   = "600"
+resource "linux_file" "cloudflared_token" {
+  path    = "/etc/cloudflared/token"
+  mode    = "0600"
+  content = sensitive(file(pathexpand(var.poweredge_host_tunnel_token_file)))
 
-  depends_on = [system_packages_apt.cloudflared]
+  depends_on = [linux_package.cloudflared]
 }
 
-resource "system_file" "cloudflared_service" {
+resource "linux_file" "cloudflared_service" {
   path    = "/etc/systemd/system/cloudflared.service"
   content = file("${local.cloudflared_files}/cloudflared.service")
-  mode    = "644"
 }
 
-resource "system_systemd_unit" "cloudflared" {
-  type    = "service"
-  name    = "cloudflared"
-  enabled = true
-  status  = "started"
-  restart_on = [
-    system_file.cloudflared_service.md5sum,
-    system_file.cloudflared_token.md5sum,
-  ]
+resource "linux_systemd_unit" "cloudflared" {
+  name          = "cloudflared.service"
+  enabled       = true
+  active        = true
+  daemon_reload = true
 
-  depends_on = [system_packages_apt.cloudflared]
+  triggers = {
+    unit  = linux_file.cloudflared_service.sha256
+    token = linux_file.cloudflared_token.sha256
+  }
+
+  depends_on = [linux_package.cloudflared]
 }

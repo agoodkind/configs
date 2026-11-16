@@ -1,6 +1,6 @@
 provider "proxmox" {
   alias     = "poweredge"
-  endpoint  = var.poweredge_proxmox_endpoint
+  endpoint  = "https://[${local.host.ipv6}]:8006/"
   api_token = "${local.proxmox_token_principal}=${var.vault_poweredge_pve_token_secret}"
   insecure  = true
 }
@@ -18,6 +18,6 @@ terraform {
     pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.4" }
     remote   = { source = "tenstad/remote", version = ">= 0.2.1" }
     restful  = { source = "magodo/restful", version = "0.25.2" }
-    system   = { source = "neuspaces/system", version = "0.5.0" }
+    linux    = { source = "labbs/linux", version = "1.3.0" }
   }
 }

@@ -1,14 +1,10 @@
 terraform {
   required_providers {
-    system = {
-      source  = "neuspaces/system"
-      version = "0.5.0"
+    linux = {
+      source  = "labbs/linux"
+      version = "1.3.0"
     }
   }
-}
-
-variable "ssh_host" {
-  type = string
 }
 
 variable "release_tag" {
@@ -24,50 +20,50 @@ variable "local_recipient" {
 }
 
 locals {
-  install_script = templatefile("${path.module}/install.sh.tftpl", {
-    release_tag = var.release_tag
-    sha256      = var.sha256
-  })
+  archive     = "send-email_linux_amd64.tar.gz"
+  install_dir = "/opt/send-email"
+  binary      = "${local.install_dir}/send-email"
+  sendmail    = "/usr/sbin/sendmail"
 }
 
-resource "terraform_data" "install" {
-  triggers_replace = [sha256(local.install_script)]
+resource "linux_download" "send_email" {
+  url    = "https://github.com/agoodkind/send-email/releases/download/${var.release_tag}/${local.archive}"
+  sha256 = var.sha256
+  path   = "/var/cache/send-email/${local.archive}"
+}
 
-  connection {
-    type  = "ssh"
-    host  = var.ssh_host
-    user  = "root"
-    agent = true
-  }
+resource "linux_archive_extract" "send_email" {
+  source      = linux_download.send_email.path
+  destination = local.install_dir
 
-  provisioner "file" {
-    content     = local.install_script
-    destination = "/tmp/install-send-email.sh"
-  }
-
-  provisioner "remote-exec" {
-    inline = ["bash /tmp/install-send-email.sh"]
+  triggers = {
+    sha256 = linux_download.send_email.sha256
   }
 }
 
-resource "system_link" "sendmail" {
-  path   = "/usr/sbin/sendmail"
-  target = "/usr/local/bin/send-email"
+resource "linux_symlink" "send_email" {
+  path   = "/usr/local/bin/send-email"
+  target = local.binary
 
-  depends_on = [terraform_data.install]
+  depends_on = [linux_archive_extract.send_email]
 }
 
-resource "system_folder" "send_email" {
-  path = "/etc/send-email"
-  mode = "755"
+resource "linux_command" "divert_sendmail" {
+  create = "dpkg-divert --add --rename --divert ${local.sendmail}.distrib ${local.sendmail}"
+  read   = "dpkg-divert --truename ${local.sendmail}"
+  delete = "rm -f ${local.sendmail} && dpkg-divert --rename --remove ${local.sendmail}"
 }
 
-resource "system_file" "mail_env" {
+resource "linux_symlink" "sendmail" {
+  path   = local.sendmail
+  target = local.binary
+
+  depends_on = [linux_archive_extract.send_email, linux_command.divert_sendmail]
+}
+
+resource "linux_file" "mail_env" {
   path = "/etc/send-email/mail.env"
   content = templatefile("${path.module}/mail.env.tftpl", {
     local_recipient = var.local_recipient
   })
-  mode = "644"
-
-  depends_on = [system_folder.send_email]
 }

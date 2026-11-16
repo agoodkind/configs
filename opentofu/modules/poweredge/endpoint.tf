@@ -1,4 +1,2 @@
-output "lock_endpoint" { value = {
-  "user"    = "root"
-  "address" = "3d06:bad:b01:300::254"
-} }
+module "identity" { source = "./services/poweredge_hypervisor" }
+output "lock_endpoint" { value = { user = "root", address = module.identity.value.ipv6 } }

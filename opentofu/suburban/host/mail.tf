@@ -3,11 +3,10 @@ locals {
   send_email_sha256      = "ed240a4dd5baae5cb493861d294a4eed18e973d86615c00d3c279a15440203b4"
 }
 
-provider "system" {
-  ssh {
-    host  = local.overlay_hosts.suburban.ssh_host
-    user  = "root"
-    agent = true
+provider "linux" {
+  ssh = {
+    host     = local.service_mapping.suburban_hypervisor.ipv6
+    host_key = local.service_mapping.suburban_hypervisor.ssh_host_key
   }
 }
 
@@ -20,7 +19,6 @@ module "unattended_upgrades" {
 module "mail" {
   source = "../../modules/mail"
 
-  ssh_host        = local.overlay_hosts.suburban.ssh_host
   release_tag     = local.send_email_release_tag
   sha256          = local.send_email_sha256
   local_recipient = "alex@goodkind.io"
