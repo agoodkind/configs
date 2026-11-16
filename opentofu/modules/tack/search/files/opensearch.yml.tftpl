@@ -10,7 +10,7 @@ plugins.security.ssl.transport.enforce_hostname_verification: false
 plugins.security.ssl.http.enabled: true
 plugins.security.ssl.http.pemcert_filepath: tack/node.pem
 plugins.security.ssl.http.pemkey_filepath: tack/node-key.pem
-plugins.security.ssl.http.pemtrustedcas_filepath: tack/ca.pem
+plugins.security.ssl.http.pemtrustedcas_filepath: tack/http-client-trust.pem
 plugins.security.authcz.admin_dn:
   - ${jsonencode(admin_dn)}
 plugins.security.nodes_dn:

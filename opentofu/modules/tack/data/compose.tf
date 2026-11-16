@@ -55,12 +55,10 @@ locals {
         extra_hosts  = { yugabyte = var.data_guest.ipv6 }
         restart      = "unless-stopped"
         mem_limit    = "3g"
-        entrypoint   = ["/usr/bin/env", "bash", "/opt/tack/entrypoint.sh"]
         command      = ["/home/yugabyte/bin/yugabyted", "start", "--daemon=false", "--base_dir=/home/yugabyte/var", "--advertise_address=yugabyte", "--listen=yugabyte", "--master_flags=replication_factor=1,certs_dir=/etc/tack/ledger-certs,use_node_to_node_encryption=true,use_client_to_server_encryption=true,allow_insecure_connections=false", "--tserver_flags=flagfile=/home/yugabyte/tserver.flags"]
-        environment  = { YSQL_DB = "tack", YSQL_USER = "yugabyte" }
         network_mode = "host"
         healthcheck  = { test = ["CMD", "/usr/bin/env", "bash", "/opt/tack/healthcheck.sh"], interval = "10s", timeout = "5s", retries = 24, start_period = "30s" }
-        volumes      = ["yugabyte:/home/yugabyte/var", "/opt/tack-qa/secrets/YUGABYTE_PASSWORD:/run/secrets/YUGABYTE_PASSWORD:ro", "/opt/tack-qa/yugabyte-overlay/yugabyted:/home/yugabyte/bin/yugabyted:ro", "/opt/tack-qa/data/yugabyte-entrypoint.sh:/opt/tack/entrypoint.sh:ro", "/opt/tack-qa/data/yugabyte-healthcheck.sh:/opt/tack/healthcheck.sh:ro", "/opt/tack-qa/data/tserver.flags:/home/yugabyte/tserver.flags:ro", "/opt/tack-qa/ledger:/etc/tack/ledger-certs:ro"]
+        volumes      = ["yugabyte:/home/yugabyte/var", "/opt/tack-qa/secrets/YUGABYTE_PASSWORD:/run/secrets/YUGABYTE_PASSWORD:ro", "/opt/tack-qa/yugabyte-overlay/yugabyted:/home/yugabyte/bin/yugabyted:ro", "/opt/tack-qa/data/yugabyte-bootstrap.sh:/opt/tack/bootstrap.sh:ro", "/opt/tack-qa/data/yugabyte-ready.sql:/opt/tack/ready.sql:ro", "/opt/tack-qa/data/yugabyte-database.sql:/opt/tack/database.sql:ro", "/opt/tack-qa/data/yugabyte-password.sql:/opt/tack/password.sql:ro", "/opt/tack-qa/data/yugabyte-healthcheck.sh:/opt/tack/healthcheck.sh:ro", "/opt/tack-qa/data/tserver.flags:/home/yugabyte/tserver.flags:ro", "/opt/tack-qa/ledger:/etc/tack/ledger-certs:ro"]
       }
       kafka = {
         image     = var.store_images.kafka

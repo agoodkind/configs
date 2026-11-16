@@ -8,6 +8,9 @@ terraform {
 variable "search_guest" {
   type = object({ node = string, vmid = number, kind = string })
 }
+variable "runtime_identity" {
+  type = object({ name = string, id = number })
+}
 variable "search_username" {
   type = string
 }

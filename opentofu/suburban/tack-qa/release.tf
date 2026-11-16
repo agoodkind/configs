@@ -77,14 +77,15 @@ module "tack_qa_services" {
 }
 
 module "tack_qa_search" {
-  source          = "../../modules/tack/search"
-  search_guest    = local.guests.tack_search1_suburban
-  image           = module.configuration.store_images.opensearch
-  endpoint        = module.configuration.tack_k3s_application.environment.OPENSEARCH_ENDPOINT
-  search_username = module.configuration.tack_k3s_application.environment.OPENSEARCH_USERNAME
-  search_admin_dn = var.tack_qa_search_admin_dn
-  search_node_dn  = var.tack_qa_search_node_dn
-  secrets         = local.qa_service_secrets
-  secret_versions = module.configuration.service_secret_versions
-  depends_on      = [module.docker_guest]
+  source           = "../../modules/tack/search"
+  search_guest     = local.guests.tack_search1_suburban
+  runtime_identity = module.configuration.search_runtime_identity
+  image            = module.configuration.store_images.opensearch
+  endpoint         = module.configuration.tack_k3s_application.environment.OPENSEARCH_ENDPOINT
+  search_username  = module.configuration.tack_k3s_application.environment.OPENSEARCH_USERNAME
+  search_admin_dn  = var.tack_qa_search_admin_dn
+  search_node_dn   = var.tack_qa_search_node_dn
+  secrets          = local.qa_service_secrets
+  secret_versions  = module.configuration.service_secret_versions
+  depends_on       = [module.docker_guest]
 }
