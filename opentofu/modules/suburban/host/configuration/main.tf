@@ -6,7 +6,6 @@ locals {
     vmbr1_suburban      = module.vmbr1_suburban.value
     vmbrtrunk_suburban = {
       "ipv4" = "10.240.4.5"
-      "ipv6" = "3d06:bad:b01:210::5"
     }
   }
 }
@@ -14,12 +13,17 @@ output "service_mapping" { value = local.service_mapping }
 locals {
   lock_targets = {
     "module_hosts" = {
-      "module.overlay[\"suburban\"]"      = "suburban"
-      "module.suburban"                   = "suburban"
-      "proxmox_acme_account.suburban"     = "suburban"
-      "proxmox_acme_certificate.suburban" = "suburban"
-      "proxmox_acme_dns_plugin.suburban"  = "suburban"
-      "proxmox_storage_directory.local"   = "suburban"
+      "module.overlay[\"suburban\"]"           = "suburban"
+      "module.suburban"                        = "suburban"
+      "proxmox_acme_account.suburban"          = "suburban"
+      "proxmox_acme_certificate.suburban"      = "suburban"
+      "proxmox_acme_dns_plugin.suburban"       = "suburban"
+      "proxmox_storage_directory.local"        = "suburban"
+      "proxmox_sdn_applier.suburban"           = "suburban"
+      "proxmox_sdn_applier.suburban_finalizer" = "suburban"
+      "proxmox_sdn_zone_simple.suburban"       = "suburban"
+      "proxmox_sdn_vnet.suburban"              = "suburban"
+      "proxmox_sdn_subnet.suburban_ipv6"       = "suburban"
     }
   }
 }
