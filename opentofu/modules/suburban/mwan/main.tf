@@ -149,10 +149,6 @@ resource "proxmox_virtual_environment_vm" "mwan_suburban" {
     discard      = "on"
   }
 
-  # MWAN-140 parity: the suburban MWAN management interface lives on the vmbrtrunk
-  # services LAN, the same untagged segment as the suburban OPNsense LAN and DNS64
-  # LXC, mirroring prod where the mwan VM enmgmt0 shares the
-  # OPNsense LAN /64 and reaches the resolver on-link.
   network_device {
     bridge      = var.host_networks.trunk_suburban
     model       = "virtio"

@@ -1,4 +1,3 @@
-module "dns64_suburban" { source = "../../services/dns64_suburban" }
 module "opnsense_suburban" { source = "../../services/opnsense_suburban" }
 module "proxy" { source = "../../../vault/services/proxy" }
 module "suburban_hypervisor" { source = "../../services/suburban_hypervisor" }
@@ -12,7 +11,6 @@ locals {
       "mac_address"           = "BC:24:11:04:02:24"
       "mail_password_version" = 2
     }
-    dns64_suburban      = module.dns64_suburban.value
     opnsense_suburban   = module.opnsense_suburban.value
     proxy               = module.proxy.value
     suburban_hypervisor = module.suburban_hypervisor.value

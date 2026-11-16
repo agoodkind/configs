@@ -1,8 +1,6 @@
-module "dns64_suburban" { source = "../../../services/dns64_suburban" }
 module "opnsense_suburban" { source = "../../../services/opnsense_suburban" }
 locals {
   service_mapping = {
-    dns64_suburban = module.dns64_suburban.value
     mwan_test_client_a_suburban = {
       "hostname"    = "mwan-client-a.suburban.goodkind.io"
       "node"        = "suburban"

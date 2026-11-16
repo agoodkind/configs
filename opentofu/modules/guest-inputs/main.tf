@@ -81,7 +81,6 @@ locals {
 
   mail_relay_guests = setintersection(local.enrolled, toset([
     "clyde_suburban",
-    "dns64_suburban",
     "mwan",
     "mwan_failover",
     "mwan_failover_suburban",

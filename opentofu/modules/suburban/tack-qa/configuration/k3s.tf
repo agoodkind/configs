@@ -16,7 +16,7 @@ locals {
       ipv4_gateway      = module.opnsense_suburban.value.ipv4_vmnet
       ipv6_cidr         = "${local.tack_k3s_guest.ipv6}/64"
       ipv6_gateway      = module.opnsense_suburban.value.ipv6_vmnet
-      dns_servers       = [module.dns64_suburban.value.ipv6]
+      dns_servers       = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"]
       datastore_id      = "slow-zfs"
       image_datastore   = "local"
       snippet_datastore = "local"
