@@ -5,7 +5,7 @@ services:
     mem_limit: 8g
     environment:
       DISABLE_INSTALL_DEMO_CONFIG: "true"
-      OPENSEARCH_JAVA_OPTS: -Xms3g -Xmx3g -XX:G1PeriodicGCInterval=5000
+      OPENSEARCH_JAVA_OPTS: -Xms3g -Xmx3g -XX:G1PeriodicGCInterval=5000 -Djava.net.preferIPv6Addresses=true
     network_mode: host
     volumes:
       - search:/usr/share/opensearch/data
