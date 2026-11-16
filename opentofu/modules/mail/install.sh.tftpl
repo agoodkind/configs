@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-install -d -m 0755 /etc/send-email
-
 WORK_DIR="$(mktemp -d)"
 ARCHIVE="$WORK_DIR/send-email_linux_amd64.tar.gz"
 
@@ -13,6 +11,5 @@ tar -xzf "$ARCHIVE" -C "$WORK_DIR" send-email
 install -m 0755 "$WORK_DIR/send-email" /usr/local/bin/send-email
 
 dpkg-divert --add --rename --divert /usr/sbin/sendmail.distrib /usr/sbin/sendmail
-ln -sfn /usr/local/bin/send-email /usr/sbin/sendmail
 
 rm -rf "$WORK_DIR"

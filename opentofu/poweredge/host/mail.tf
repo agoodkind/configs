@@ -4,11 +4,18 @@ locals {
   send_email_sha256      = "ed240a4dd5baae5cb493861d294a4eed18e973d86615c00d3c279a15440203b4"
 }
 
+provider "system" {
+  ssh {
+    host  = local.mail_ssh_host
+    user  = "root"
+    agent = true
+  }
+}
+
 module "unattended_upgrades" {
   source = "../../modules/unattended-upgrades"
 
-  ssh_host = local.mail_ssh_host
-  mail_to  = "root"
+  mail_to = "root"
 }
 
 module "mail" {
@@ -25,8 +32,7 @@ module "mail" {
 module "smtp2go" {
   source = "../../modules/smtp2go"
 
-  ssh_host = local.mail_ssh_host
-  api_key  = var.vault_smtp2go_api_key
+  api_key = var.vault_smtp2go_api_key
 }
 
 resource "terraform_data" "hosts" {

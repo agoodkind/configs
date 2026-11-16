@@ -1,8 +1,8 @@
 terraform {
   required_providers {
-    remote = {
-      source  = "tenstad/remote"
-      version = ">= 0.2.1"
+    system = {
+      source  = "neuspaces/system"
+      version = "0.5.0"
     }
   }
 }
@@ -50,18 +50,24 @@ resource "terraform_data" "install" {
   }
 }
 
-resource "remote_file" "mail_env" {
-  conn {
-    host  = var.ssh_host
-    user  = "root"
-    agent = true
-  }
+resource "system_link" "sendmail" {
+  path   = "/usr/sbin/sendmail"
+  target = "/usr/local/bin/send-email"
 
+  depends_on = [terraform_data.install]
+}
+
+resource "system_folder" "send_email" {
+  path = "/etc/send-email"
+  mode = "755"
+}
+
+resource "system_file" "mail_env" {
   path = "/etc/send-email/mail.env"
   content = templatefile("${path.module}/mail.env.tftpl", {
     local_recipient = var.local_recipient
   })
-  permissions = "0644"
+  mode = "644"
 
-  depends_on = [terraform_data.install]
+  depends_on = [system_folder.send_email]
 }

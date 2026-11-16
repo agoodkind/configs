@@ -1,61 +1,36 @@
 terraform {
   required_providers {
-    remote = {
-      source  = "tenstad/remote"
-      version = ">= 0.2.1"
+    system = {
+      source  = "neuspaces/system"
+      version = "0.5.0"
     }
   }
-}
-
-variable "ssh_host" {
-  type = string
 }
 
 variable "mail_to" {
   type = string
 }
 
-resource "terraform_data" "install" {
-  triggers_replace = [filesha256("${path.module}/install.sh")]
-
-  connection {
-    type  = "ssh"
-    host  = var.ssh_host
-    user  = "root"
-    agent = true
-  }
-
-  provisioner "remote-exec" {
-    script = "${path.module}/install.sh"
+resource "system_packages_apt" "unattended_upgrades" {
+  package {
+    name = "unattended-upgrades"
   }
 }
 
-resource "remote_file" "auto_upgrades" {
-  conn {
-    host  = var.ssh_host
-    user  = "root"
-    agent = true
-  }
+resource "system_file" "auto_upgrades" {
+  path    = "/etc/apt/apt.conf.d/20auto-upgrades"
+  content = file("${path.module}/20auto-upgrades")
+  mode    = "644"
 
-  path        = "/etc/apt/apt.conf.d/20auto-upgrades"
-  content     = file("${path.module}/20auto-upgrades")
-  permissions = "0644"
-
-  depends_on = [terraform_data.install]
+  depends_on = [system_packages_apt.unattended_upgrades]
 }
 
-resource "remote_file" "local_settings" {
-  conn {
-    host  = var.ssh_host
-    user  = "root"
-    agent = true
-  }
-
+resource "system_file" "local_settings" {
   path = "/etc/apt/apt.conf.d/52unattended-upgrades-local"
   content = templatefile("${path.module}/52unattended-upgrades-local.tftpl", {
     mail_to = var.mail_to
   })
-  permissions = "0644"
+  mode = "644"
 
-  depends_on = [terraform_data.install]
+  depends_on = [system_packages_apt.unattended_upgrades]
 }
