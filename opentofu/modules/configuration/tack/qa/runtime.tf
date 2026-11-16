@@ -15,6 +15,7 @@ output "application_replicas" { value = 1 }
 output "application_strategy" { value = "Recreate" }
 output "connector_count" { value = 1 }
 output "snapshots_enabled" { value = false }
+output "search_runtime_identity" { value = { name = "tack-search", id = 1000 } }
 
 output "lxc_capacity" {
   value = {

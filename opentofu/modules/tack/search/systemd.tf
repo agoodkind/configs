@@ -3,8 +3,8 @@ locals {
     search = join("\n", [
       "[Unit]", "Description=Start fresh Tack QA search", "After=docker.service", "Requires=docker.service",
       "[Service]", "Type=oneshot", "RemainAfterExit=yes", "WorkingDirectory=/opt/tack-qa/search", "TimeoutStartSec=280",
+      "ExecStartPre=/usr/bin/install -d -o root -g root -m 0755 /opt/tack-qa/search",
       "ExecStartPre=/opt/tack-qa/search/check-host.sh",
-      "ExecStartPre=/usr/bin/chown -R 1000:1000 /opt/tack-qa/search",
       "ExecStart=/usr/bin/docker compose up -d --force-recreate opensearch",
       "ExecStartPost=/opt/tack-qa/search/security.sh", "[Install]", "WantedBy=multi-user.target", ""
     ])

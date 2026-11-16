@@ -5,7 +5,8 @@ locals {
       "[Service]", "Type=oneshot", "RemainAfterExit=yes", "WorkingDirectory=/opt/tack-qa/data", "TimeoutStartSec=540",
       "ExecStartPre=/usr/bin/mkdir -p /etc/foundationdb",
       "ExecStartPre=/usr/bin/install -d -o root -g root -m 0755 /opt/tack-qa/ledger",
-      "ExecStart=/usr/bin/docker compose up -d fdb yugabyte kafka",
+      "ExecStart=/usr/bin/docker compose up -d fdb kafka",
+      "ExecStart=/usr/bin/docker compose up -d --force-recreate yugabyte",
       "ExecStart=/usr/bin/docker compose exec -T yugabyte /usr/bin/env bash /opt/tack/bootstrap.sh",
       "ExecStart=/usr/bin/docker compose up -d --wait --wait-timeout 240 fdb yugabyte kafka",
       "[Install]", "WantedBy=multi-user.target", ""

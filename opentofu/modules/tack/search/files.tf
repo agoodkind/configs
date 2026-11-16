@@ -22,6 +22,8 @@ resource "pveguest_file" "secret" {
   kind               = local.guests[each.value.guest].kind
   path               = each.value.path
   mode               = "0600"
+  owner              = module.runtime_identity.name
+  group              = module.runtime_identity.name
   content_wo         = var.secrets[each.value.key]
   content_wo_version = var.secret_versions[each.value.key]
 }
@@ -42,6 +44,8 @@ resource "pveguest_file" "search_users" {
   kind               = var.search_guest.kind
   path               = "${local.directory}/search/internal_users.yml"
   mode               = "0600"
+  owner              = module.runtime_identity.name
+  group              = module.runtime_identity.name
   content_wo         = yamlencode({ _meta = { type = "internalusers", config_version = 2 }, (var.search_username) = { hash = var.secrets["search_password_hash"], reserved = false, backend_roles = [] } })
   content_wo_version = var.secret_versions["search_password_hash"]
 }
@@ -52,6 +56,8 @@ resource "pveguest_file" "http_client_trust" {
   kind               = var.search_guest.kind
   path               = "${local.directory}/search/http-client-trust.pem"
   mode               = "0600"
+  owner              = module.runtime_identity.name
+  group              = module.runtime_identity.name
   content_wo         = "${trimspace(var.secrets["search_ca"])}\n${trimspace(var.secrets["search_admin_certificate"])}\n"
   content_wo_version = var.secret_versions["search_ca"] + var.secret_versions["search_admin_certificate"]
 }
