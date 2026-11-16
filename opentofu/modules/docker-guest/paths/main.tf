@@ -11,6 +11,7 @@ output "file_paths" {
     daemon        = "/etc/docker/daemon.json"
     sysctl        = var.sysctl_path
     ndppd         = "/etc/ndppd.conf"
+    ndppd_service = "/etc/systemd/system/ndppd.service"
     prune_service = "/etc/systemd/system/docker-prune.service"
     prune_timer   = "/etc/systemd/system/docker-prune.timer"
   }

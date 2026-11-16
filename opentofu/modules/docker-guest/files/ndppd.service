@@ -1,0 +1,17 @@
+[Unit]
+Description=NDP Proxy Daemon
+After=network-online.target remote-fs.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+PIDFile=/run/ndppd.pid
+Environment=SYSTEMCTL_SKIP_REDIRECT=yes
+ExecStart=/etc/init.d/ndppd start
+ExecStop=/etc/init.d/ndppd stop
+TimeoutSec=5min
+IgnoreSIGPIPE=no
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
