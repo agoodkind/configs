@@ -30,6 +30,11 @@ variable "vault_proxmox_token_secret" {
   sensitive   = true
 }
 
+variable "vault_smtp2go_api_key" {
+  type      = string
+  sensitive = true
+}
+
 variable "vault_tofu_state_passphrase" {
   description = "Passphrase that encrypts the OpenTofu state and plan files"
   type        = string
