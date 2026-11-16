@@ -35,13 +35,18 @@ resource "proxmox_sdn_applier" "suburban" {
   provider   = proxmox.suburban
   on_destroy = false
 
-  depends_on = [proxmox_sdn_subnet.suburban_ipv6, module.suburban]
+  depends_on = [
+    proxmox_sdn_subnet.suburban_ipv6,
+    module.suburban,
+    terraform_data.uplink_ipv6_activate,
+  ]
 
   lifecycle {
     replace_triggered_by = [
       proxmox_sdn_zone_simple.suburban,
       proxmox_sdn_vnet.suburban,
       proxmox_sdn_subnet.suburban_ipv6,
+      terraform_data.uplink_ipv6_activate,
     ]
   }
 }
