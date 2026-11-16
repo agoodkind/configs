@@ -2,7 +2,7 @@ locals {
   files = {
     "search/compose.yaml" = templatefile("${path.module}/files/search-compose.yaml.tftpl", { image = var.image })
     "search/opensearch.yml" = templatefile("${path.module}/files/opensearch.yml.tftpl", {
-      admin_dn = var.search_admin_dn, node_dn = var.search_node_dn
+      admin_dn = var.search_admin_dn, node_dn = var.search_node_dn, node_address = var.search_guest.ipv6
     })
     "search/security.sh"       = file("${path.module}/files/security.sh")
     "search/check-host.sh"     = file("${path.module}/files/check-host.sh")
