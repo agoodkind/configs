@@ -8,6 +8,6 @@ locals {
 }
 
 output "kernel_modules" {
-  description = "Kernel modules that PowerEdge installs and that the Proxmox overlay allows containers to load."
+  description = "PowerEdge installs these kernel modules, and the Proxmox overlay allows containers to load them."
   value       = local.kernel_modules
 }
