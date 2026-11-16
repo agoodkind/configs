@@ -1,4 +1,5 @@
 locals {
+  data_network_name = "data_default"
   operator_environment = {
     ENV                                  = "production"
     DATABASE_URL_FILE                    = "/run/secrets/DATABASE_URL"
@@ -104,13 +105,14 @@ locals {
           TACK_BACKUP_FDB_CONTINUOUS   = "false"
           TACK_OPS_FDB_REDUNDANCY_MODE = "single"
           TACK_OPS_FDB_CLUSTER_DIR     = "/etc/foundationdb"
-          TACK_BACKUP_FDB_NETWORK      = "host"
+          TACK_BACKUP_FDB_NETWORK      = local.data_network_name
           TACK_BACKUP_FDB_IMAGE        = var.store_images.foundationdb
         })
       })
     }
     volumes = { fdb = {}, yugabyte = {}, kafka = {} }
     networks = { default = {
+      name        = local.data_network_name
       enable_ipv6 = true, enable_ipv4 = false
       driver_opts = { "com.docker.network.bridge.gateway_mode_ipv6" = "routed" }
       ipam        = { config = [{ subnet = var.data_guest.subnet, gateway = var.data_guest.gateway }] }
