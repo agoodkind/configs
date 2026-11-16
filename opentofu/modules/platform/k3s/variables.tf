@@ -142,5 +142,4 @@ variable "server_token_version" {
 variable "snapshots_enabled" {
   description = "Enable scheduled embedded etcd snapshots and their S3 destination."
   type        = bool
-  default     = true
 }

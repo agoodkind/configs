@@ -93,7 +93,6 @@ variable "application_secret_versions" {
 variable "application_replicas" {
   description = "Number of Tack application Pods; a single replica updates without a surge."
   type        = number
-  default     = 2
   validation {
     condition     = var.application_replicas >= 1 && floor(var.application_replicas) == var.application_replicas
     error_message = "Set application_replicas to a positive integer."

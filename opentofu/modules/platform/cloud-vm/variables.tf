@@ -52,7 +52,6 @@ variable "vm_capacity" {
     memory_mib = number
     disk_gib   = number
   })
-  default = { cores = 4, memory_mib = 8192, disk_gib = 40 }
 }
 
 variable "initialization" {

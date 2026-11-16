@@ -65,44 +65,15 @@ module "tack_qa_services" {
     shards         = module.configuration.tack_k3s_application.environment.OPENSEARCH_SHARDS
     routing_shards = module.configuration.tack_k3s_application.environment.OPENSEARCH_ROUTING_SHARDS
   }
-  release_commit = local.tack_release.commit
-  server_image   = "ghcr.io/agoodkind/tack-server@${local.tack_release.server_digest}"
-  consumer_image = "ghcr.io/agoodkind/tack-audit-consumer@${local.tack_release.consumer_digest}"
-  seed_email     = local.tack_release.accountable
-  seed_name      = "QA Operator"
-  signing_id     = var.tack_qa_signing_id
-  secrets        = local.qa_service_secrets
-  secret_versions = { for key in [
-    "database_url",
-    "migrator_database_url",
-    "superuser_database_url",
-    "audit_operator_dsn",
-    "audit_reader_dsn",
-    "audit_redactor_dsn",
-    "audit_writer_dsn",
-    "app_password",
-    "migrator_password",
-    "yugabyte_password",
-    "audit_operator_password",
-    "audit_reader_password",
-    "audit_redactor_password",
-    "audit_writer_password",
-    "signing_key",
-    "seed_token",
-    "ledger_ca",
-    "ledger_server_certificate",
-    "ledger_server_private_key",
-    "registry_config",
-    "search_ca",
-    "search_certificate",
-    "search_private_key",
-    "search_admin_certificate",
-    "search_admin_private_key",
-    "search_password",
-    "search_password_hash",
-    "search_cursor_key"
-  ] : key => 1 }
-  depends_on = [module.docker_guest]
+  release_commit  = local.tack_release.commit
+  server_image    = "ghcr.io/agoodkind/tack-server@${local.tack_release.server_digest}"
+  consumer_image  = "ghcr.io/agoodkind/tack-audit-consumer@${local.tack_release.consumer_digest}"
+  seed_email      = local.tack_release.accountable
+  seed_name       = "QA Operator"
+  signing_id      = var.tack_qa_signing_id
+  secrets         = local.qa_service_secrets
+  secret_versions = module.configuration.service_secret_versions
+  depends_on      = [module.docker_guest]
 }
 
 module "tack_qa_search" {
@@ -118,6 +89,6 @@ module "tack_qa_search" {
   search_admin_dn = var.tack_qa_search_admin_dn
   search_node_dn  = var.tack_qa_search_node_dn
   secrets         = local.qa_service_secrets
-  secret_versions = { for key in ["search_ca", "search_certificate", "search_private_key", "search_admin_certificate", "search_admin_private_key", "search_password_hash"] : key => 1 }
+  secret_versions = module.configuration.service_secret_versions
   depends_on      = [module.docker_guest]
 }
