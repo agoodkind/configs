@@ -1,6 +1,6 @@
 locals {
-  send_email_release_tag = "202611101607-1c-51b488f"
-  send_email_sha256      = "7eb59cc727ba4c26c49c7d38a0fd2cabfaa47bcea72d942068cb7edf2124e85e"
+  send_email_release_tag = "202611160557-1d-9875b96"
+  send_email_sha256      = "ed240a4dd5baae5cb493861d294a4eed18e973d86615c00d3c279a15440203b4"
 }
 
 module "unattended_upgrades" {
