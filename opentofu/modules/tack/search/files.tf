@@ -45,3 +45,13 @@ resource "pveguest_file" "search_users" {
   content_wo         = yamlencode({ _meta = { type = "internalusers", config_version = 2 }, (var.search_username) = { hash = var.secrets["search_password_hash"], reserved = false, backend_roles = [] } })
   content_wo_version = var.secret_versions["search_password_hash"]
 }
+
+resource "pveguest_file" "http_client_trust" {
+  node               = var.search_guest.node
+  vmid               = var.search_guest.vmid
+  kind               = var.search_guest.kind
+  path               = "${local.directory}/search/http-client-trust.pem"
+  mode               = "0600"
+  content_wo         = "${trimspace(var.secrets["search_ca"])}\n${trimspace(var.secrets["search_admin_certificate"])}\n"
+  content_wo_version = var.secret_versions["search_ca"] + var.secret_versions["search_admin_certificate"]
+}

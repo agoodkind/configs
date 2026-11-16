@@ -2,7 +2,9 @@ locals {
   files = {
     "data/compose.yaml"            = yamlencode(local.data_compose)
     "data/bootstrap.sh"            = file("${path.module}/files/bootstrap.sh")
-    "data/yugabyte-entrypoint.sh"  = file("${path.module}/files/yugabyte-entrypoint.sh")
+    "data/yugabyte-bootstrap.sh"   = file("${path.module}/files/yugabyte-bootstrap.sh")
+    "data/yugabyte-ready.sql"      = file("${path.module}/files/yugabyte-ready.sql")
+    "data/yugabyte-database.sql"   = file("${path.module}/files/yugabyte-database.sql")
     "data/yugabyte-healthcheck.sh" = file("${path.module}/files/yugabyte-healthcheck.sh")
     "data/tserver.flags"           = file("${path.module}/files/tserver.flags")
   }
@@ -26,6 +28,16 @@ resource "pveguest_file" "configuration" {
   path     = "${local.directory}/${split("/", each.key)[0]}/${split("/", each.key)[1]}"
   mode     = endswith(each.key, ".sh") ? "0755" : "0644"
   content  = each.value
+}
+
+resource "pveguest_file" "yugabyte_password" {
+  node               = var.data_guest.node
+  vmid               = var.data_guest.vmid
+  kind               = var.data_guest.kind
+  path               = "${local.directory}/data/yugabyte-password.sql"
+  mode               = "0600"
+  content_wo         = templatefile("${path.module}/files/yugabyte-password.sql.tftpl", { password = replace(var.secrets["yugabyte_password"], "'", "''") })
+  content_wo_version = var.secret_versions["yugabyte_password"]
 }
 
 resource "pveguest_download" "overlay" {

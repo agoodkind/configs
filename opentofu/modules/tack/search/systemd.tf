@@ -5,7 +5,7 @@ locals {
       "[Service]", "Type=oneshot", "RemainAfterExit=yes", "WorkingDirectory=/opt/tack-qa/search", "TimeoutStartSec=280",
       "ExecStartPre=/opt/tack-qa/search/check-host.sh",
       "ExecStartPre=/usr/bin/chown -R 1000:1000 /opt/tack-qa/search",
-      "ExecStart=/usr/bin/docker compose up -d opensearch",
+      "ExecStart=/usr/bin/docker compose up -d --force-recreate opensearch",
       "ExecStartPost=/opt/tack-qa/search/security.sh", "[Install]", "WantedBy=multi-user.target", ""
     ])
   }
@@ -30,6 +30,6 @@ resource "pveguest_systemd_unit" "runtime" {
     { unit = pveguest_file.unit[each.key].write_id },
     { for key, value in pveguest_file.configuration : key => value.write_id },
     { for key, value in pveguest_file.secret : key => value.write_id },
-    { users = pveguest_file.search_users.write_id }
+    { users = pveguest_file.search_users.write_id, http_client_trust = pveguest_file.http_client_trust.write_id }
   )
 }
