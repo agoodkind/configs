@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+install -d -m 0755 /etc/send-email
+
+work_dir="$(mktemp -d)"
+archive="$work_dir/send-email_linux_amd64.tar.gz"
+
+curl -fsSL -o "$archive" "https://github.com/agoodkind/send-email/releases/download/${release_tag}/send-email_linux_amd64.tar.gz"
+echo "${sha256}  $archive" | sha256sum --check -
+
+tar -xzf "$archive" -C "$work_dir" send-email
+install -m 0755 "$work_dir/send-email" /usr/local/bin/send-email
+
+dpkg-divert --add --rename --divert /usr/sbin/sendmail.distrib /usr/sbin/sendmail
+ln -sfn /usr/local/bin/send-email /usr/sbin/sendmail
+
+rm -rf "$work_dir"
