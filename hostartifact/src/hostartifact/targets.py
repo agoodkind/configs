@@ -37,6 +37,7 @@ PRODUCER_PATHS = (
     "configsctl",
     "hostartifact/",
     "opentofu/modules/host-artifact-targets/",
+    "opentofu/modules/configuration/workspace/",
     "opentofu/render/host-artifact/",
 )
 

@@ -19,7 +19,11 @@ from pydantic import BaseModel, JsonValue
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RENDER_ROOT = "opentofu/render/host-artifact"
-PRODUCER_PATHS = (RENDER_ROOT, "opentofu/modules/host-artifact-targets")
+PRODUCER_PATHS = (
+    RENDER_ROOT,
+    "opentofu/modules/host-artifact-targets",
+    "opentofu/modules/configuration/workspace",
+)
 SUBURBAN = "suburban/mwan"
 VAULT = "vault/mwan"
 DESCRIPTOR_NAME = "host-artifact-target.json"
@@ -1850,6 +1854,11 @@ def test_nested_and_underscore_selectors_keep_their_identity(tmp_path: Path) -> 
         ),
         pytest.param(
             ["hostartifact/src/hostartifact/pack.py"], [SUBURBAN, VAULT], id="helper"
+        ),
+        pytest.param(
+            ["opentofu/modules/configuration/workspace/main.tf"],
+            [SUBURBAN, VAULT],
+            id="workspace-selector",
         ),
         pytest.param(
             ["opentofu/modules/fixtures/services/main.tf"],

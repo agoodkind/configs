@@ -9,9 +9,9 @@ module "tack_k3s" {
   cloud_image          = module.configuration.tack_k3s.cloud_image
   k3s_artifact         = module.configuration.tack_k3s.artifact
   cluster_network      = module.configuration.tack_k3s.cluster_network
-  snapshots_enabled    = false
-  application_replicas = 1
-  vm_capacity          = { cores = 2, memory_mib = 4096, disk_gib = 40 }
+  snapshots_enabled    = module.configuration.snapshots_enabled
+  application_replicas = module.configuration.application_replicas
+  vm_capacity          = module.configuration.vm_capacity
   preparation = {
     public_keys                              = local.github_keys
     restricted_key_lines                     = local.sshpiper_lines

@@ -11,11 +11,11 @@ locals {
     prod = concat([
       for hostname in concat(["tack.goodkind.io", "tack.home.goodkind.io"], sort(keys(module.contracts.tack_domain_aliases))) : {
         hostname       = hostname
-        service        = "http://tack-app.tack.svc.cluster.local:8000"
+        service        = module.configuration.tack_application_identities.prod.origin
         origin_request = { http_host_header = "tack.home.goodkind.io" }
       }
     ], [{ service = "http_status:404" }])
-    qa = [{ service = "http://tack-app.tack.svc.cluster.local:8000" }]
+    qa = [{ service = module.configuration.tack_application_identities.qa.origin }]
   }
 }
 

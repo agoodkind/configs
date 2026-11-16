@@ -12,4 +12,7 @@ module "targets" {
   workspace       = var.workspace
 }
 
-module "configuration" { source = "../../modules/${var.workspace}/configuration" }
+module "configuration" {
+  source    = "../../modules/configuration/workspace"
+  workspace = var.workspace
+}

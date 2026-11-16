@@ -1,6 +1,6 @@
-module "proxy" { source = "../../../../vault/services/proxy" }
-module "suburban_hypervisor" { source = "../../../services/suburban_hypervisor" }
-module "vmbr1_suburban" { source = "../../../services/vmbr1_suburban" }
+module "proxy" { source = "../../../../configuration/services/proxy" }
+module "suburban_hypervisor" { source = "../../../../configuration/services/suburban_hypervisor" }
+module "vmbr1_suburban" { source = "../../../../configuration/services/vmbr1_suburban" }
 locals {
   service_mapping = {
     proxy = module.proxy.value
@@ -35,7 +35,7 @@ locals {
 }
 locals { guest_keys = toset(["router2_suburban"]) }
 output "guest_keys" { value = local.guest_keys }
-module "suburban_host" { source = "../../.." }
+module "suburban_host" { source = "../../../../configuration/hosts/suburban" }
 output "lock_targets" { value = merge(local.lock_targets, { node_hosts = { for node in toset([for key in local.guest_keys : local.service_mapping[key].node]) : node => "suburban" }, lock_endpoints = {
   "suburban" = module.suburban_host.lock_endpoint
 } }) }

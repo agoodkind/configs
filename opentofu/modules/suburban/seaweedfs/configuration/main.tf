@@ -1,4 +1,4 @@
-module "suburban_host" { source = "../.." }
+module "suburban_host" { source = "../../../configuration/hosts/suburban" }
 output "lock_targets" {
   value = {
     module_hosts   = { "module.base" = "suburban", "module.suburban" = "suburban" }

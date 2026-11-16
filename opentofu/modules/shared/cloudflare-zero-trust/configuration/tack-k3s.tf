@@ -1,10 +1,10 @@
-module "tack_prod" { source = "../../../vault/tack-prod/configuration" }
-module "tack_qa" { source = "../../../suburban/tack-qa/configuration" }
+module "tack_prod" { source = "../../../configuration/tack/prod" }
+module "tack_qa" { source = "../../../configuration/tack/qa" }
 
 locals {
   tack_connectors = {
     prod = {
-      connector_count = 2
+      connector_count = module.tack_prod.connector_count
       guest           = module.tack_prod.tack_k3s.guest
       token_version   = 1
       hypervisor = {
@@ -13,7 +13,7 @@ locals {
       }
     }
     qa = {
-      connector_count = 1
+      connector_count = module.tack_qa.connector_count
       guest           = module.tack_qa.tack_k3s.guest
       token_version   = 1
       hypervisor = {
@@ -25,3 +25,10 @@ locals {
 }
 
 output "tack_connectors" { value = local.tack_connectors }
+
+output "tack_application_identities" {
+  value = {
+    prod = module.tack_prod.application_identity
+    qa   = module.tack_qa.application_identity
+  }
+}

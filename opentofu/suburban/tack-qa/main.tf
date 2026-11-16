@@ -1,7 +1,7 @@
 locals { repository_root = abspath("${path.module}/../../..") }
 
 module "suburban_config" {
-  source = "../../modules/suburban"
+  source = "../../modules/configuration/hosts/suburban"
 }
 
 module "contracts" {
@@ -109,4 +109,4 @@ data "http" "github_ssh_keys" {
   }
 }
 
-module "configuration" { source = "../../modules/suburban/tack-qa/configuration" }
+module "configuration" { source = "../../modules/configuration/tack/qa" }

@@ -6,6 +6,7 @@ module "tack_data2" { source = "../../services/tack_data2" }
 module "tack_data3" { source = "../../services/tack_data3" }
 module "tack_search1" { source = "../../services/tack_search1" }
 module "vault_hypervisor" { source = "../../services/vault_hypervisor" }
+module "seaweedfs" { source = "../../services/seaweedfs" }
 locals {
   service_mapping = {
     proxy            = module.proxy.value
@@ -31,7 +32,7 @@ locals {
 }
 locals { guest_keys = toset(["tack", "tack_app2", "tack_data1", "tack_data2", "tack_data3", "tack_search1"]) }
 output "guest_keys" { value = local.guest_keys }
-module "vault_host" { source = "../.." }
+module "vault_host" { source = "../../hosts/vault" }
 output "lock_targets" { value = merge(local.lock_targets, {
   node_hosts  = { for node in toset([for key in local.guest_keys : local.service_mapping[key].node]) : node => "vault" }
   guest_hosts = { "vault/${local.tack_k3s_guest.vmid}" = local.tack_k3s_guest.hostname }

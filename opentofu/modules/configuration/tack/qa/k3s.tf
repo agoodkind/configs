@@ -11,26 +11,18 @@ locals {
   }
   tack_k3s = {
     guest = merge(local.tack_k3s_guest, {
-      node_name         = "hypervisor"
+      node_name         = module.suburban_host.guest.node_name
       ipv4_cidr         = "${local.tack_k3s_guest.ipv4}/24"
       ipv4_gateway      = module.opnsense_suburban.value.ipv4_vmnet
       ipv6_cidr         = "${local.tack_k3s_guest.ipv6}/64"
       ipv6_gateway      = module.opnsense_suburban.value.ipv6_vmnet
-      dns_servers       = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"]
-      datastore_id      = "local-zfs"
-      image_datastore   = "local"
-      snippet_datastore = "local"
+      dns_servers       = module.suburban_host.guest.dns_servers
+      datastore_id      = module.suburban_host.guest.datastore_id
+      image_datastore   = module.suburban_host.guest.image_datastore
+      snippet_datastore = module.suburban_host.guest.snippet_datastore
     })
-    cloud_image = {
-      url       = "https://cloud.debian.org/images/cloud/trixie/20261103-2651/debian-13-genericcloud-amd64-20261103-2651.qcow2"
-      file_name = "debian-13-genericcloud-amd64-20261103-2651.qcow2"
-      sha512    = "d25999de0770d4cde1be72c299ba3ad94eac7ea8fd4d18f8cc86c69df69337e2e8a91d64465a9bfd8f2a78c566fcbcb0842eacc91c09efdef72d719d9f13b535"
-    }
-    artifact = {
-      version = "v1.37.2+k3s1"
-      url     = "https://github.com/k3s-io/k3s/releases/download/v1.37.2%2Bk3s1/k3s"
-      sha256  = "265b3ee6a3198ef14033c63ef46cbb32370d83795199fb6d1b01f21575eddbda"
-    }
+    cloud_image = module.artifacts.debian_cloud_image
+    artifact    = module.artifacts.k3s
     cluster_network = {
       pod_cidr     = "fd42:7461:636b:100::/56"
       service_cidr = "fd42:7461:636b:200::/112"

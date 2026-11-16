@@ -1,7 +1,7 @@
 module "opnsense_suburban" { source = "../../services/opnsense_suburban" }
-module "proxy" { source = "../../../vault/services/proxy" }
+module "proxy" { source = "../../services/proxy" }
 module "suburban_hypervisor" { source = "../../services/suburban_hypervisor" }
-module "suburban_host" { source = "../.." }
+module "suburban_host" { source = "../../hosts/suburban" }
 
 locals {
   service_mapping = {

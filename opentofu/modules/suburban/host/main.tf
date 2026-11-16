@@ -1,5 +1,5 @@
 module "config" {
-  source = "../"
+  source = "../../configuration/hosts/suburban"
 }
 
 resource "proxmox_network_linux_bridge" "isp_astound_suburban" {

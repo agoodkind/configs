@@ -115,4 +115,4 @@ data "http" "github_ssh_keys" {
 
 locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
 
-module "configuration" { source = "../../modules/vault/tack-prod/configuration" }
+module "configuration" { source = "../../modules/configuration/tack/prod" }

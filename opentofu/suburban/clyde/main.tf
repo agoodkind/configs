@@ -1,7 +1,7 @@
 locals { repository_root = abspath("${path.module}/../../..") }
 
 module "suburban_config" {
-  source = "../../modules/suburban"
+  source = "../../modules/configuration/hosts/suburban"
 }
 
 module "contracts" {

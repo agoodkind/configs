@@ -1,5 +1,5 @@
 module "contracts" { source = "../../modules/contracts" }
-module "hypervisor" { source = "../../modules/suburban/services/suburban_hypervisor" }
+module "hypervisor" { source = "../../modules/configuration/services/suburban_hypervisor" }
 locals {
   proxmox_token_principal = module.contracts.proxmox_token_principal
   service_mapping         = { suburban_hypervisor = module.hypervisor.value }

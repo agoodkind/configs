@@ -1,11 +1,14 @@
 module "tack_k3s" {
   source = "../../modules/tack-k3s"
 
-  guest           = module.configuration.tack_k3s.guest
-  cloud_image     = module.configuration.tack_k3s.cloud_image
-  k3s_artifact    = module.configuration.tack_k3s.artifact
-  cluster_network = module.configuration.tack_k3s.cluster_network
-  snapshot        = module.configuration.tack_k3s.snapshot
+  guest                = module.configuration.tack_k3s.guest
+  cloud_image          = module.configuration.tack_k3s.cloud_image
+  k3s_artifact         = module.configuration.tack_k3s.artifact
+  cluster_network      = module.configuration.tack_k3s.cluster_network
+  snapshot             = module.configuration.tack_k3s.snapshot
+  snapshots_enabled    = module.configuration.snapshots_enabled
+  application_replicas = module.configuration.application_replicas
+  vm_capacity          = module.configuration.vm_capacity
   preparation = {
     public_keys                              = local.github_keys
     restricted_key_lines                     = local.sshpiper_lines

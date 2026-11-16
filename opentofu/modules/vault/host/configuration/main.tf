@@ -25,7 +25,7 @@ locals {
     }
   }
 }
-module "vault_host" { source = "../.." }
+module "vault_host" { source = "../../../configuration/hosts/vault" }
 output "lock_targets" { value = merge(local.lock_targets, { lock_endpoints = {
   "vault" = module.vault_host.lock_endpoint
 } }) }
