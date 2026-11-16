@@ -1,0 +1,9 @@
+--ysql_num_tablets=1
+--ysql_pg_conf_csv=max_connections=50
+--memory_limit_hard_bytes=2147483648
+--db_block_cache_size_bytes=268435456
+--certs_dir=/etc/tack/ledger-certs
+--use_node_to_node_encryption=true
+--use_client_to_server_encryption=true
+--allow_insecure_connections=false
+--ysql_enable_auth=true

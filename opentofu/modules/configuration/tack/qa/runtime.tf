@@ -1,0 +1,25 @@
+module "artifacts" { source = "../../artifacts" }
+module "application" { source = "../application" }
+
+output "application_identity" { value = module.application.identity }
+output "vm_recipe" { value = module.application.vm_recipe }
+output "store_images" { value = module.artifacts.tack_store_images }
+output "overlays" { value = module.artifacts.tack_overlays }
+
+locals { release_key = "74576c94ab9ec6662e9634978d72cb6f06de4470" }
+output "release" { value = module.artifacts.tack_releases[local.release_key] }
+output "cloudflared_image" { value = module.artifacts.cloudflared_image }
+
+output "vm_capacity" { value = { cores = 2, memory_mib = 4096, disk_gib = 40 } }
+output "application_replicas" { value = 1 }
+output "application_strategy" { value = "Recreate" }
+output "connector_count" { value = 1 }
+output "snapshots_enabled" { value = false }
+
+output "lxc_capacity" {
+  value = {
+    tack_qa_suburban      = { memory_mib = 6144, cores = 2, disk_gib = 40 }
+    tack_search1_suburban = { memory_mib = 8192, cores = 2, disk_gib = 40 }
+  }
+}
+output "lxc_template_file_id" { value = "${module.suburban_host.guest.image_datastore}:vztmpl/${module.artifacts.debian_lxc_template}" }

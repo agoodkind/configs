@@ -1,0 +1,15 @@
+services:
+  opensearch:
+    image: ${image}
+    restart: unless-stopped
+    mem_limit: 8g
+    environment:
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms3g -Xmx3g -XX:G1PeriodicGCInterval=5000
+    network_mode: host
+    volumes:
+      - search:/usr/share/opensearch/data
+      - /opt/tack-qa/search/opensearch.yml:/usr/share/opensearch/config/opensearch.yml:ro
+      - /opt/tack-qa/search:/usr/share/opensearch/config/tack:ro
+volumes:
+  search:

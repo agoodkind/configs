@@ -1,0 +1,32 @@
+output "service_secret_versions" {
+  value = {
+    database_url              = 1
+    migrator_database_url     = 1
+    superuser_database_url    = 1
+    audit_operator_dsn        = 1
+    audit_reader_dsn          = 1
+    audit_redactor_dsn        = 1
+    audit_writer_dsn          = 1
+    app_password              = 1
+    migrator_password         = 1
+    yugabyte_password         = 1
+    audit_operator_password   = 1
+    audit_reader_password     = 1
+    audit_redactor_password   = 1
+    audit_writer_password     = 1
+    signing_key               = 1
+    seed_token                = 1
+    ledger_ca                 = 1
+    ledger_server_certificate = 1
+    ledger_server_private_key = 1
+    registry_config           = 1
+    search_ca                 = 1
+    search_certificate        = 1
+    search_private_key        = 1
+    search_admin_certificate  = 1
+    search_admin_private_key  = 1
+    search_password           = 1
+    search_password_hash      = 1
+    search_cursor_key         = 1
+  }
+}

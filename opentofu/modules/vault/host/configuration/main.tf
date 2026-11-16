@@ -1,4 +1,4 @@
-module "vault_hypervisor" { source = "../../services/vault_hypervisor" }
+module "vault_hypervisor" { source = "../../../configuration/services/vault_hypervisor" }
 locals {
   service_mapping = {
     vault_hypervisor = module.vault_hypervisor.value
@@ -29,7 +29,7 @@ locals {
     }
   }
 }
-module "vault_host" { source = "../.." }
+module "vault_host" { source = "../../../configuration/hosts/vault" }
 output "lock_targets" { value = merge(local.lock_targets, { lock_endpoints = {
   "vault" = module.vault_host.lock_endpoint
 } }) }

@@ -15,7 +15,7 @@ resource "pveguest_file" "compose_network_unit" {
   kind    = local.k3s_kafka_guest.kind
   path    = "/etc/systemd/system/tack-compose-network.service"
   mode    = "0644"
-  content = file("${path.module}/../../modules/tack-k3s/files/tack-compose-network.service")
+  content = file("${path.module}/../../modules/tack/application/files/tack-compose-network.service")
 }
 
 resource "pveguest_file" "compose_network_script" {
@@ -24,7 +24,7 @@ resource "pveguest_file" "compose_network_script" {
   kind    = local.k3s_kafka_guest.kind
   path    = "/usr/local/sbin/tack-compose-network"
   mode    = "0755"
-  content = file("${path.module}/../../modules/tack-k3s/files/tack-compose-network.sh")
+  content = file("${path.module}/../../modules/tack/application/files/tack-compose-network.sh")
 }
 
 resource "pveguest_systemd_unit" "compose_network" {

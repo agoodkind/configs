@@ -1,5 +1,5 @@
-module "suburban_hypervisor" { source = "../../services/suburban_hypervisor" }
-module "vmbr1_suburban" { source = "../../services/vmbr1_suburban" }
+module "suburban_hypervisor" { source = "../../../configuration/services/suburban_hypervisor" }
+module "vmbr1_suburban" { source = "../../../configuration/services/vmbr1_suburban" }
 locals {
   service_mapping = {
     suburban_hypervisor = module.suburban_hypervisor.value
@@ -23,6 +23,7 @@ locals {
       "proxmox_sdn_applier.suburban_finalizer" = "suburban"
       "proxmox_sdn_zone_simple.suburban"       = "suburban"
       "proxmox_sdn_vnet.suburban"              = "suburban"
+      "proxmox_sdn_subnet.suburban_ipv4"       = "suburban"
       "proxmox_sdn_subnet.suburban_ipv6"       = "suburban"
       "remote_file"                            = "suburban"
       "terraform_data.uplink_ipv6_activate"    = "suburban"
@@ -32,7 +33,7 @@ locals {
     }
   }
 }
-module "suburban_host" { source = "../.." }
+module "suburban_host" { source = "../../../configuration/hosts/suburban" }
 output "lock_targets" { value = merge(local.lock_targets, { lock_endpoints = {
   "suburban" = module.suburban_host.lock_endpoint
 } }) }

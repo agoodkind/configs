@@ -1,5 +1,5 @@
 module "contracts" { source = "../../../modules/contracts" }
-module "hypervisor" { source = "../../../modules/suburban/services/suburban_hypervisor" }
+module "hypervisor" { source = "../../../modules/configuration/services/suburban_hypervisor" }
 module "configuration" { source = "../../../modules/suburban/simulators/att/configuration" }
 
 locals {

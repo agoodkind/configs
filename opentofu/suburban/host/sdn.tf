@@ -1,5 +1,5 @@
 module "suburban_config" {
-  source = "../../modules/suburban"
+  source = "../../modules/configuration/hosts/suburban"
 }
 
 resource "proxmox_sdn_applier" "suburban_finalizer" {
@@ -23,6 +23,14 @@ resource "proxmox_sdn_vnet" "suburban" {
   zone     = proxmox_sdn_zone_simple.suburban.id
 }
 
+resource "proxmox_sdn_subnet" "suburban_ipv4" {
+  provider = proxmox.suburban
+  cidr     = module.suburban_config.vmnet.ipv4_cidr
+  gateway  = module.suburban_config.vmnet.ipv4_gateway
+  snat     = true
+  vnet     = proxmox_sdn_vnet.suburban.id
+}
+
 resource "proxmox_sdn_subnet" "suburban_ipv6" {
   provider = proxmox.suburban
   cidr     = module.suburban_config.vmnet.ipv6_cidr
@@ -36,6 +44,7 @@ resource "proxmox_sdn_applier" "suburban" {
   on_destroy = false
 
   depends_on = [
+    proxmox_sdn_subnet.suburban_ipv4,
     proxmox_sdn_subnet.suburban_ipv6,
     module.suburban,
     terraform_data.uplink_ipv6_activate,
@@ -45,6 +54,7 @@ resource "proxmox_sdn_applier" "suburban" {
     replace_triggered_by = [
       proxmox_sdn_zone_simple.suburban,
       proxmox_sdn_vnet.suburban,
+      proxmox_sdn_subnet.suburban_ipv4,
       proxmox_sdn_subnet.suburban_ipv6,
       terraform_data.uplink_ipv6_activate,
     ]

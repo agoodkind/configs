@@ -1,4 +1,4 @@
-module "opnsense_suburban" { source = "../../../services/opnsense_suburban" }
+module "opnsense_suburban" { source = "../../../../configuration/services/opnsense_suburban" }
 locals {
   service_mapping = {
     mwan_test_client_a_suburban = {
@@ -28,7 +28,7 @@ locals {
     }
   }
 }
-module "suburban_host" { source = "../../.." }
+module "suburban_host" { source = "../../../../configuration/hosts/suburban" }
 output "lock_targets" { value = merge(local.lock_targets, { lock_endpoints = {
   "suburban" = module.suburban_host.lock_endpoint
 } }) }

@@ -1,4 +1,4 @@
-module "proxy" { source = "../../../vault/services/proxy" }
+module "proxy" { source = "../../../configuration/services/proxy" }
 locals {
   service_mapping = {
     proxy = module.proxy.value
