@@ -1,7 +1,8 @@
 cluster.name: tack-qa-search
 action.auto_create_index: "-node-pages-*,+*"
 node.name: tack-qa-search1
-network.host: "::"
+network.host: ${jsonencode(node_address)}
+network.bind_host: ${jsonencode(["::1", node_address])}
 discovery.type: single-node
 plugins.security.ssl.transport.pemcert_filepath: tack/node.pem
 plugins.security.ssl.transport.pemkey_filepath: tack/node-key.pem

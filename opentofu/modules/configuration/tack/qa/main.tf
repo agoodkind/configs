@@ -3,7 +3,8 @@ module "suburban_hypervisor" { source = "../../services/suburban_hypervisor" }
 module "suburban_host" { source = "../../hosts/suburban" }
 
 locals {
-  tack_qa_vmid = 217
+  tack_qa_vmid     = 217
+  tack_search_vmid = 227
   service_mapping = {
     proxy               = module.proxy.value
     suburban_hypervisor = module.suburban_hypervisor.value
@@ -21,8 +22,8 @@ locals {
     tack_search1_suburban = {
       hostname          = "tack-search1.suburban.goodkind.io"
       node              = "suburban"
-      vmid              = 227
-      ipv4_cidr         = null
+      vmid              = local.tack_search_vmid
+      ipv4_cidr         = "${cidrhost(module.suburban_host.vmnet.ipv4_cidr, local.tack_search_vmid)}/${split("/", module.suburban_host.vmnet.ipv4_cidr)[1]}"
       ipv6              = "3d06:bad:b01:210::227"
       mac_address       = "BC:24:11:04:02:27"
       docker_v6_subnet  = "3d06:bad:b01:210:7b1::/96"
