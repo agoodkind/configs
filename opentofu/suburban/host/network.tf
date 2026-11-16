@@ -15,7 +15,7 @@ resource "remote_file" "uplink_ipv6" {
   for_each = local.uplink_ipv6_files
 
   conn {
-    host  = local.overlay_hosts.suburban.ssh_host
+    host  = "[${local.overlay_hosts.suburban.ssh_host}]"
     user  = "root"
     agent = true
   }
