@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-hosts_file=/etc/hosts
-new_line="10.230.0.254 poweredge.management.collingwood.goodkind.io poweredge"
-temp_file="$(mktemp)"
+HOSTS_FILE=/etc/hosts
+NEW_LINE="10.230.0.254 poweredge.management.collingwood.goodkind.io poweredge"
+TEMP_FILE="$(mktemp)"
 
-awk -v new_line="${new_line}" '
+awk -v new_line="${NEW_LINE}" '
   $0 ~ /^10\.230\.0\.254[[:space:]]/ { print new_line; next }
   { print }
-' "${hosts_file}" >"${temp_file}"
+' "${HOSTS_FILE}" >"${TEMP_FILE}"
 
-cat "${temp_file}" >"${hosts_file}"
-rm -f "${temp_file}"
+cat "${TEMP_FILE}" >"${HOSTS_FILE}"
+rm -f "${TEMP_FILE}"
 
-if ! grep -qxF "${new_line}" "${hosts_file}"; then
-  echo "${hosts_file} does not contain the line: ${new_line}" >&2
+if ! grep -qxF "${NEW_LINE}" "${HOSTS_FILE}"; then
+  echo "${HOSTS_FILE} does not contain the line: ${NEW_LINE}" >&2
   exit 1
 fi
