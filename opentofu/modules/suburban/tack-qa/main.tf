@@ -12,7 +12,7 @@ resource "proxmox_virtual_environment_container" "tack_app2_suburban" {
       }
     }
     dns {
-      servers = [local.service_mapping.dns64_suburban.ipv6]
+      servers = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"]
     }
     user_account {
       keys = [var.ssh_keys]
@@ -78,7 +78,7 @@ resource "proxmox_virtual_environment_container" "tack_data1_suburban" {
       }
     }
     dns {
-      servers = [local.service_mapping.dns64_suburban.ipv6]
+      servers = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"]
     }
     user_account {
       keys = [var.ssh_keys]
@@ -145,7 +145,7 @@ resource "proxmox_virtual_environment_container" "tack_data2_suburban" {
       }
     }
     dns {
-      servers = [local.service_mapping.dns64_suburban.ipv6]
+      servers = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"]
     }
     user_account {
       keys = [var.ssh_keys]
@@ -212,7 +212,7 @@ resource "proxmox_virtual_environment_container" "tack_data3_suburban" {
       }
     }
     dns {
-      servers = [local.service_mapping.dns64_suburban.ipv6]
+      servers = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"]
     }
     user_account {
       keys = [var.ssh_keys]
@@ -279,7 +279,7 @@ resource "proxmox_virtual_environment_container" "tack_qa_suburban" {
       }
     }
     dns {
-      servers = [local.service_mapping.dns64_suburban.ipv6]
+      servers = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"]
     }
     user_account {
       keys = [var.ssh_keys]
@@ -349,7 +349,7 @@ resource "proxmox_virtual_environment_container" "tack_search1_suburban" {
       }
     }
     dns {
-      servers = [local.service_mapping.dns64_suburban.ipv6]
+      servers = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"]
     }
     user_account {
       keys = [var.ssh_keys]
@@ -411,9 +411,6 @@ variable "service_mapping" { type = object({
   })
   opnsense_suburban = object({
     ipv6_vmnet = string
-  })
-  dns64_suburban = object({
-    ipv6 = string
   })
   tack_data1_suburban = object({
     vmid        = number
