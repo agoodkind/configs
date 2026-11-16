@@ -1,4 +1,10 @@
 locals {
+  vmnet = {
+    bridge       = "vmnet"
+    ipv6_cidr    = "3d06:bad:b01:210::/64"
+    ipv6_gateway = "3d06:bad:b01:210::254"
+  }
+
   bridges = {
     isp_astound_suburban   = "vmbr7"
     isp_att_suburban       = "vmbr5"
@@ -14,4 +20,8 @@ locals {
 output "bridges" {
   description = "Bridge names of the eight Suburban host bridges, keyed by bridge resource label."
   value       = local.bridges
+}
+
+output "vmnet" {
+  value = local.vmnet
 }

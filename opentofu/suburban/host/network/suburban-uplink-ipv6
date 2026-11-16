@@ -1,0 +1,4 @@
+iface vmbr0 inet6 manual
+    accept-ra 2
+    autoconf 1
+    post-up /usr/sbin/sysctl --load=/etc/sysctl.d/99-suburban-uplink-ipv6.conf

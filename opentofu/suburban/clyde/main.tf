@@ -73,7 +73,7 @@ module "suburban" {
 
   ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping = local.service_mapping
-  host_networks   = module.suburban_config.bridges
+  vmnet           = module.suburban_config.vmnet
 }
 
 data "http" "github_ssh_keys" {

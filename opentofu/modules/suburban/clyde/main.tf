@@ -8,7 +8,7 @@ resource "proxmox_virtual_environment_container" "clyde_suburban" {
     ip_config {
       ipv6 {
         address = "${local.service_mapping.clyde_suburban.ipv6}/64"
-        gateway = local.service_mapping.opnsense_suburban.ipv6_vmnet
+        gateway = var.vmnet.ipv6_gateway
       }
     }
     dns {
@@ -21,7 +21,7 @@ resource "proxmox_virtual_environment_container" "clyde_suburban" {
 
   network_interface {
     name        = "eth0"
-    bridge      = var.host_networks.trunk_suburban
+    bridge      = var.vmnet.bridge
     mac_address = local.service_mapping.clyde_suburban.mac_address
   }
 
@@ -64,14 +64,16 @@ variable "service_mapping" { type = object({
     ipv6        = string
     mac_address = string
   })
-  opnsense_suburban = object({
-    ipv6_vmnet = string
-  })
 }) }
 
 variable "ssh_keys" { type = string }
 
-variable "host_networks" { type = map(string) }
+variable "vmnet" {
+  type = object({
+    bridge       = string
+    ipv6_gateway = string
+  })
+}
 
 locals { service_mapping = var.service_mapping }
 

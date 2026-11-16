@@ -103,8 +103,7 @@ resource "proxmox_network_linux_bridge" "trunk_suburban" {
   vids       = "64 100 200 300"
   autostart  = true
 
-  address  = "${local.service_mapping.vmbrtrunk_suburban.ipv4}/24"
-  address6 = "${local.service_mapping.vmbrtrunk_suburban.ipv6}/64"
+  address = "${local.service_mapping.vmbrtrunk_suburban.ipv4}/24"
 
   lifecycle {
     prevent_destroy = true
@@ -170,7 +169,6 @@ variable "routing_networks" { type = map(object({ bridge = string, ipv4_net = st
 variable "service_mapping" { type = object({
   vmbrtrunk_suburban = object({
     ipv4 = string
-    ipv6 = string
   })
   vmbr1_suburban = object({
     ipv4 = string
