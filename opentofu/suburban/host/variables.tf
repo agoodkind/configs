@@ -30,6 +30,11 @@ variable "vault_suburban_testbed_pve_token_secret" {
   ephemeral   = true
 }
 
+variable "vault_smtp2go_api_key" {
+  type      = string
+  sensitive = true
+}
+
 variable "vault_tofu_state_passphrase" {
   description = "Passphrase that encrypts the OpenTofu state and plan files"
   type        = string

@@ -148,17 +148,17 @@ locals {
   cloudflare_static_dns_records = {
     "goodkind.io/A/poweredge.home.goodkind.io/561deda2" = {
       zone    = "goodkind.io"
-      name    = "poweredge.home.goodkind.io"
+      name    = local.service_mapping.poweredge_hypervisor.hostname
       type    = "A"
-      content = "10.230.0.254"
+      content = local.service_mapping.poweredge_hypervisor.ipv4
       ttl     = 1
       proxied = false
     }
     "goodkind.io/AAAA/poweredge.home.goodkind.io/6e3b4e4f" = {
       zone    = "goodkind.io"
-      name    = "poweredge.home.goodkind.io"
+      name    = local.service_mapping.poweredge_hypervisor.hostname
       type    = "AAAA"
-      content = "3d06:bad:b01:300::254"
+      content = local.service_mapping.poweredge_hypervisor.ipv6
       ttl     = 1
       proxied = false
     }
