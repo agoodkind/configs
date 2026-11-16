@@ -50,25 +50,6 @@ resource "remote_file" "host_network" {
   depends_on = [terraform_data.guest_network_packages]
 }
 
-moved {
-  from = remote_file.guest_network["private_tunnel_unit"]
-  to   = remote_file.host_network["private_tunnel_unit"]
-}
-
-moved {
-  from = remote_file.guest_network["bridge"]
-  to   = remote_file.host_network["bridge"]
-}
-
-moved {
-  from = remote_file.guest_network["uplink"]
-  to   = remote_file.host_network["uplink"]
-}
-
-moved {
-  from = remote_file.guest_network["forwarding"]
-  to   = remote_file.host_network["forwarding"]
-}
 
 locals {
   guest_network_activation_revision = sha256(jsonencode(concat([
