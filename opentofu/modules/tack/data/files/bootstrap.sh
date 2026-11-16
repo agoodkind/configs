@@ -5,11 +5,11 @@ mkdir -p /var/lib/tack-qa/bootstrap
 if [[ ! -f /var/lib/tack-qa/bootstrap/fdb.complete ]]; then
     docker compose exec -T fdb fdbcli -C /etc/foundationdb/fdb.cluster --timeout 20 --exec 'status json' > /var/lib/tack-qa/bootstrap/fdb-status.json
     if jq -e '.client.database_status.available == true' /var/lib/tack-qa/bootstrap/fdb-status.json; then
-        printf 'FoundationDB already configured.\n'
+        printf 'FoundationDB already has a database configuration.\n'
     elif jq -e '.cluster.recovery_state.name == "configuration_never_created"' /var/lib/tack-qa/bootstrap/fdb-status.json; then
         docker compose exec -T fdb fdbcli -C /etc/foundationdb/fdb.cluster --timeout 30 --exec 'configure new single ssd'
     else
-        printf 'FoundationDB status does not establish an unconfigured database; initialization refused.\n' >&2
+        printf 'FoundationDB status does not establish an unconfigured database. The bootstrap script refuses initialization.\n' >&2
         jq '{available: .client.database_status.available, recovery_state: .cluster.recovery_state.name}' /var/lib/tack-qa/bootstrap/fdb-status.json >&2
         exit 1
     fi

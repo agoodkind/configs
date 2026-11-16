@@ -77,12 +77,8 @@ module "tack_qa_services" {
 }
 
 module "tack_qa_search" {
-  source = "../../modules/tack/search"
-  search_guest = merge(local.guests.tack_search1_suburban, {
-    ipv6    = local.service_mapping.tack_search1_suburban.ipv6
-    subnet  = local.service_mapping.tack_search1_suburban.docker_v6_subnet
-    gateway = local.service_mapping.tack_search1_suburban.docker_v6_gateway
-  })
+  source          = "../../modules/tack/search"
+  search_guest    = local.guests.tack_search1_suburban
   image           = module.configuration.store_images.opensearch
   endpoint        = module.configuration.tack_k3s_application.environment.OPENSEARCH_ENDPOINT
   search_username = module.configuration.tack_k3s_application.environment.OPENSEARCH_USERNAME

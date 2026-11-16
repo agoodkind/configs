@@ -78,7 +78,7 @@ module "suburban" {
   template_file_id = module.configuration.lxc_template_file_id
   ssh_keys         = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping  = local.service_mapping
-  host_networks    = module.suburban_config.bridges
+  vmnet            = module.suburban_config.vmnet
 }
 
 output "tack_qa_suburban_vmid" {

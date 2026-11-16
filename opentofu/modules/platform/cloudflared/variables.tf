@@ -6,7 +6,7 @@ terraform {
 }
 
 variable "connector_count" {
-  description = "Number of cloudflared connectors for the cluster."
+  description = "Set the number of cloudflared connectors for the cluster."
   type        = number
   validation {
     condition     = contains([1, 2], var.connector_count)

@@ -8,7 +8,6 @@ variable "service_mapping" {
   type = object({
     tack_qa_suburban      = object({ vmid = number, hostname = string, ipv6 = string, mac_address = string })
     tack_search1_suburban = object({ vmid = number, hostname = string, ipv6 = string, mac_address = string })
-    opnsense_suburban     = object({ ipv6_vmnet = string })
   })
 }
 variable "host" {
@@ -19,7 +18,9 @@ variable "capacity" {
 }
 variable "template_file_id" { type = string }
 variable "ssh_keys" { type = string }
-variable "host_networks" { type = map(string) }
+variable "vmnet" {
+  type = object({ bridge = string, ipv6_gateway = string })
+}
 
 resource "proxmox_virtual_environment_container" "service" {
   for_each  = var.capacity
@@ -30,7 +31,7 @@ resource "proxmox_virtual_environment_container" "service" {
     ip_config {
       ipv6 {
         address = "${var.service_mapping[each.key].ipv6}/64"
-        gateway = var.service_mapping.opnsense_suburban.ipv6_vmnet
+        gateway = var.vmnet.ipv6_gateway
       }
     }
     dns { servers = var.host.dns_servers }
@@ -39,7 +40,7 @@ resource "proxmox_virtual_environment_container" "service" {
   features { nesting = true }
   network_interface {
     name        = "eth0"
-    bridge      = var.host_networks.trunk_suburban
+    bridge      = var.vmnet.bridge
     mac_address = var.service_mapping[each.key].mac_address
   }
   disk {
@@ -62,10 +63,10 @@ resource "proxmox_virtual_environment_container" "service" {
 }
 
 output "tack_qa_suburban_vmid" {
-  description = "VMID of the consolidated QA data LXC."
+  description = "This output returns the VMID of the consolidated QA data LXC."
   value       = proxmox_virtual_environment_container.service["tack_qa_suburban"].vm_id
 }
 output "tack_qa_suburban_ipv6" {
-  description = "IPv6 address of the consolidated QA data LXC."
+  description = "This output returns the IPv6 address of the consolidated QA data LXC."
   value       = var.service_mapping.tack_qa_suburban.ipv6
 }

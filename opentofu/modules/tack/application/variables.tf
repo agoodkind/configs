@@ -91,7 +91,7 @@ variable "application_secret_versions" {
 }
 
 variable "application_replicas" {
-  description = "Number of Tack application Pods; a single replica updates without a surge."
+  description = "Set the number of Tack application Pods. A single replica updates without a surge."
   type        = number
   validation {
     condition     = var.application_replicas >= 1 && floor(var.application_replicas) == var.application_replicas

@@ -1,6 +1,6 @@
 locals {
   files = {
-    "search/compose.yaml" = templatefile("${path.module}/files/search-compose.yaml.tftpl", { guest = var.search_guest, image = var.image })
+    "search/compose.yaml" = templatefile("${path.module}/files/search-compose.yaml.tftpl", { image = var.image })
     "search/opensearch.yml" = templatefile("${path.module}/files/opensearch.yml.tftpl", {
       admin_dn = var.search_admin_dn, node_dn = var.search_node_dn
     })

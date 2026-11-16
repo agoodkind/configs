@@ -1,7 +1,7 @@
 module "tack_k3s_vm" {
   source      = "../../modules/platform/cloud-vm"
   providers   = { proxmox = proxmox.suburban }
-  guest       = merge(module.configuration.tack_k3s.guest, { bridge = module.suburban_config.bridges.trunk_suburban })
+  guest       = merge(module.configuration.tack_k3s.guest, { bridge = module.suburban_config.vmnet.bridge })
   cloud_image = module.configuration.tack_k3s.cloud_image
   vm_capacity = module.configuration.vm_capacity
   tags        = module.configuration.vm_recipe.tags

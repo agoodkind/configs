@@ -46,7 +46,7 @@ variable "cloud_image" {
 }
 
 variable "vm_capacity" {
-  description = "CPU cores, memory in MiB, and root disk in GiB for the k3s VM."
+  description = "Set the k3s VM CPU cores, memory in MiB, and root disk size in GiB."
   type = object({
     cores      = number
     memory_mib = number

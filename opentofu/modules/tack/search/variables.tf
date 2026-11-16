@@ -6,7 +6,7 @@ terraform {
 }
 
 variable "search_guest" {
-  type = object({ node = string, vmid = number, kind = string, ipv6 = string, subnet = string, gateway = string })
+  type = object({ node = string, vmid = number, kind = string })
 }
 variable "search_username" {
   type = string

@@ -15,7 +15,7 @@ locals {
       ipv4_cidr         = "${local.tack_k3s_guest.ipv4}/24"
       ipv4_gateway      = module.opnsense_suburban.value.ipv4_vmnet
       ipv6_cidr         = "${local.tack_k3s_guest.ipv6}/64"
-      ipv6_gateway      = module.opnsense_suburban.value.ipv6_vmnet
+      ipv6_gateway      = module.suburban_host.vmnet.ipv6_gateway
       dns_servers       = module.suburban_host.guest.dns_servers
       datastore_id      = module.suburban_host.guest.datastore_id
       image_datastore   = module.suburban_host.guest.image_datastore

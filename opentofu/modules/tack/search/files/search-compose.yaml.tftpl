@@ -13,13 +13,3 @@ services:
       - /opt/tack-qa/search:/usr/share/opensearch/config/tack:ro
 volumes:
   search:
-networks:
-  default:
-    enable_ipv6: true
-    enable_ipv4: false
-    driver_opts:
-      com.docker.network.bridge.gateway_mode_ipv6: routed
-    ipam:
-      config:
-        - subnet: ${guest.subnet}
-          gateway: ${guest.gateway}
