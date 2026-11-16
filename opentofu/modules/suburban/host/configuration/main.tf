@@ -24,7 +24,7 @@ locals {
       "proxmox_sdn_zone_simple.suburban"       = "suburban"
       "proxmox_sdn_vnet.suburban"              = "suburban"
       "proxmox_sdn_subnet.suburban_ipv6"       = "suburban"
-      "remote_file.uplink_ipv6"                = "suburban"
+      "remote_file"                            = "suburban"
       "terraform_data.uplink_ipv6_activate"    = "suburban"
     }
   }
