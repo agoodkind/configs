@@ -3,7 +3,11 @@ module "application" { source = "../application" }
 
 output "application_identity" { value = module.application.identity }
 output "vm_recipe" { value = module.application.vm_recipe }
-output "store_images" { value = module.artifacts.tack_store_images }
+output "store_images" {
+  value = merge(module.artifacts.tack_store_images, {
+    foundationdb = module.artifacts.foundationdb_images["7.4.7"]
+  })
+}
 output "overlays" { value = module.artifacts.tack_overlays }
 
 locals { release_key = "74576c94ab9ec6662e9634978d72cb6f06de4470" }
