@@ -1,0 +1,4 @@
+auto idrac
+allow-hotplug idrac
+iface idrac inet static
+    address 169.254.1.2/24

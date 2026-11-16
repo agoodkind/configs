@@ -1,45 +1,140 @@
+locals { repository_root = abspath("${path.module}/../../..") }
+
+module "contracts" {
+  source = "../../modules/contracts"
+}
+
 locals {
-  ssh_host               = "3d06:bad:b01:300::254"
-  send_email_release_tag = "202611160557-1d-9875b96"
-  send_email_sha256      = "ed240a4dd5baae5cb493861d294a4eed18e973d86615c00d3c279a15440203b4"
+  shared_vars         = module.contracts.shared_vars
+  service_mapping     = module.configuration.service_mapping
+  cloudflare_zone_ids = module.contracts.cloudflare_zone_ids
 }
 
-module "unattended_upgrades" {
-  source = "../../modules/unattended-upgrades"
+resource "proxmox_acme_account" "poweredge" {
+  provider  = proxmox.poweredge
+  name      = local.acme_account
+  contact   = var.cloudflare_owner_email
+  directory = local.acme_directory
+  tos       = local.acme_terms
 
-  ssh_host = local.ssh_host
-  mail_to  = "root"
+  depends_on = [module.overlay]
 }
 
-module "mail" {
-  source = "../../modules/mail"
+resource "proxmox_acme_certificate" "poweredge" {
+  provider  = proxmox.poweredge
+  node_name = "poweredge"
+  account   = proxmox_acme_account.poweredge.name
 
-  ssh_host        = local.ssh_host
-  release_tag     = local.send_email_release_tag
-  sha256          = local.send_email_sha256
-  local_recipient = "alex@goodkind.io"
-
-  depends_on = [terraform_data.hosts]
+  domains = [
+    {
+      domain = "poweredge.home.goodkind.io"
+      plugin = proxmox_acme_dns_plugin.poweredge.plugin
+    }
+  ]
+  depends_on = [module.overlay]
 }
 
-module "smtp2go" {
-  source = "../../modules/smtp2go"
+resource "proxmox_acme_dns_plugin" "poweredge" {
+  provider = proxmox.poweredge
+  plugin   = local.acme_plugin
+  api      = "cf"
 
-  ssh_host = local.ssh_host
-  api_key  = var.vault_smtp2go_api_key
-}
-
-resource "terraform_data" "hosts" {
-  triggers_replace = [filesha256("${path.module}/hosts.sh")]
-
-  connection {
-    type  = "ssh"
-    host  = local.ssh_host
-    user  = "root"
-    agent = true
+  data_wo = {
+    CF_Account_ID = var.cloudflare_account_id
+    CF_Zone_ID    = local.cloudflare_zone_ids["goodkind.io"]
+    CF_Token      = var.vault_poweredge_acme_cloudflare_token
   }
+  data_wo_version = local.acme_plugin_data_version
 
-  provisioner "remote-exec" {
-    script = "${path.module}/hosts.sh"
+  depends_on = [module.overlay]
+}
+
+module "poweredge_config" {
+  source = "../../modules/poweredge"
+}
+
+resource "pveguest_host_kernel_modules" "poweredge" {
+  node    = local.poweredge_node
+  modules = toset(module.poweredge_config.kernel_modules)
+}
+
+locals {
+
+  overlay_hosts = { poweredge = {
+    ssh_host  = "poweredge.home.goodkind.io"
+    node_name = "poweredge"
+    commit    = "b685157b778cf2fb9edcd79489d9743350c9db4b"
+    guest_api = true
+    kernel_modules = {
+      allow = module.poweredge_config.kernel_modules
+    }
+    container_options          = null
+    grub_cmdline_linux_default = "systemd.show_status=1"
+    network_interfaces_file    = null
+    host_artifact_workspaces   = ["poweredge/idrac-certificate"]
+  } }
+}
+
+module "host_artifacts" {
+  source   = "../../modules/overlay/host-artifacts"
+  for_each = local.overlay_hosts
+
+  repository_root = local.repository_root
+  node_name       = each.value.node_name
+  workspaces      = each.value.host_artifact_workspaces
+}
+
+module "overlay" {
+  source   = "../../modules/overlay"
+  for_each = local.overlay_hosts
+
+  ssh_host        = each.value.ssh_host
+  node_name       = each.value.node_name
+  commit          = each.value.commit
+  guest_api       = each.value.guest_api
+  automation_user = local.shared_vars.proxmox_api_user
+  kernel_modules  = each.value.kernel_modules
+  acme_account    = local.acme_account
+  acme_plugin     = local.acme_plugin
+
+  container_options = each.value.container_options
+
+  grub_cmdline_linux_default = each.value.grub_cmdline_linux_default
+  network_interfaces_file    = each.value.network_interfaces_file
+  host_artifact_policies     = module.host_artifacts[each.key].policies
+}
+
+# Each ACME account and DNS plugin depends on module.overlay. The automation
+# token of the provider needs the Sys.ACME roles that module.overlay grants.
+#
+# `tofu test` fails on an import block. Import an existing account with id
+# "default", a plugin with id "cf", and a certificate with its node name
+# through `./configsctl tofu import`.
+locals {
+  acme_directory = "https://acme-v02.api.letsencrypt.org/directory"
+  acme_terms     = "https://letsencrypt.org/documents/LE-SA-v1.5-February-24-2025.pdf"
+  acme_account   = "default"
+  acme_plugin    = "cf"
+
+  # OpenTofu sends data_wo to Proxmox again only when this number increases.
+  # Increase it after a change of a Cloudflare DNS token.
+  acme_plugin_data_version = 2
+}
+
+locals {
+  poweredge_node = "poweredge"
+}
+
+locals {
+  nodes = {
+    poweredge = {
+      endpoint  = "https://${local.service_mapping.poweredge_hypervisor.ipv4}:8006"
+      api_token = "${local.proxmox_token_principal}=${var.vault_poweredge_pve_token_secret}"
+      insecure  = true
+    }
   }
 }
+
+locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
+
+module "configuration" { source = "../../modules/poweredge/host/configuration" }

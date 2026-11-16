@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the PowerEdge iDRAC certificate daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15min
+Unit=idrac-certificate.service
+
+[Install]
+WantedBy=timers.target
