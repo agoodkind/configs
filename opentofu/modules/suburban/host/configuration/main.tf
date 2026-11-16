@@ -20,6 +20,9 @@ locals {
       "proxmox_acme_certificate.suburban" = "suburban"
       "proxmox_acme_dns_plugin.suburban"  = "suburban"
       "proxmox_storage_directory.local"   = "suburban"
+      "module.unattended_upgrades"        = "suburban"
+      "module.mail"                       = "suburban"
+      "module.smtp2go"                    = "suburban"
     }
   }
 }

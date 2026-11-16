@@ -22,6 +22,9 @@ locals {
       "remote_file"                           = "vault"
       "terraform_data.guest_network_packages" = "vault"
       "terraform_data.guest_network_activate" = "vault"
+      "module.unattended_upgrades"            = "vault"
+      "module.mail"                           = "vault"
+      "module.smtp2go"                        = "vault"
     }
   }
 }
