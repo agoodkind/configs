@@ -34,7 +34,7 @@ locals {
     ledger_server_certificate = var.vault_tack_qa_ledger_server_certificate
     ledger_server_private_key = var.vault_tack_qa_ledger_server_private_key
     registry_config = jsonencode({ auths = { "ghcr.io" = {
-      auth = base64encode("agoodkind:${var.vault_tack_qa_ghcr_pull_token}")
+      auth = base64encode("${module.configuration.vm_recipe.registry_username}:${var.vault_tack_qa_ghcr_pull_token}")
     } } })
     search_ca                = var.vault_tack_qa_search_ca
     search_certificate       = var.vault_tack_search1_suburban_certificate
@@ -48,27 +48,30 @@ locals {
 }
 
 module "tack_qa_services" {
-  source              = "../../modules/tack-qa-services"
+  source              = "../../modules/tack/data"
   application_address = module.configuration.tack_k3s.guest.ipv6
   data_guest = merge(local.guests.tack_qa_suburban, {
     ipv6    = local.service_mapping.tack_qa_suburban.ipv6
     subnet  = local.service_mapping.tack_qa_suburban.docker_v6_subnet
     gateway = local.service_mapping.tack_qa_suburban.docker_v6_gateway
   })
-  search_guest = merge(local.guests.tack_search1_suburban, {
-    ipv6    = local.service_mapping.tack_search1_suburban.ipv6
-    subnet  = local.service_mapping.tack_search1_suburban.docker_v6_subnet
-    gateway = local.service_mapping.tack_search1_suburban.docker_v6_gateway
-  })
-  release_commit  = local.tack_release.commit
-  server_image    = "ghcr.io/agoodkind/tack-server@${local.tack_release.server_digest}"
-  consumer_image  = "ghcr.io/agoodkind/tack-audit-consumer@${local.tack_release.consumer_digest}"
-  seed_email      = local.tack_release.accountable
-  seed_name       = "QA Operator"
-  signing_id      = var.tack_qa_signing_id
-  search_admin_dn = var.tack_qa_search_admin_dn
-  search_node_dn  = var.tack_qa_search_node_dn
-  secrets         = local.qa_service_secrets
+  search_endpoint = module.tack_qa_search.endpoint
+  search_ready    = module.tack_qa_search.ready
+  store_images    = module.configuration.store_images
+  overlays        = module.configuration.overlays
+  search_username = module.configuration.tack_k3s_application.environment.OPENSEARCH_USERNAME
+  search_settings = {
+    replicas       = module.configuration.tack_k3s_application.environment.OPENSEARCH_REPLICAS
+    shards         = module.configuration.tack_k3s_application.environment.OPENSEARCH_SHARDS
+    routing_shards = module.configuration.tack_k3s_application.environment.OPENSEARCH_ROUTING_SHARDS
+  }
+  release_commit = local.tack_release.commit
+  server_image   = "ghcr.io/agoodkind/tack-server@${local.tack_release.server_digest}"
+  consumer_image = "ghcr.io/agoodkind/tack-audit-consumer@${local.tack_release.consumer_digest}"
+  seed_email     = local.tack_release.accountable
+  seed_name      = "QA Operator"
+  signing_id     = var.tack_qa_signing_id
+  secrets        = local.qa_service_secrets
   secret_versions = { for key in [
     "database_url",
     "migrator_database_url",
@@ -100,4 +103,21 @@ module "tack_qa_services" {
     "search_cursor_key"
   ] : key => 1 }
   depends_on = [module.docker_guest]
+}
+
+module "tack_qa_search" {
+  source = "../../modules/tack/search"
+  search_guest = merge(local.guests.tack_search1_suburban, {
+    ipv6    = local.service_mapping.tack_search1_suburban.ipv6
+    subnet  = local.service_mapping.tack_search1_suburban.docker_v6_subnet
+    gateway = local.service_mapping.tack_search1_suburban.docker_v6_gateway
+  })
+  image           = module.configuration.store_images.opensearch
+  endpoint        = module.configuration.tack_k3s_application.environment.OPENSEARCH_ENDPOINT
+  search_username = module.configuration.tack_k3s_application.environment.OPENSEARCH_USERNAME
+  search_admin_dn = var.tack_qa_search_admin_dn
+  search_node_dn  = var.tack_qa_search_node_dn
+  secrets         = local.qa_service_secrets
+  secret_versions = { for key in ["search_ca", "search_certificate", "search_private_key", "search_admin_certificate", "search_admin_private_key", "search_password_hash"] : key => 1 }
+  depends_on      = [module.docker_guest]
 }

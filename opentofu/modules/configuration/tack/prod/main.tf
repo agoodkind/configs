@@ -24,6 +24,10 @@ output "service_mapping" { value = local.service_mapping }
 locals {
   lock_targets = {
     "module_hosts" = {
+      "module.tack_k3s_vm"      = "vault"
+      "module.tack_k3s_base"    = "vault"
+      "module.tack_application" = "vault"
+
       "module.vault"         = "vault"
       "module.tack_k3s"      = "vault"
       "module.search_caller" = "vault"

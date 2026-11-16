@@ -11,19 +11,19 @@ variable "service_mapping" {
     opnsense_suburban     = object({ ipv6_vmnet = string })
   })
 }
+variable "host" {
+  type = object({ node_name = string, dns_servers = list(string), datastore_id = string })
+}
+variable "capacity" {
+  type = map(object({ memory_mib = number, cores = number, disk_gib = number }))
+}
+variable "template_file_id" { type = string }
 variable "ssh_keys" { type = string }
 variable "host_networks" { type = map(string) }
 
-locals {
-  guests = {
-    tack_qa_suburban      = { memory_mib = 6144, cores = 2 }
-    tack_search1_suburban = { memory_mib = 8192, cores = 2 }
-  }
-}
-
 resource "proxmox_virtual_environment_container" "service" {
-  for_each  = local.guests
-  node_name = "hypervisor"
+  for_each  = var.capacity
+  node_name = var.host.node_name
   vm_id     = var.service_mapping[each.key].vmid
   initialization {
     hostname = var.service_mapping[each.key].hostname
@@ -33,7 +33,7 @@ resource "proxmox_virtual_environment_container" "service" {
         gateway = var.service_mapping.opnsense_suburban.ipv6_vmnet
       }
     }
-    dns { servers = ["2a07:a8c0::7d:698e", "2a07:a8c1::7d:698e"] }
+    dns { servers = var.host.dns_servers }
     user_account { keys = [var.ssh_keys] }
   }
   features { nesting = true }
@@ -43,15 +43,15 @@ resource "proxmox_virtual_environment_container" "service" {
     mac_address = var.service_mapping[each.key].mac_address
   }
   disk {
-    datastore_id  = "local-zfs"
-    size          = 40
+    datastore_id  = var.host.datastore_id
+    size          = each.value.disk_gib
     mount_options = ["discard"]
   }
   memory { dedicated = each.value.memory_mib }
   cpu { cores = each.value.cores }
   tags = ["lxc", "tack", "qa", "docker"]
   operating_system {
-    template_file_id = "local:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
+    template_file_id = var.template_file_id
     type             = "debian"
   }
   started      = true

@@ -53,14 +53,19 @@ data "cloudflare_zero_trust_tunnel_cloudflared_token" "tack_k3s" {
 }
 
 module "tack_cloudflared" {
-  source   = "../../modules/tack-k3s/cloudflared"
+  source   = "../../modules/platform/cloudflared"
   for_each = local.tack_connectors
 
-  guest           = each.value.guest
-  tunnel_id       = cloudflare_zero_trust_tunnel_cloudflared.tack_k3s[each.key].id
-  token           = data.cloudflare_zero_trust_tunnel_cloudflared_token.tack_k3s[each.key].token
-  token_version   = each.value.token_version
-  connector_count = each.value.connector_count
+  guest            = each.value.guest
+  tunnel_id        = cloudflare_zero_trust_tunnel_cloudflared.tack_k3s[each.key].id
+  token            = data.cloudflare_zero_trust_tunnel_cloudflared_token.tack_k3s[each.key].token
+  token_version    = each.value.token_version
+  connector_count  = each.value.connector_count
+  namespace        = module.configuration.tack_application_identities[each.key].namespace
+  connector_prefix = module.configuration.tack_application_identities[each.key].connector_prefix
+  manifest_prefix  = module.configuration.tack_application_identities[each.key].connector_manifest_prefix
+  revision_label   = module.configuration.tack_application_identities[each.key].revision_label
+  image            = module.configuration.cloudflared_image
 
   depends_on = [cloudflare_zero_trust_tunnel_cloudflared_config.tack_k3s]
 }

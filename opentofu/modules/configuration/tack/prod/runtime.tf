@@ -2,15 +2,11 @@ module "artifacts" { source = "../../artifacts" }
 module "application" { source = "../application" }
 
 output "application_identity" { value = module.application.identity }
+output "vm_recipe" { value = module.application.vm_recipe }
 
-output "release" {
-  value = {
-    commit          = "74576c94ab9ec6662e9634978d72cb6f06de4470"
-    server_digest   = "sha256:c588661aca86bc3cb943d231b5eb04a0fed76c02fbd4b9eb44e6ca191db2957e"
-    consumer_digest = "sha256:59911e352a6a7012c6b4b95461a4855fb46e11de250a2a210cb623f7e2d0e3e2"
-    accountable     = "alex@goodkind.io"
-  }
-}
+locals { release_key = "74576c94ab9ec6662e9634978d72cb6f06de4470" }
+output "release" { value = module.artifacts.tack_releases[local.release_key] }
+output "cloudflared_image" { value = module.artifacts.cloudflared_image }
 
 output "vm_capacity" { value = { cores = 4, memory_mib = 8192, disk_gib = 40 } }
 output "application_replicas" { value = 2 }

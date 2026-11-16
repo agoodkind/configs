@@ -33,6 +33,11 @@ locals {
   lock_guest_services = merge(local.guest_services, { tack_k3s_suburban = local.tack_k3s_guest })
   lock_targets = {
     module_hosts = {
+      "module.tack_k3s_vm"      = "suburban"
+      "module.tack_k3s_base"    = "suburban"
+      "module.tack_application" = "suburban"
+      "module.tack_qa_search"   = "suburban"
+
       "module.suburban"         = "suburban"
       "module.tack_k3s"         = "suburban"
       "module.tack_qa_services" = "suburban"

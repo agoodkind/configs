@@ -32,3 +32,5 @@ output "tack_application_identities" {
     qa   = module.tack_qa.application_identity
   }
 }
+
+output "cloudflared_image" { value = module.tack_prod.cloudflared_image }
