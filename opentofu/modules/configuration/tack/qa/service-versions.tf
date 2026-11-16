@@ -26,7 +26,7 @@ output "service_secret_versions" {
     search_admin_certificate  = 1
     search_admin_private_key  = 1
     search_password           = 1
-    search_password_hash      = 1
+    search_password_hash      = 2
     search_cursor_key         = 1
   }
 }
