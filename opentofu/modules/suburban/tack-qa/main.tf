@@ -6,8 +6,8 @@ terraform {
 
 variable "service_mapping" {
   type = object({
-    tack_qa_suburban      = object({ vmid = number, hostname = string, ipv6 = string, mac_address = string })
-    tack_search1_suburban = object({ vmid = number, hostname = string, ipv6 = string, mac_address = string })
+    tack_qa_suburban      = object({ vmid = number, hostname = string, ipv4_cidr = string, ipv6 = string, mac_address = string })
+    tack_search1_suburban = object({ vmid = number, hostname = string, ipv4_cidr = string, ipv6 = string, mac_address = string })
   })
 }
 variable "host" {
@@ -19,7 +19,7 @@ variable "capacity" {
 variable "template_file_id" { type = string }
 variable "ssh_keys" { type = string }
 variable "vmnet" {
-  type = object({ bridge = string, ipv6_gateway = string })
+  type = object({ bridge = string, ipv4_gateway = string, ipv6_gateway = string })
 }
 
 resource "proxmox_virtual_environment_container" "service" {
@@ -29,6 +29,13 @@ resource "proxmox_virtual_environment_container" "service" {
   initialization {
     hostname = var.service_mapping[each.key].hostname
     ip_config {
+      dynamic "ipv4" {
+        for_each = var.service_mapping[each.key].ipv4_cidr == null ? [] : [var.service_mapping[each.key].ipv4_cidr]
+        content {
+          address = ipv4.value
+          gateway = var.vmnet.ipv4_gateway
+        }
+      }
       ipv6 {
         address = "${var.service_mapping[each.key].ipv6}/64"
         gateway = var.vmnet.ipv6_gateway
