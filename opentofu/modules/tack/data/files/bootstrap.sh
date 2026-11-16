@@ -35,7 +35,7 @@ if [[ ! -f /var/lib/tack-qa/bootstrap/ledger.complete ]]; then
 fi
 docker compose up -d audit-consumer
 if [[ ! -f /var/lib/tack-qa/bootstrap/seed.complete ]]; then
-    docker compose run -T --rm operator seed --execute --operator-service tack-qa-bootstrap > /dev/null
+    docker compose run -T --rm -e DATABASE_URL_FILE=/run/secrets/MIGRATOR_DATABASE_URL operator seed --execute --operator-service tack-qa-bootstrap > /dev/null
     install -m 0600 /dev/null /var/lib/tack-qa/bootstrap/seed.complete
 fi
 if [[ ! -f /var/lib/tack-qa/bootstrap/search.complete ]]; then
