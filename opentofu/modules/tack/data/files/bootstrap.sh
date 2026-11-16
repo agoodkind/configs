@@ -3,7 +3,7 @@ set -euo pipefail
 cd /opt/tack-qa/data
 mkdir -p /var/lib/tack-qa/bootstrap
 if [[ ! -f /var/lib/tack-qa/bootstrap/fdb.complete ]]; then
-    docker compose exec -T fdb fdbcli -C /etc/foundationdb/fdb.cluster --timeout 20 --exec 'status json' > /var/lib/tack-qa/bootstrap/fdb-status.json
+    docker compose exec -T fdb fdbcli -C /etc/foundationdb/fdb.cluster --timeout 60 --exec 'status json' > /var/lib/tack-qa/bootstrap/fdb-status.json
     if jq -e '.client.database_status.available == true' /var/lib/tack-qa/bootstrap/fdb-status.json; then
         printf 'FoundationDB already has a database configuration.\n'
     elif jq -e '.cluster.recovery_state.name == "configuration_never_created"' /var/lib/tack-qa/bootstrap/fdb-status.json; then

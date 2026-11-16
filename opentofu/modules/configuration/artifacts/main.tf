@@ -23,6 +23,12 @@ output "tack_store_images" {
   }
 }
 
+output "foundationdb_images" {
+  value = {
+    "7.4.7" = "foundationdb/foundationdb:7.4.7@sha256:c13aed110fe17c6feb678f5dadc73dbcc2dbc42f2a3e952a877c116f63f052d3"
+  }
+}
+
 output "tack_overlays" {
   value = {
     "fdb-overlay/fdb.bash"       = "3b53cee50929e7d94fa24e97d3b39ae955c2840684a3b07ba0d31e4e228b98e8"
