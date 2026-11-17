@@ -4,6 +4,7 @@ tofu:
   # key as TF_VAR_<key> when a file in that workspace declares a variable with
   # the key name.
   workspaces_dir: opentofu
+  validate_guest_references: true
   configuration_root: opentofu/render/configuration
   # Path relative to this settings file. Every workspace uses this mirror.
   provider_mirror: opentofu/terraform.d/plugins

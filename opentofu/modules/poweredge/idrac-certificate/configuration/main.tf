@@ -71,3 +71,5 @@ output "lock_targets" {
     }
   }
 }
+
+output "managed_guests" { value = {} }

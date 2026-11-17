@@ -37,3 +37,5 @@ module "suburban_host" { source = "../../../configuration/hosts/suburban" }
 output "lock_targets" { value = merge(local.lock_targets, { lock_endpoints = {
   "suburban" = module.suburban_host.lock_endpoint
 } }) }
+
+output "managed_guests" { value = {} }

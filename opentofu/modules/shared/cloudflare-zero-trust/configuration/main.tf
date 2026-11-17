@@ -22,3 +22,9 @@ locals {
 output "lock_targets" { value = local.lock_targets }
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
+
+output "managed_guests" { value = {} }
+output "guest_locks" { value = [for connector in values(local.tack_connectors) : connector.guest.service_key] }
+output "keyed_guest_locks" { value = {
+  "module.tack_cloudflared" = { for environment, connector in local.tack_connectors : environment => connector.guest.service_key }
+} }

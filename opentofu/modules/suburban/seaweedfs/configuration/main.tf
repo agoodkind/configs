@@ -6,3 +6,6 @@ output "lock_targets" {
     lock_endpoints = { suburban = module.suburban_host.lock_endpoint }
   }
 }
+
+output "managed_guests" { value = {} }
+output "service_mapping" { value = {} }

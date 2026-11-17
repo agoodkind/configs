@@ -31,3 +31,5 @@ locals {
 output "lock_targets" { value = local.lock_targets }
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
+
+output "managed_guests" { value = {} }

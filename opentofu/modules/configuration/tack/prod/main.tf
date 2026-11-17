@@ -8,17 +8,19 @@ module "tack_search1" { source = "../../services/tack_search1" }
 module "vault_hypervisor" { source = "../../services/vault_hypervisor" }
 module "seaweedfs" { source = "../../services/seaweedfs" }
 locals {
-  service_mapping = {
-    proxy            = module.proxy.value
-    tack             = module.tack.value
-    tack_app2        = module.tack_app2.value
-    tack_data1       = module.tack_data1.value
-    tack_data2       = module.tack_data2.value
-    tack_data3       = module.tack_data3.value
-    tack_search1     = module.tack_search1.value
-    tack_k3s         = local.tack_k3s_guest
-    vault_hypervisor = module.vault_hypervisor.value
+  managed_guests = {
+    tack         = module.tack.value
+    tack_app2    = module.tack_app2.value
+    tack_data1   = module.tack_data1.value
+    tack_data2   = module.tack_data2.value
+    tack_data3   = module.tack_data3.value
+    tack_search1 = module.tack_search1.value
+    tack_k3s     = local.tack_k3s_guest
   }
+  service_mapping = merge(local.managed_guests, {
+    proxy            = module.proxy.value
+    vault_hypervisor = module.vault_hypervisor.value
+  })
 }
 output "service_mapping" { value = local.service_mapping }
 locals {
@@ -47,3 +49,6 @@ output "lock_targets" { value = merge(local.lock_targets, {
 }) }
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
+
+output "managed_guests" { value = local.managed_guests }
+output "guest_locks" { value = [local.tack_k3s_guest.service_key] }
