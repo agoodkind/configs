@@ -3,6 +3,11 @@ provider "cloudflare" {
 }
 
 provider "cloudflare" {
+  alias     = "certificates"
+  api_token = var.vault_cloudflare_goodkind_io_certificates_api_token
+}
+
+provider "cloudflare" {
   alias     = "dns"
   api_token = var.vault_cloudflare_api_token
 }
