@@ -99,3 +99,8 @@ data "pveguest_host_kernel_modules" "automation" {
   node       = "poweredge"
   depends_on = [proxmox_acl.kernel_modules]
 }
+
+output "kernel_modules" {
+  description = "Persistent kernel modules read with the automation account."
+  value       = data.pveguest_host_kernel_modules.automation.modules
+}
