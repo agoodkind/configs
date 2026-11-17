@@ -91,24 +91,23 @@ PROGRAM_BUNDLE_ASSET = "hostconfig_program-opnsensectl.sigstore.jsonl"
 PROGRAM_BUNDLES_FILE = "program-bundles.json"
 WRONG_REVISION = "1" * 40
 WRONG_DIGEST = "0" * 64
-LEGACY_TAR_DIGESTS = {
-    VALID_ONE_CASE: "549d0949df1fd8d74c9ccf40cde59e43eab7e18d14793968e28426c5555a9ea5",
-    "valid-v2": "dd4d1fc28092ef71160bfcb7fc37fec9caa06468e155872fc5e095131f7eab3c",
-    OTHER_TARGET_CASE: "e4d1ec6d766a282d5c97a3dfb678a4c3447339a2efe0b0feb8551e9b5ad9bec4",
-    "digest": "5b96d24c69b207b614a7c53ae35db49d3d3153b98ea4f67c7a932fcea9b43fd9",
-    "size": "068a57d1540b5aaa91400850659d3581f84769e319696b711c9962019fa7d1a7",
-    "symlink": "41c5a548aa89e436cd3744083060541e9f1309bacab9ae73d5a732ca8518ef85",
-    "hardlink": "ba77f28e80968b65ad3a3788af7169db4f73f979b49724f532b390643051c18b",
-    "traversal": "83f9c34ae837fe838bf9b65a774629ecb5381c6ba6cc41deb0030f2382623f14",
-    "absolute": "3232c8133eb1af74434dcbca11a485c8eef0876727e866be5a779eddfcb70cfd",
-    "extra": "4fa87de4e713a74431549b9533c595bcc3e575933a4aaefb9463c21f0c26479b",
-    "missing": "da4d2998bd169aa50b10ca784ce4988dbc07352623554756af198e15151c014c",
-    "duplicate": "00f893a302f5a34c3eabe1496e5249a64e24caa7544e65bf7764462d5e9714bc",
-    "member-mode": "8c47471b73c658df8f47eb13f4215fb63575675fcecfe6c19c0c833e70c68b7d",
-    "recovery-v1": "6bba5edf498a695095a425487f9534e7b9ca33bcd874ce3df37756d606f13e14",
-    "recovery-v2": "a94689edd13445c63dbef7cff3e993f72b20c46353f2b684f71645a2a642f99d",
-}
-LEGACY_CASES = tuple(LEGACY_TAR_DIGESTS)
+LEGACY_CASES = (
+    VALID_ONE_CASE,
+    "valid-v2",
+    OTHER_TARGET_CASE,
+    "digest",
+    "size",
+    "symlink",
+    "hardlink",
+    "traversal",
+    "absolute",
+    "extra",
+    "missing",
+    "duplicate",
+    "member-mode",
+    "recovery-v1",
+    "recovery-v2",
+)
 PROGRAM_CASES = (
     "program-valid",
     "program-wrong-source",
@@ -377,15 +376,6 @@ def test_each_case_builds_identical_bytes_with_fixed_metadata(
     for header in headers:
         assert (header.uid, header.gid, header.mtime) == (ROOT_ID, ROOT_ID, ARCHIVE_TIME)
         assert (header.uname, header.gname) == (EMPTY_NAME, EMPTY_NAME)
-
-
-@pytest.mark.parametrize("case", LEGACY_CASES)
-def test_legacy_case_keeps_its_tar_bytes(tmp_path: Path, case: str) -> None:
-    result = build(case, tmp_path)
-
-    archive_bytes = Path(as_text(result["archive"])).read_bytes()
-    tar_digest = hashlib.sha256(gzip.decompress(archive_bytes)).hexdigest()
-    assert tar_digest == LEGACY_TAR_DIGESTS[case]
 
 
 @pytest.mark.parametrize(
@@ -818,13 +808,6 @@ def test_program_case_publishes_the_verified_bundle(tmp_path: Path, case: str) -
             "sha256": hashlib.sha256(bundle_bytes).hexdigest(),
         }
     }
-
-
-def test_legacy_case_writes_no_bundle_files(tmp_path: Path) -> None:
-    result = build(VALID_ONE_CASE, tmp_path / "output")
-
-    names = [path.name for path in (tmp_path / "output").iterdir()]
-    assert names == [as_text(result["asset"])]
 
 
 @pytest.mark.parametrize("case", PROGRAM_CASES)

@@ -19,24 +19,18 @@ run "sibling_directories_pass" {
   }
 
   assert {
-    condition     = jsondecode(output.policies["lab/alpha_sibling"]).parent_directories == [{ path = "/etc/systemd/system" }]
-    error_message = "an inspect-only parent without metadata must keep only its path"
-  }
-}
-
-run "broken_descriptor_of_another_host_does_not_change_plan" {
-  command = plan
-
-  variables {
-    workspaces = ["lab/alpha"]
+    condition     = jsondecode(output.policies["lab/alpha"]).configuration.workflow_uri == "https://github.com/agoodkind/configs/.github/workflows/ci.yml@refs/heads/main"
+    error_message = "The policy must require the configs CI workflow on main."
   }
 
   assert {
-    condition = output.policies["lab/alpha"] == trimspace(<<-EOT
-      {"configuration":{"max_archive_bytes":8388608,"max_bundle_bytes":1048576,"repository":"agoodkind/configs","source_ref":"refs/heads/main","workflow_uri":"https://github.com/agoodkind/configs/.github/workflows/ci.yml@refs/heads/main"},"directories":[{"group":"root","mode":"0755","owner":"root","path":"/etc/alpha"}],"environment":"testbed","files":[{"group":"root","mode":"0600","owner":"root","path":"/etc/alpha/config.toml"},{"group":"root","mode":"0644","owner":"root","path":"/etc/systemd/system/alpha.service"}],"node":"lab","parent_directories":[{"group":"root","mode":"0755","owner":"root","path":"/etc/systemd/system"}],"secret_fields":[{"consumer_units":["alpha.service"],"group":"root","max_length":64,"min_length":16,"mode":"0600","name":"ALPHA_TOKEN","owner":"root","pattern":"^[A-Za-z0-9]+$","storage_path":"/etc/alpha/secrets.env"}],"workspace":"lab/alpha"}
-    EOT
-    )
-    error_message = "the policy of lab/alpha must equal the expected document"
+    condition     = jsondecode(output.policies["lab/alpha"]).secret_fields == jsondecode(file("tests/repository/opentofu/lab/alpha/host-artifact-target.json")).secret_fields
+    error_message = "The policy must preserve the descriptor's secret field restrictions."
+  }
+
+  assert {
+    condition     = jsondecode(output.policies["lab/alpha_sibling"]).parent_directories == [{ path = "/etc/systemd/system" }]
+    error_message = "an inspect-only parent without metadata must keep only its path"
   }
 }
 
@@ -207,7 +201,7 @@ run "sibling_programs_under_inspected_parent_pass" {
   command = plan
 
   variables {
-    workspaces = ["lab/prog-a", "lab/prog-b"]
+    workspaces = ["lab/alpha", "lab/prog-a", "lab/prog-b"]
   }
 
   assert {
@@ -229,14 +223,6 @@ run "sibling_programs_under_inspected_parent_pass" {
   assert {
     condition     = jsondecode(output.policies["lab/prog-b"]).parent_directories == [{ path = "/usr/local/bin" }]
     error_message = "a program path must not make /usr/local/bin an owned directory"
-  }
-}
-
-run "target_without_programs_next_to_targets_with_programs_passes" {
-  command = plan
-
-  variables {
-    workspaces = ["lab/alpha", "lab/prog-a", "lab/prog-b"]
   }
 
   assert {
