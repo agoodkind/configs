@@ -79,7 +79,7 @@ variable "health_url" {
 }
 
 variable "configuration_revisions" {
-  description = "Nonsecret Compose configuration values that require a service update and release checks."
+  description = "Changes to these nonsecret Compose configuration values trigger a service update and release checks."
   type        = map(string)
   default     = {}
 }
