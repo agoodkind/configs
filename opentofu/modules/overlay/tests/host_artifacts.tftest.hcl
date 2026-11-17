@@ -23,6 +23,7 @@ run "policies_use_the_selector_digest" {
   command = plan
 
   variables {
+    kernel_modules = { allow = ["overlay"] }
     host_artifact_policies = {
       "lab/alpha" = "{\"workspace\":\"lab/alpha\"}"
     }
@@ -44,8 +45,8 @@ run "policies_use_the_selector_digest" {
   }
 
   assert {
-    condition     = contains(local.grant_commands, "pveum acl modify / --users automation@pve --roles ScopedHostArtifacts --propagate 1")
-    error_message = "the module must grant ScopedHostArtifacts on / with propagation"
+    condition     = contains(local.grant_commands, "pveum acl modify /nodes/lab --users automation@pve --roles ScopedHostArtifacts --propagate 1") && !contains(local.grant_commands, "pveum acl modify / --users automation@pve --roles ScopedHostArtifacts --propagate 1")
+    error_message = "Grant ScopedHostArtifacts only on the selected node."
   }
 
   assert {
@@ -54,13 +55,22 @@ run "policies_use_the_selector_digest" {
   }
 
   assert {
-    condition     = !anytrue([for command in local.grant_commands : strcontains(command, "/nodes/")])
-    error_message = "the module does not grant a role on a /nodes path"
+    condition     = contains(local.grant_commands, "pveum acl modify /nodes/lab --users automation@pve --roles ScopedKernelModules --propagate 1")
+    error_message = "Grant ScopedKernelModules on the node that has the host artifact role."
   }
 }
 
 run "empty_policies_write_nothing" {
   command = plan
+
+  variables {
+    kernel_modules = { allow = ["overlay"] }
+  }
+
+  assert {
+    condition     = contains(local.revoke_commands, "pveum acl delete /nodes/lab --users automation@pve --roles ScopedKernelModules") && contains(local.grant_commands, "pveum acl modify / --users automation@pve --roles ScopedKernelModules --propagate 1")
+    error_message = "Remove the kernel module grant on the node when host artifact policies are empty."
+  }
 
   assert {
     condition     = length(remote_file.host_artifact_policies) == 0 && length(remote_file.host_artifacts_trusted_root) == 0 && length(terraform_data.host_artifacts_directory) == 0

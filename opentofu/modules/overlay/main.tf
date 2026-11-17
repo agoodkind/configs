@@ -85,7 +85,7 @@ variable "additional_patches" {
 }
 
 variable "kernel_modules" {
-  description = "A null value disables kernel module API access for the automation user by removing the ScopedKernelModules role and its ACL. An object grants ScopedKernelModules on /. The API accepts only entries in allow. An empty allow list permits no modules. The selected overlay commit must provide the kernel module API."
+  description = "A null value removes the ScopedKernelModules role. An object grants the role on / and on the selected node when host artifact policies are enabled. The API accepts only entries in allow. An empty allow list permits no modules. The selected overlay commit must provide the kernel module API."
   type = object({
     allow = list(string)
   })
@@ -278,7 +278,7 @@ locals {
 
   kernel_modules_roles = var.kernel_modules != null ? {
     ScopedKernelModules = {
-      path = "/"
+      paths = local.host_artifacts_enabled ? ["/", "/nodes/${var.node_name}"] : ["/"]
       privileges = [
         "Sys.KernelModules.Audit",
         "Sys.KernelModules.Modify",
@@ -436,13 +436,16 @@ locals {
     ]),
   ]
 
-  kernel_modules_revoke_commands = var.kernel_modules != null ? [] : [
+  kernel_modules_node_acl_delete = "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedKernelModules"
+
+  kernel_modules_revoke_commands = var.kernel_modules == null ? [
     join(" ", [
       "if pveum role list --output-format json | grep -q '\"roleid\":\"ScopedKernelModules\"';",
       "then pveum acl delete / --users ${var.automation_user} --roles ScopedKernelModules;",
+      "${local.kernel_modules_node_acl_delete};",
       "pveum role delete ScopedKernelModules; fi",
     ]),
-  ]
+  ] : (local.host_artifacts_enabled ? [] : [local.kernel_modules_node_acl_delete])
 
   container_options_revoke_commands = var.container_options != null ? [] : [
     for role in local.container_options_role_names : join(" ", [
