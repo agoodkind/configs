@@ -51,7 +51,7 @@ resource "pveguest_download" "k3s" {
   kind   = "qemu"
   url    = var.k3s_artifact.url
   sha256 = var.k3s_artifact.sha256
-  fetch  = "controller"
+  fetch  = "guest"
   path   = "/usr/local/bin/k3s"
   mode   = "0755"
 }
