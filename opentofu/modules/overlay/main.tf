@@ -216,6 +216,12 @@ variable "acme_plugin" {
   type        = string
 }
 
+variable "retain_node_acme_role" {
+  description = "Set this value to true when another workspace manages the node certificate role."
+  type        = bool
+  default     = false
+}
+
 locals {
   source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${var.commit}"
   script = "/usr/local/sbin/pve-overlay"
@@ -461,6 +467,7 @@ locals {
 
   revoke_commands = var.grant_scope == "all" ? concat([
     "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
+    ], var.retain_node_acme_role ? [] : [
     "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
   ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands, local.container_options_revoke_commands) : []
 

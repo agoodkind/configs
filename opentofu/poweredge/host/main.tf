@@ -79,15 +79,16 @@ module "overlay" {
   source   = "../../modules/overlay"
   for_each = local.overlay_hosts
 
-  ssh_host           = each.value.ssh_host
-  node_name          = each.value.node_name
-  commit             = each.value.commit
-  guest_api          = each.value.guest_api
-  automation_user    = local.shared_vars.proxmox_api_user
-  kernel_modules     = each.value.kernel_modules
-  additional_patches = each.value.additional_patches
-  acme_account       = local.acme_account
-  acme_plugin        = local.acme_plugin
+  ssh_host              = each.value.ssh_host
+  node_name             = each.value.node_name
+  commit                = each.value.commit
+  guest_api             = each.value.guest_api
+  automation_user       = local.shared_vars.proxmox_api_user
+  kernel_modules        = each.value.kernel_modules
+  additional_patches    = each.value.additional_patches
+  acme_account          = local.acme_account
+  acme_plugin           = local.acme_plugin
+  retain_node_acme_role = true
 
   container_options = each.value.container_options
 

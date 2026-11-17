@@ -73,7 +73,7 @@ locals {
   # A user with another role on this node cannot inherit the kernel role from /.
   node_overrides_root = anytrue([
     for acl in data.proxmox_virtual_environment_user.automation.acl :
-    acl.path == local.node_path && acl.role_id != local.kernel_role
+    acl.path == local.node_path && !contains([local.kernel_role, "ScopedAcmeCertificate"], acl.role_id)
   ])
 }
 
@@ -83,6 +83,15 @@ resource "proxmox_acl" "kernel_modules" {
   path      = local.node_path
   user_id   = data.proxmox_virtual_environment_user.automation.user_id
   role_id   = local.kernel_role
+  propagate = true
+}
+
+resource "proxmox_acl" "acme_certificate" {
+  count = local.node_overrides_root ? 1 : 0
+
+  path      = local.node_path
+  user_id   = data.proxmox_virtual_environment_user.automation.user_id
+  role_id   = "ScopedAcmeCertificate"
   propagate = true
 }
 
