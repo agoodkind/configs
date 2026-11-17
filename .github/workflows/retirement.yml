@@ -36,29 +36,19 @@ jobs:
           tofu_version: 1.13.2
           tofu_wrapper: false
       - name: Install the reviewed verifier
-        run: go install goodkind.io/configsctl/cmd/configsctl@v0.0.0-20261117054807-9930effb4768
-      - name: Fetch revisions as Git objects
+        run: go install goodkind.io/configsctl/cmd/configsctl@v0.0.0-20261117072044-ba92f44e3c31
+      - name: Prepare retirement verification
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: .github/scripts/fetch-retirement-revisions.sh
-      - name: Confirm the current protected base
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const confirm = require('./.github/scripts/confirm-retirement-base.cjs');
-            await confirm({github, context, core});
+          GITHUB_TOKEN: ${{ github.token }}
+        run: configsctl ci retirement prepare
       - name: Verify retirement against trusted base state
         id: verify
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           AWS_ACCESS_KEY_ID: ${{ secrets.RETIREMENT_R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RETIREMENT_R2_SECRET_ACCESS_KEY }}
           TF_VAR_vault_tofu_state_passphrase: ${{ secrets.RETIREMENT_STATE_PASSPHRASE }}
           AWS_EC2_METADATA_DISABLED: 'true'
-        run: .github/scripts/verify-retirement.sh
+        run: configsctl ci retirement verify
 
   publish:
     name: Publish retirement verdict
@@ -74,11 +64,15 @@ jobs:
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
-      - uses: actions/github-script@v8
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .go-version
+          cache: false
+      - name: Install the reviewed verifier
+        run: go install goodkind.io/configsctl/cmd/configsctl@v0.0.0-20261117072044-ba92f44e3c31
+      - name: Publish retirement verdict
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           VERDICT: ${{ needs.verify.outputs.verdict }}
           VERIFY_RESULT: ${{ needs.verify.result }}
-        with:
-          script: |
-            const publish = require('./.github/scripts/publish-retirement.cjs');
-            await publish({github, context, core});
+        run: configsctl ci retirement publish
