@@ -1,3 +1,9 @@
+variable "force_acme_certificate_renewal" {
+  description = "Set this value to true for an apply that must replace an existing certificate."
+  type        = bool
+  default     = false
+}
+
 variable "cloudflare_account_id" {
   description = "Cloudflare account that owns the Zero Trust objects. Stable and not a secret."
   type        = string
