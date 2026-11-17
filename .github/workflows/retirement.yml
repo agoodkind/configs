@@ -2,7 +2,8 @@ name: Retirement
 
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
 
 permissions: {}
 
@@ -13,9 +14,12 @@ concurrency:
 jobs:
   verify:
     name: Read retirement state
+    if: github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
+    environment: retirement-state
     permissions:
       contents: read
+      pull-requests: read
     outputs:
       verdict: ${{ steps.verify.outcome }}
     steps:
@@ -39,6 +43,12 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: .github/scripts/fetch-retirement-revisions.sh
+      - name: Confirm the current protected base
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const confirm = require('./.github/scripts/confirm-retirement-base.cjs');
+            await confirm({github, context, core});
       - name: Verify retirement against trusted base state
         id: verify
         env:
@@ -52,7 +62,7 @@ jobs:
 
   publish:
     name: Publish retirement verdict
-    if: always()
+    if: always() && github.event.pull_request.base.ref == 'main'
     needs: verify
     runs-on: ubuntu-latest
     permissions:
