@@ -36,7 +36,7 @@ jobs:
           tofu_version: 1.13.2
           tofu_wrapper: false
       - name: Install the reviewed verifier
-        run: go install goodkind.io/configsctl/cmd/configsctl@v0.0.0-20261117040202-6264ba435dc2
+        run: go install goodkind.io/configsctl/cmd/configsctl@v0.0.0-20261117054807-9930effb4768
       - name: Fetch revisions as Git objects
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
