@@ -86,7 +86,6 @@ resource "proxmox_acl" "kernel_modules" {
   propagate = true
 }
 
-# Read the kernel module list with the automation token after applying the grant.
 data "pveguest_host_kernel_modules" "automation" {
   node       = "poweredge"
   depends_on = [proxmox_acl.kernel_modules]
