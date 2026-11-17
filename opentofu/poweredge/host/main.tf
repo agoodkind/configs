@@ -22,6 +22,7 @@ resource "proxmox_acme_certificate" "poweredge" {
   provider  = proxmox.poweredge
   node_name = "poweredge"
   account   = proxmox_acme_account.poweredge.name
+  force     = var.force_acme_certificate_renewal
 
   domains = [
     {
