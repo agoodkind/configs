@@ -1,7 +1,7 @@
 [Unit]
-Description=Retire the Tack search proxy on Vault
-Conflicts=tack-search-proxy.service
-After=tack-search-proxy.service
+Description=Retire the Tack search proxy and caller configuration
+Conflicts=tack-search-proxy.service tack-search-caller.service
+After=tack-search-proxy.service tack-search-caller.service
 
 [Service]
 Type=oneshot
