@@ -85,7 +85,15 @@ variable "additional_patches" {
 }
 
 variable "kernel_modules" {
-  description = "A null value removes the ScopedKernelModules role. An object grants the role on / and on the selected node when host artifact policies are enabled. The API accepts only entries in allow. An empty allow list permits no modules. The selected overlay commit must provide the kernel module API."
+  description = <<-EOT
+    The selected overlay commit must include the kernel module API. The API accepts
+    only the module names in allow. An empty list blocks all module names.
+
+    When grant_scope is "all", the overlay manages the ScopedKernelModules role
+    for the automation user. If kernel_modules is null, the overlay removes the
+    role. Otherwise, it grants the role on the Proxmox root path (/). If the node
+    has host artifact policies, the overlay also grants the role on that node.
+  EOT
   type = object({
     allow = list(string)
   })
