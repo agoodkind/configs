@@ -24,7 +24,7 @@ variable "vault_poweredge_pve_token_secret" {
 }
 
 variable "poweredge_api_tunnel_port" {
-  description = "Local port of an SSH tunnel to port 8006 on PowerEdge. Verify the SSH host key before using the tunnel."
+  description = "Set this value to the local port of an SSH tunnel to port 8006 on PowerEdge. Verify the SSH host key before using the tunnel."
   type        = number
   default     = null
 }
