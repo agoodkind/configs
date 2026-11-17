@@ -11,7 +11,7 @@ variable "vault_tofu_state_passphrase" {
   sensitive = true
 }
 
-variable "poweredge_proxmox_root_password" {
+variable "vault_poweredge_proxmox_root_password" {
   type      = string
   sensitive = true
   ephemeral = true
@@ -41,7 +41,7 @@ provider "proxmox" {
   endpoint = local.api_endpoint
   insecure = var.poweredge_api_tunnel_port != null
   username = "root@pam"
-  password = var.poweredge_proxmox_root_password
+  password = var.vault_poweredge_proxmox_root_password
 }
 
 provider "pveguest" {
