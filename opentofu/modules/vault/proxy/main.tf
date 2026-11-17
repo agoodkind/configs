@@ -84,8 +84,6 @@ variable "service_mapping" { type = object({
   })
 }) }
 
-variable "ssh_keys" { type = string }
-
 locals { service_mapping = var.service_mapping }
 
 terraform {

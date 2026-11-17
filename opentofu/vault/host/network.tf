@@ -57,7 +57,7 @@ locals {
     module.overlay["vault"].network_interfaces_sha256,
     filesha256("${path.module}/network/activate.sh"),
     ], [
-    for name in sort(keys(remote_file.host_network)) :
+    for name in keys(remote_file.host_network) :
     sha256(remote_file.host_network[name].content)
   ])))
 }

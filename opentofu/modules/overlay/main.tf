@@ -392,7 +392,7 @@ locals {
 
   # Each container ACL needs the existing VM roles because a more specific user ACL overrides inherited user roles.
   root_vm_roles = [
-    for role in sort(keys(local.roles)) : role
+    for role in keys(local.roles) : role
     if try(local.roles[role].path, "") == "/" && anytrue([
       for privilege in local.roles[role].privileges : startswith(privilege, "VM.")
     ])
@@ -402,7 +402,7 @@ locals {
     for vmid in local.container_options_vmids : join(" ", [
       "pveum acl modify /vms/${vmid} --users ${var.automation_user} --roles",
       join(",", concat(var.container_options.retained_roles, local.root_vm_roles, [
-        for role in sort(keys(local.container_options_vm_roles)) : role
+        for role in keys(local.container_options_vm_roles) : role
         if contains([for id in local.container_options_vm_roles[role] : tostring(id)], vmid)
       ])),
       "--propagate 1",
@@ -412,7 +412,7 @@ locals {
   # `pveum role add` fails for an existing role, and `pveum role modify` fails
   # for a missing role.
   grant_commands = concat(flatten([
-    for role in sort(keys(local.roles)) : [
+    for role in keys(local.roles) : [
       join(" ", [
         "if pveum role list --output-format json | grep -q '\"roleid\":\"${role}\"';",
         "then pveum role modify ${role} --privs '${join(" ", local.roles[role].privileges)}';",
@@ -503,7 +503,7 @@ resource "remote_file" "files" {
 # `pve-overlay apply` after each package operation on the hypervisor.
 resource "terraform_data" "apply" {
   triggers_replace = [
-    for name in sort(keys(remote_file.files)) :
+    for name in keys(remote_file.files) :
     sha256(remote_file.files[name].content)
   ]
 
