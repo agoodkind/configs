@@ -78,6 +78,12 @@ variable "health_url" {
   default     = "http://[::1]:8000/healthz"
 }
 
+variable "configuration_revisions" {
+  description = "Nonsecret Compose configuration values that require a service update and release checks."
+  type        = map(string)
+  default     = {}
+}
+
 variable "additional_compose_files" {
   description = "Compose files appended after the existing base and override files."
   type        = list(string)
@@ -182,7 +188,7 @@ resource "pveguest_systemd_unit" "up" {
   enabled = false
   active  = true
 
-  restart_on = { unit = pveguest_file.unit["tack-release-up.service"].write_id }
+  restart_on = merge(var.configuration_revisions, { unit = pveguest_file.unit["tack-release-up.service"].write_id })
 
   depends_on = [pveguest_systemd_unit.pull]
 }
@@ -196,7 +202,7 @@ resource "pveguest_systemd_unit" "verify" {
   enabled = false
   active  = true
 
-  restart_on = { unit = pveguest_file.unit["tack-release-verify.service"].write_id }
+  restart_on = merge(var.configuration_revisions, { unit = pveguest_file.unit["tack-release-verify.service"].write_id })
 
   depends_on = [pveguest_systemd_unit.up]
 }
@@ -212,7 +218,7 @@ resource "pveguest_systemd_unit" "check" {
   enabled = false
   active  = true
 
-  restart_on = { unit = pveguest_file.unit[each.key].write_id }
+  restart_on = merge(var.configuration_revisions, { unit = pveguest_file.unit[each.key].write_id })
 
   depends_on = [pveguest_systemd_unit.verify]
 }

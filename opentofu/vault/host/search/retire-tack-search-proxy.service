@@ -1,0 +1,10 @@
+[Unit]
+Description=Retire the Tack search proxy on Vault
+Conflicts=tack-search-proxy.service
+After=tack-search-proxy.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/systemd-tmpfiles --remove /usr/local/share/tack/retire-search-proxy.conf
+ExecStartPost=/usr/bin/systemctl daemon-reload
