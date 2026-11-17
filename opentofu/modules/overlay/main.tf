@@ -85,15 +85,7 @@ variable "additional_patches" {
 }
 
 variable "kernel_modules" {
-  description = <<-EOT
-    The selected overlay commit must include the kernel module API. The API accepts
-    only the module names in allow. An empty list blocks all module names.
-
-    When grant_scope is "all", the overlay manages the ScopedKernelModules role
-    for the automation user. If kernel_modules is null, the overlay removes the
-    role. Otherwise, it grants the role on the Proxmox root path (/). If the node
-    has host artifact policies, the overlay also grants the role on that node.
-  EOT
+  description = "A null value disables kernel module API access for the automation user by removing the ScopedKernelModules role and its ACL. An object grants ScopedKernelModules on /. The API accepts only entries in allow. An empty allow list permits no modules. The selected overlay commit must provide the kernel module API."
   type = object({
     allow = list(string)
   })
@@ -286,7 +278,7 @@ locals {
 
   kernel_modules_roles = var.kernel_modules != null ? {
     ScopedKernelModules = {
-      paths = local.host_artifacts_enabled ? ["/", "/nodes/${var.node_name}"] : ["/"]
+      path = "/"
       privileges = [
         "Sys.KernelModules.Audit",
         "Sys.KernelModules.Modify",
@@ -444,16 +436,13 @@ locals {
     ]),
   ]
 
-  kernel_modules_node_acl_delete = "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedKernelModules"
-
-  kernel_modules_revoke_commands = var.kernel_modules == null ? [
+  kernel_modules_revoke_commands = var.kernel_modules != null ? [] : [
     join(" ", [
       "if pveum role list --output-format json | grep -q '\"roleid\":\"ScopedKernelModules\"';",
       "then pveum acl delete / --users ${var.automation_user} --roles ScopedKernelModules;",
-      "${local.kernel_modules_node_acl_delete};",
       "pveum role delete ScopedKernelModules; fi",
     ]),
-  ] : (local.host_artifacts_enabled ? [] : [local.kernel_modules_node_acl_delete])
+  ]
 
   container_options_revoke_commands = var.container_options != null ? [] : [
     for role in local.container_options_role_names : join(" ", [

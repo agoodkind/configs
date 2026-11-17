@@ -18,7 +18,6 @@ locals {
       "linux_package.cloudflared"              = "poweredge"
       "linux_systemd_unit.cloudflared"         = "poweredge"
       "linux_file_line.hosts"                  = "poweredge"
-      "module.idrac_certificate"               = "poweredge"
       "module.unattended_upgrades"             = "poweredge"
       "module.mail"                            = "poweredge"
       "module.smtp2go"                         = "poweredge"

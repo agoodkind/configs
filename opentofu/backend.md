@@ -40,8 +40,6 @@ provider dependency lock before initializing that root again.
 
 The independent roots use the ownership and migration contract in the
 [workspace separation design](../docs/superpowers/specs/2026-10-23-workspace-separation-design.md).
-The retained root, `guest`, and `firmware` backends support the complete state
-transfer. They do not declare managed resources after the source cutover.
 
 ## Secrets
 
@@ -86,8 +84,8 @@ A lost passphrase makes the state unreadable. The Ansible vault stores the
 passphrase, and 1Password stores the vault password.
 
 Do not rename the `state` key provider or the `state` method in
-[encryption.tf](encryption.tf). OpenTofu writes that name into the encrypted
-data.
+[encryption.tf](shared/cloudflare-dns/encryption.tf). OpenTofu writes that name
+into the encrypted data.
 
 ## Attach an existing resource
 

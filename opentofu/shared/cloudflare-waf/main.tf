@@ -37,39 +37,6 @@ resource "cloudflare_ruleset" "goodkind_io_custom_firewall" {
       logging = { enabled = true }
     },
     {
-      ref         = "21716d7a7ed84b21918a887ab9f21326"
-      enabled     = true
-      description = "mdm"
-      expression  = "(http.host eq \"mdm.goodkind.io\")"
-      action      = "skip"
-      action_parameters = {
-        phases = local.bot_fight_mode_and_managed_rules
-      }
-      logging = { enabled = true }
-    },
-    {
-      ref         = "4c0a5b2d122e4bf3b2e34cef749ddbce"
-      enabled     = true
-      description = "plane"
-      expression  = "(http.host eq \"plane.goodkind.io\" and starts_with(http.request.uri.path, \"/api/\"))"
-      action      = "skip"
-      action_parameters = {
-        phases = local.bot_fight_mode
-      }
-      logging = { enabled = true }
-    },
-    {
-      ref         = "c24142224f3f43518995b09f6cc7a613"
-      enabled     = true
-      description = "huly"
-      expression  = "(http.host eq \"huly.goodkind.io\")"
-      action      = "skip"
-      action_parameters = {
-        phases = local.bot_fight_mode
-      }
-      logging = { enabled = true }
-    },
-    {
       ref         = "2e282671aeab49958f69071f789a27c1"
       enabled     = true
       description = "go-get vanity imports"
@@ -85,18 +52,6 @@ resource "cloudflare_ruleset" "goodkind_io_custom_firewall" {
       enabled     = true
       description = "Sparkle appcast and update feed"
       expression  = "(http.host eq \"goodkind.io\" and (starts_with(http.request.uri.path, \"/fancurve\") or starts_with(http.request.uri.path, \"/stickies-improved\")))"
-      action      = "skip"
-      action_parameters = {
-        phases   = local.bot_fight_mode_and_managed_rules
-        products = local.update_feed_products
-      }
-      logging = { enabled = true }
-    },
-    {
-      ref         = "064e360257bc46dfb65d4da3fe99f439"
-      enabled     = true
-      description = "PlainStickies appcast and update feed"
-      expression  = "(http.host eq \"goodkind.io\" and starts_with(http.request.uri.path, \"/plainstickies\"))"
       action      = "skip"
       action_parameters = {
         phases   = local.bot_fight_mode_and_managed_rules
