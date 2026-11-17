@@ -7,7 +7,7 @@ locals {
     kind        = "qemu"
     ipv4        = "10.250.0.124"
     ipv6        = "3d06:bad:b01::124"
-    mac_address = "BC:24:11:A3:52:24"
+    mac_address = "BC:24:11:A3:52:7C"
   }
   tack_k3s = {
     guest = merge(local.tack_k3s_guest, module.vault_host.guest, {
