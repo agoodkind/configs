@@ -1,3 +1,10 @@
+variable "vault_proxy_acme_dns_token" {
+  description = "Proxy certificate renewal token with Zone Read and DNS Edit on goodkind.io."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
 variable "proxmox_endpoint" {
   description = "Proxmox API base URL for the production vault host including port"
   type        = string

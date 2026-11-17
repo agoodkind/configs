@@ -12,10 +12,11 @@ locals {
 module "vault" {
   source = "../../modules/vault/proxy"
 
-  providers = { proxmox = proxmox }
+  providers = { proxmox = proxmox, pveguest = pveguest }
 
   ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping = local.service_mapping
+  dns_api_token   = var.vault_proxy_acme_dns_token
 }
 
 data "http" "github_ssh_keys" {

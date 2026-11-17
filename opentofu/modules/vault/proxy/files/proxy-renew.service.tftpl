@@ -1,0 +1,14 @@
+[Unit]
+Description=Renew the proxy TLS certificate
+Wants=network-online.target
+After=network-online.target proxy-certificate.service
+Requires=proxy-certificate.service
+
+[Service]
+Type=oneshot
+StateDirectory=lego
+StateDirectoryMode=0700
+UMask=0077
+Environment=CLOUDFLARE_DNS_API_TOKEN_FILE=/etc/lego/cloudflare-dns-token
+ExecStart=${lego_command} renew --no-random-sleep
+ExecStartPost=/usr/bin/systemctl try-reload-or-restart nginx.service

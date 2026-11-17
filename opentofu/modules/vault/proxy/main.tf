@@ -1,4 +1,4 @@
-# Reverse proxy LXC on vault (Traefik, SSHPiper, cloudflared).
+# Reverse proxy LXC on Vault.
 resource "proxmox_virtual_environment_container" "proxy" {
   node_name = "vault"
   vm_id     = local.service_mapping.proxy.vmid
@@ -45,7 +45,7 @@ resource "proxmox_virtual_environment_container" "proxy" {
     cores        = 2
   }
 
-  tags = ["legacyv4", "lxc", "traefik"]
+  tags = ["legacyv4", "lxc", "nginx"]
 
   console {
     enabled   = true
@@ -89,6 +89,7 @@ locals { service_mapping = var.service_mapping }
 
 terraform {
   required_providers {
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.3" }
     proxmox = {
       source  = "bpg/proxmox"
       version = ">= 0.106.0"
