@@ -25,7 +25,7 @@ The retirement workflow reads state with dedicated CI credentials when a change 
 1. Create the GitHub environment `retirement-state`. Restrict deployment branches to the selected branch `main` and exclude tags. Preserve branch protection for `main`.
 2. Create dedicated R2 credentials with object-read and bucket-list access for the state bucket and workspace prefixes. Do not grant object writes or deletes.
 3. Add environment secrets `RETIREMENT_R2_ACCESS_KEY_ID` and `RETIREMENT_R2_SECRET_ACCESS_KEY` to `retirement-state` from those dedicated credentials. Do not create repository-wide copies.
-4. Add `RETIREMENT_STATE_PASSPHRASE` to `retirement-state` with the approved CI state decryption input. Do not copy operator credentials or passphrases into GitHub.
+4. Add `RETIREMENT_STATE_PASSPHRASE` to `retirement-state` with the passphrase that currently decrypts the state, supplied by `vault_tofu_state_passphrase`. Keep this secret restricted to the environment. Use the dedicated R2 credentials from the previous steps for backend access.
 5. Run the workflow against a real retirement cleanup and an intentional failing cleanup before requiring the `retirement` status in the repository ruleset.
 
 The workflow accepts pull requests targeting `main` and checks the current base before reading state. Retargeting requests a fresh check. The verification job uses the restricted environment. Ordinary branch push workflows cannot read its secrets.
