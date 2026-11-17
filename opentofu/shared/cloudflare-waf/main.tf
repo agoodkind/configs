@@ -92,6 +92,17 @@ resource "cloudflare_ruleset" "goodkind_io_custom_firewall" {
       }
       logging = { enabled = true }
     },
+    {
+      ref         = "tack_healthz_get"
+      enabled     = true
+      description = "Tack health checks"
+      expression  = "(http.host in {\"tack.goodkind.io\" \"tack.home.goodkind.io\"} and http.request.method eq \"GET\" and http.request.uri.path eq \"/healthz\")"
+      action      = "skip"
+      action_parameters = {
+        phases = local.bot_fight_mode
+      }
+      logging = { enabled = true }
+    },
   ]
 
   lifecycle {
