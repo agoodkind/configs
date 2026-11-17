@@ -63,10 +63,13 @@ locals {
   overlay_hosts = { poweredge = {
     ssh_host  = local.host.ipv6
     node_name = "poweredge"
-    commit    = "b685157b778cf2fb9edcd79489d9743350c9db4b"
+    commit    = "95540a7f37c0458c8382decfbb4cf77c0f571239"
     guest_api = true
     kernel_modules = {
       allow = module.poweredge_config.kernel_modules
+    }
+    additional_patches = {
+      pve-manager-acme = "patches/compat/pve-manager-acme-node.patch"
     }
     container_options          = null
     grub_cmdline_linux_default = "systemd.show_status=1"
@@ -88,14 +91,15 @@ module "overlay" {
   source   = "../../modules/overlay"
   for_each = local.overlay_hosts
 
-  ssh_host        = each.value.ssh_host
-  node_name       = each.value.node_name
-  commit          = each.value.commit
-  guest_api       = each.value.guest_api
-  automation_user = local.shared_vars.proxmox_api_user
-  kernel_modules  = each.value.kernel_modules
-  acme_account    = local.acme_account
-  acme_plugin     = local.acme_plugin
+  ssh_host           = each.value.ssh_host
+  node_name          = each.value.node_name
+  commit             = each.value.commit
+  guest_api          = each.value.guest_api
+  automation_user    = local.shared_vars.proxmox_api_user
+  kernel_modules     = each.value.kernel_modules
+  additional_patches = each.value.additional_patches
+  acme_account       = local.acme_account
+  acme_plugin        = local.acme_plugin
 
   container_options = each.value.container_options
 
