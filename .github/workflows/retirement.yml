@@ -1,0 +1,74 @@
+name: Retirement
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: retirement-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Read retirement state
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      verdict: ${{ steps.verify.outcome }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .go-version
+          cache: false
+      - uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version: 1.13.2
+          tofu_wrapper: false
+      - name: Install the reviewed verifier
+        run: go install goodkind.io/configsctl/cmd/configsctl@v0.0.0-20261117040202-6264ba435dc2
+      - name: Fetch revisions as Git objects
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: .github/scripts/fetch-retirement-revisions.sh
+      - name: Verify retirement against trusted base state
+        id: verify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.RETIREMENT_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RETIREMENT_R2_SECRET_ACCESS_KEY }}
+          TF_VAR_vault_tofu_state_passphrase: ${{ secrets.RETIREMENT_STATE_PASSPHRASE }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: .github/scripts/verify-retirement.sh
+
+  publish:
+    name: Publish retirement verdict
+    if: always()
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/github-script@v8
+        env:
+          VERDICT: ${{ needs.verify.outputs.verdict }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+        with:
+          script: |
+            const publish = require('./.github/scripts/publish-retirement.cjs');
+            await publish({github, context, core});
