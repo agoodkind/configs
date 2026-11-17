@@ -5,7 +5,7 @@ locals {
       PORT                            = tostring(module.application.identity.port)
       FDB_TRANSACTION_TIMEOUT         = "5s"
       TACK_DATAGEN_ALLOW_TARGET       = ""
-      OPENSEARCH_ENDPOINT             = "https://[${module.vault_hypervisor.value.ipv6}]:9200"
+      OPENSEARCH_ENDPOINT             = "https://[${module.tack_search1.value.ipv6}]:9200"
       OPENSEARCH_USERNAME             = "tack_runtime"
       OPENSEARCH_PUBLIC_ENABLED       = "true"
       OPENSEARCH_MODEL_REPAIR_ENABLED = "false"

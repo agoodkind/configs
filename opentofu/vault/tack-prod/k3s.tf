@@ -85,7 +85,7 @@ module "tack_application" {
     fdb_bootstrap      = var.vault_tack_k3s_fdb_bootstrap
   }
   application_secret_versions = module.configuration.tack_k3s_application.secret_versions
-  depends_on                  = [module.tack_k3s, module.tack_k3s_base, pveguest_systemd_unit.k3s_kafka_listener, pveguest_systemd_unit.legacy_proxy_origin, module.search_caller]
+  depends_on                  = [module.tack_k3s, module.tack_k3s_base, pveguest_systemd_unit.k3s_kafka_listener]
 }
 
 output "tack_k3s" {
