@@ -25,7 +25,7 @@ locals {
 output "service_mapping" { value = local.service_mapping }
 locals {
   lock_targets = {
-    "lock_free_types" = ["cloudflare_dns_record"]
+    "lock_free_types" = ["cloudflare_dns_record", "cloudflare_certificate_pack"]
   }
 }
 output "lock_targets" { value = local.lock_targets }

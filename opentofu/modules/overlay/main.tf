@@ -85,7 +85,14 @@ variable "additional_patches" {
 }
 
 variable "kernel_modules" {
-  description = "A null value disables kernel module API access for the automation user by removing the ScopedKernelModules role and its ACL. An object grants ScopedKernelModules on /. The API accepts only entries in allow. An empty allow list permits no modules. The selected overlay commit must provide the kernel module API."
+  description = <<-EOT
+    The selected overlay commit must include the kernel module API. The API accepts
+    only the module names in allow. An empty list blocks all module names.
+
+    When grant_scope is "all", the overlay manages the ScopedKernelModules role
+    for the automation user. If kernel_modules is null, the overlay removes the
+    role. Otherwise, it grants the role on the Proxmox root path (/).
+  EOT
   type = object({
     allow = list(string)
   })
@@ -207,6 +214,12 @@ variable "acme_account" {
 variable "acme_plugin" {
   description = "Id of the ACME DNS plugin that the automation user manages."
   type        = string
+}
+
+variable "retain_node_acme_role" {
+  description = "Set this value to true when another workspace manages the node certificate role."
+  type        = bool
+  default     = false
 }
 
 locals {
@@ -454,6 +467,7 @@ locals {
 
   revoke_commands = var.grant_scope == "all" ? concat([
     "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
+    ], var.retain_node_acme_role ? [] : [
     "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
   ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands, local.container_options_revoke_commands) : []
 
