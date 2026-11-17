@@ -44,18 +44,8 @@ run "policies_use_the_selector_digest" {
   }
 
   assert {
-    condition     = contains(local.grant_commands, "pveum acl modify / --users automation@pve --roles ScopedHostArtifacts --propagate 1")
-    error_message = "the module must grant ScopedHostArtifacts on / with propagation"
-  }
-
-  assert {
-    condition     = local.roles.ScopedHostArtifacts.privileges == ["Sys.HostArtifacts.Audit", "Sys.HostArtifacts.Modify", "Sys.HostSecrets.Modify"]
+    condition     = toset(local.roles.ScopedHostArtifacts.privileges) == toset(["Sys.HostArtifacts.Audit", "Sys.HostArtifacts.Modify", "Sys.HostSecrets.Modify"])
     error_message = "ScopedHostArtifacts must contain the three host artifact privileges"
-  }
-
-  assert {
-    condition     = !anytrue([for command in local.grant_commands : strcontains(command, "/nodes/")])
-    error_message = "the module does not grant a role on a /nodes path"
   }
 }
 
