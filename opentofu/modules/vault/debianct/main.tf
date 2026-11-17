@@ -1,6 +1,8 @@
+module "host" { source = "../../configuration/hosts/vault" }
+
 # Developer sandbox LXC on vault. Ansible does not manage its inside.
 resource "proxmox_virtual_environment_container" "debianct" {
-  node_name = "vault"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.debianct.vmid
 
   initialization {

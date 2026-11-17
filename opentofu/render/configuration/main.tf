@@ -10,10 +10,8 @@ output "lock_targets" { value = module.configuration.value.lock_targets }
 
 output "guest_references" {
   value = {
-    source = "${module.configuration.source_directory}/main.tf"
-    declared = { for key, guest in module.configuration.value.managed_guests : key => {
-      node = guest.node, vmid = guest.vmid, hostname = guest.hostname
-    } }
+    source   = "${module.configuration.source_directory}/main.tf"
+    declared = module.configuration.value.managed_guests
     services = { for key, service in module.configuration.value.service_mapping : key => {
       node = try(service.node, null), vmid = try(service.vmid, null), hostname = try(service.hostname, null)
     } if can(service.node) || can(service.vmid) }

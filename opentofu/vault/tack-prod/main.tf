@@ -30,11 +30,11 @@ locals {
   sshpiper_lines = module.guest_inputs.sshpiper_lines
   github_keys    = module.github_keys.public_keys
   nodes = {
-    vault = {
+    (module.configuration.tack_k3s.guest.node) = {
       endpoint  = regex("^https://[^/]+", var.proxmox_endpoint)
       api_token = "${local.proxmox_token_principal}=${var.vault_proxmox_token_secret}"
       insecure  = true
-      node_name = "vault"
+      node_name = module.configuration.tack_k3s.guest.node_name
     }
   }
 }

@@ -5,8 +5,7 @@ module "suburban_host" { source = "../../hosts/suburban" }
 locals {
   tack_qa_vmid     = 217
   tack_search_vmid = 227
-  managed_guests = {
-    tack_k3s_suburban = local.tack_k3s_guest
+  container_services = {
     tack_qa_suburban = {
       hostname          = "tack-qa.suburban.goodkind.io"
       node              = "suburban"
@@ -28,7 +27,8 @@ locals {
       docker_v6_gateway = "3d06:bad:b01:210:7b1::1"
     }
   }
-  service_mapping = merge(local.managed_guests, {
+  service_mapping = merge(local.container_services, {
+    tack_k3s_suburban   = local.tack_k3s_guest
     proxy               = module.proxy.value
     suburban_hypervisor = module.suburban_hypervisor.value
   })
@@ -67,7 +67,20 @@ output "lock_targets" {
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
 
-output "managed_guests" { value = local.managed_guests }
+locals {
+  provisioned_guests = merge(
+    { for key in keys(local.lxc_capacity) : key => local.container_services[key] },
+    { (local.tack_k3s.guest.service_key) = local.tack_k3s.guest },
+  )
+}
+
+output "managed_guests" {
+  value = { for key, guest in local.provisioned_guests : key => {
+    node     = module.suburban_host.node.key
+    vmid     = guest.vmid
+    hostname = guest.hostname
+  } }
+}
 output "guest_locks" { value = keys(local.lock_guest_services) }
 output "keyed_guest_locks" { value = {
   "module.base"         = { for key in local.guest_keys : key => key }

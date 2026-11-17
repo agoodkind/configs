@@ -4,7 +4,7 @@
 # Runs the weed binary under systemd (deploy-seaweedfs.yml); never exposed off
 # the segment. Backup destination for the prod tack stores.
 resource "proxmox_virtual_environment_container" "seaweedfs" {
-  node_name = "vault"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.seaweedfs.vmid
 
   initialization {
@@ -71,6 +71,8 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
     ]
   }
 }
+
+module "host" { source = "../../configuration/hosts/vault" }
 
 variable "service_mapping" { type = object({
   seaweedfs = object({

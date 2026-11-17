@@ -1,10 +1,10 @@
 module "seaweedfs" { source = "../../../configuration/services/seaweedfs" }
 module "vault_hypervisor" { source = "../../../configuration/services/vault_hypervisor" }
 locals {
-  managed_guests = {
+  container_services = {
     seaweedfs = module.seaweedfs.value
   }
-  service_mapping = merge(local.managed_guests, {
+  service_mapping = merge(local.container_services, {
     vault_hypervisor = module.vault_hypervisor.value
   })
 }
@@ -21,4 +21,10 @@ output "lock_targets" { value = merge(local.lock_targets, { lock_endpoints = {
   "vault" = module.vault_host.lock_endpoint
 } }) }
 
-output "managed_guests" { value = local.managed_guests }
+output "managed_guests" {
+  value = { for key, guest in local.container_services : key => {
+    node     = module.vault_host.node.key
+    vmid     = guest.vmid
+    hostname = guest.hostname
+  } }
+}

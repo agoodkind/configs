@@ -1,7 +1,7 @@
 module "proxy" { source = "../../../configuration/services/proxy" }
 module "suburban_hypervisor" { source = "../../../configuration/services/suburban_hypervisor" }
 locals {
-  managed_guests = {
+  container_services = {
     clyde_suburban = {
       "hostname"              = "clyde.suburban.goodkind.io"
       "node"                  = "suburban"
@@ -11,7 +11,7 @@ locals {
       "mail_password_version" = 2
     }
   }
-  service_mapping = merge(local.managed_guests, {
+  service_mapping = merge(local.container_services, {
     proxy               = module.proxy.value
     suburban_hypervisor = module.suburban_hypervisor.value
   })
@@ -34,6 +34,12 @@ output "lock_targets" { value = merge(local.lock_targets, { node_hosts = { for n
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
 
-output "managed_guests" { value = local.managed_guests }
+output "managed_guests" {
+  value = { for key, guest in local.container_services : key => {
+    node     = module.suburban_host.node.key
+    vmid     = guest.vmid
+    hostname = guest.hostname
+  } }
+}
 output "guest_locks" { value = keys(local.guest_services) }
 output "keyed_guest_locks" { value = { "module.base" = { for key in local.guest_keys : key => key } } }

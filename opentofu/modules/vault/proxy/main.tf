@@ -1,6 +1,8 @@
+module "host" { source = "../../configuration/hosts/vault" }
+
 # Reverse proxy LXC on vault (Traefik, SSHPiper, cloudflared).
 resource "proxmox_virtual_environment_container" "proxy" {
-  node_name = "vault"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.proxy.vmid
 
   initialization {

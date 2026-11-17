@@ -1,10 +1,10 @@
 module "proxy" { source = "../../../configuration/services/proxy" }
 module "vault_hypervisor" { source = "../../../configuration/services/vault_hypervisor" }
 locals {
-  managed_guests = {
+  container_services = {
     proxy = module.proxy.value
   }
-  service_mapping = merge(local.managed_guests, {
+  service_mapping = merge(local.container_services, {
     vault_hypervisor = module.vault_hypervisor.value
   })
 }
@@ -23,4 +23,10 @@ output "lock_targets" { value = merge(local.lock_targets, { lock_endpoints = {
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
 
-output "managed_guests" { value = local.managed_guests }
+output "managed_guests" {
+  value = { for key, guest in local.container_services : key => {
+    node     = module.vault_host.node.key
+    vmid     = guest.vmid
+    hostname = guest.hostname
+  } }
+}

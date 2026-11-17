@@ -1,5 +1,5 @@
 resource "proxmox_virtual_environment_container" "tack" {
-  node_name = "vault"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.tack.vmid
 
   initialization {
@@ -78,7 +78,7 @@ resource "proxmox_virtual_environment_container" "tack" {
 }
 
 resource "proxmox_virtual_environment_container" "tack_app2" {
-  node_name = "vault"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.tack_app2.vmid
 
   initialization {
@@ -148,7 +148,7 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
 }
 
 resource "proxmox_virtual_environment_container" "tack_data1" {
-  node_name = "vault"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.tack_data1.vmid
 
   initialization {
@@ -214,7 +214,7 @@ resource "proxmox_virtual_environment_container" "tack_data1" {
 }
 
 resource "proxmox_virtual_environment_container" "tack_data2" {
-  node_name = "vault"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.tack_data2.vmid
 
   initialization {
@@ -280,7 +280,7 @@ resource "proxmox_virtual_environment_container" "tack_data2" {
 }
 
 resource "proxmox_virtual_environment_container" "tack_data3" {
-  node_name = "vault"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.tack_data3.vmid
 
   initialization {
@@ -346,7 +346,7 @@ resource "proxmox_virtual_environment_container" "tack_data3" {
 }
 
 resource "proxmox_virtual_environment_container" "tack_search1" {
-  node_name = "vault"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.tack_search1.vmid
 
   initialization {
@@ -409,6 +409,8 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
     ]
   }
 }
+
+module "host" { source = "../../configuration/hosts/vault" }
 
 variable "service_mapping" { type = object({
   tack = object({
