@@ -10,16 +10,10 @@ Install OpenTofu 1.13.2, TFLint 0.66.0, and the Go version in [.go-version](../.
    ./configsctl lint
    ```
 
-2. Initialize the provider-free artifact policy module:
+2. Install Python's Jinja2 package and check deployment templates:
 
    ```bash
-   tofu -chdir=opentofu/modules/overlay/host-artifacts init -backend=false -input=false
-   ```
-
-3. Run its native policy tests:
-
-   ```bash
-   tofu -chdir=opentofu/modules/overlay/host-artifacts test
+   ./configsctl lint mwan/config/*.j2 opnsense/*.j2 proxmox/services/*.j2
    ```
 
 These checks evaluate configuration and rendered output without changing a host or infrastructure state.
