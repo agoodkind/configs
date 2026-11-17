@@ -25,12 +25,23 @@ data "cloudflare_zero_trust_tunnel_cloudflared" "tack_k3s" {
 }
 
 locals {
-  tack_tunnel_target = "${data.cloudflare_zero_trust_tunnel_cloudflared.tack_k3s.id}.cfargotunnel.com"
+  tack_tunnel_target    = "${data.cloudflare_zero_trust_tunnel_cloudflared.tack_k3s.id}.cfargotunnel.com"
+  tack_private_hostname = "tack.home.goodkind.io"
+}
+
+resource "cloudflare_certificate_pack" "tack_private" {
+  provider              = cloudflare.certificates
+  zone_id               = local.cloudflare_zone_ids["goodkind.io"]
+  type                  = "advanced"
+  hosts                 = ["goodkind.io", local.tack_private_hostname]
+  certificate_authority = "lets_encrypt"
+  validation_method     = "txt"
+  validity_days         = 90
 }
 
 resource "cloudflare_dns_record" "tack_private" {
   provider = cloudflare.dns
-  for_each = toset(["tack.home.goodkind.io"])
+  for_each = toset([local.tack_private_hostname])
 
   zone_id = local.cloudflare_zone_ids["goodkind.io"]
   name    = each.key
@@ -38,4 +49,11 @@ resource "cloudflare_dns_record" "tack_private" {
   content = local.tack_tunnel_target
   ttl     = 1
   proxied = true
+
+  lifecycle {
+    precondition {
+      condition     = cloudflare_certificate_pack.tack_private.status == "active"
+      error_message = "Wait for Cloudflare to activate the Tack edge certificate before switching the private hostname."
+    }
+  }
 }

@@ -1,3 +1,10 @@
+variable "vault_cloudflare_goodkind_io_certificates_api_token" {
+  description = "Cloudflare uses this token to manage edge certificates for goodkind.io."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}
+
 variable "vault_cloudflare_api_token" {
   description = "Cloudflare DNS API token supplied by the Ansible vault."
   type        = string
