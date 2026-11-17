@@ -39,7 +39,7 @@ Formatting, selected TFLint rules, proven loop simplifications, unresolved guest
 ## 5. Roll out in reviewable changes
 
 - [x] **Review the `configsctl` changes in three groups.** Group formatting and source lint together. Review guest validation with its configuration contract. Review the credentialed retirement verifier independently. Include CLI tests and usage documentation with each group. Run `make build` in `configsctl` before committing each change. The shared Makefile directs `make check` callers to `make build`.
-- [x] **Adopt the reviewed tool in `configs`.** Pin the reviewed source and guest validation revision together with CI tool installation and the corresponding configuration changes. [Current wrapper](../../../configsctl)
+- [x] **Adopt the tool from `main` in `configs`.** Use `configsctl` from `main` together with CI tool installation and the corresponding configuration changes. [Current wrapper](../../../configsctl)
 - [ ] **Require checks only after testing the real repository.** Run `./configsctl lint` across `configs`, review advisory findings, and correct blocking violations. Compare affected configuration outputs and planned resource actions before and after refactoring. Require the existing `configs lint` check and the separate retirement check after each demonstrates both a passing case and an intentional failure. Ordinary source lint must run without R2 credentials.
 
 Retirement CI activation requires dedicated secrets in the main-only `retirement-state` environment and actual passing and intentional failing GitHub workflow runs.
