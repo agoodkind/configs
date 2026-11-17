@@ -24,12 +24,14 @@ locals {
 }
 output "service_mapping" { value = local.service_mapping }
 locals {
-  search_service_keys = { compose = "tack", firewall = "tack_search1" }
   static_guest_locks = {
-    "linux_file_line.compose_search"          = local.search_service_keys.compose
-    "linux_file_line.search_firewall_include" = local.search_service_keys.firewall
+    "linux_file_line.compose_search"          = "tack"
+    "linux_file_line.search_firewall_include" = "tack_search1"
   }
-  search_lock_guests = { for address, key in local.static_guest_locks : address => local.service_mapping[key] }
+  search_lock_guests = {
+    "linux_file_line.compose_search"          = module.tack.value
+    "linux_file_line.search_firewall_include" = module.tack_search1.value
+  }
   lock_targets = {
     module_hosts = merge({
       "module.tack_k3s_vm"      = "vault"
@@ -71,6 +73,5 @@ output "managed_guests" {
     hostname = guest.hostname
   } }
 }
-output "search_service_keys" { value = local.search_service_keys }
 output "static_guest_locks" { value = local.static_guest_locks }
 output "guest_locks" { value = concat([local.tack_k3s_guest.service_key], values(local.static_guest_locks)) }
