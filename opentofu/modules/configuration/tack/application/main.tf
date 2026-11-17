@@ -11,7 +11,7 @@ locals {
 
 output "identity" {
   value = merge(local.identity, {
-    origin = "http://${local.identity.name}.${local.identity.namespace}.svc.cluster.local:${local.identity.port}"
+    origin = "http://${local.identity.name}.${local.identity.namespace}.svc.cluster.local.:${local.identity.port}"
   })
 }
 

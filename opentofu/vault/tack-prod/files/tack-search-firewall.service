@@ -1,0 +1,13 @@
+[Unit]
+Description=Restrict clients of the Tack OpenSearch HTTPS listener
+After=nftables.service
+PartOf=nftables.service
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft --file /etc/nftables.d/tack-search.nft
+
+[Install]
+WantedBy=multi-user.target nftables.service

@@ -24,28 +24,35 @@ locals {
 }
 output "service_mapping" { value = local.service_mapping }
 locals {
+  search_service_keys = { compose = "tack", firewall = "tack_search1" }
+  static_guest_locks = {
+    "linux_file_line.compose_search"          = local.search_service_keys.compose
+    "linux_file_line.search_firewall_include" = local.search_service_keys.firewall
+  }
+  search_lock_guests = { for address, key in local.static_guest_locks : address => local.service_mapping[key] }
   lock_targets = {
-    "module_hosts" = {
+    module_hosts = merge({
       "module.tack_k3s_vm"      = "vault"
       "module.tack_k3s_base"    = "vault"
       "module.tack_application" = "vault"
 
-      "module.vault"         = "vault"
-      "module.tack_k3s"      = "vault"
-      "module.search_caller" = "vault"
-    }
+      "module.vault"    = "vault"
+      "module.tack_k3s" = "vault"
+    }, { for address, guest in local.search_lock_guests : address => guest.hostname })
   }
 }
 locals { guest_keys = toset(["tack", "tack_app2", "tack_data1", "tack_data2", "tack_data3", "tack_search1"]) }
 output "guest_keys" { value = local.guest_keys }
 module "vault_host" { source = "../../hosts/vault" }
 output "lock_targets" { value = merge(local.lock_targets, {
-  node_hosts  = { for node in toset([for key in local.guest_keys : local.service_mapping[key].node]) : node => "vault" }
-  guest_hosts = { "vault/${local.tack_k3s_guest.vmid}" = local.tack_k3s_guest.hostname }
-  lock_endpoints = {
+  node_hosts = { for node in toset([for key in local.guest_keys : local.service_mapping[key].node]) : node => "vault" }
+  guest_hosts = merge({ "vault/${local.tack_k3s_guest.vmid}" = local.tack_k3s_guest.hostname }, {
+    for guest in local.search_lock_guests : "${guest.node}/${guest.vmid}" => guest.hostname
+  })
+  lock_endpoints = merge({
     vault                           = module.vault_host.lock_endpoint
     (local.tack_k3s_guest.hostname) = { user = "root", address = local.tack_k3s_guest.ipv6 }
-  }
+  }, { for guest in local.search_lock_guests : guest.hostname => { user = "root", address = guest.ipv6 } })
 }) }
 output "proxy_public_key" { value = module.proxy.upstream_public_key }
 output "proxy_address" { value = module.proxy.value.ipv6 }
@@ -64,4 +71,6 @@ output "managed_guests" {
     hostname = guest.hostname
   } }
 }
-output "guest_locks" { value = [local.tack_k3s_guest.service_key] }
+output "search_service_keys" { value = local.search_service_keys }
+output "static_guest_locks" { value = local.static_guest_locks }
+output "guest_locks" { value = concat([local.tack_k3s_guest.service_key], values(local.static_guest_locks)) }

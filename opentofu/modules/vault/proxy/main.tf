@@ -1,6 +1,5 @@
 module "host" { source = "../../configuration/hosts/vault" }
 
-# Reverse proxy LXC on vault (Traefik, SSHPiper, cloudflared).
 resource "proxmox_virtual_environment_container" "proxy" {
   node_name = module.host.node.name
   vm_id     = local.service_mapping.proxy.vmid
@@ -47,7 +46,7 @@ resource "proxmox_virtual_environment_container" "proxy" {
     cores        = 2
   }
 
-  tags = ["legacyv4", "lxc", "traefik"]
+  tags = ["legacyv4", "lxc"]
 
   console {
     enabled   = true

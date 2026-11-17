@@ -1,0 +1,14 @@
+destroy table ip6 tack_search
+
+table ip6 tack_search {
+    set callers {
+        type ipv6_addr
+        flags interval
+        elements = { ${callers} }
+    }
+
+    chain input {
+        type filter hook input priority -10; policy accept;
+        iifname != "lo" ip6 daddr ${address} tcp dport 9200 ip6 saddr != @callers drop
+    }
+}
