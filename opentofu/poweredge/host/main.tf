@@ -1,5 +1,3 @@
-locals { repository_root = abspath("${path.module}/../../..") }
-
 module "contracts" {
   source = "../../modules/contracts"
 }
@@ -74,17 +72,7 @@ locals {
     container_options          = null
     grub_cmdline_linux_default = "systemd.show_status=1"
     network_interfaces_file    = null
-    host_artifact_workspaces   = ["poweredge/idrac-certificate"]
   } }
-}
-
-module "host_artifacts" {
-  source   = "../../modules/overlay/host-artifacts"
-  for_each = local.overlay_hosts
-
-  repository_root = local.repository_root
-  node_name       = each.value.node_name
-  workspaces      = each.value.host_artifact_workspaces
 }
 
 module "overlay" {
@@ -105,7 +93,6 @@ module "overlay" {
 
   grub_cmdline_linux_default = each.value.grub_cmdline_linux_default
   network_interfaces_file    = each.value.network_interfaces_file
-  host_artifact_policies     = module.host_artifacts[each.key].policies
 }
 
 # Each ACME account and DNS plugin depends on module.overlay. The automation
