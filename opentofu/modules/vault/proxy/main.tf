@@ -88,7 +88,6 @@ locals { service_mapping = var.service_mapping }
 
 terraform {
   required_providers {
-    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.3" }
     proxmox = {
       source  = "bpg/proxmox"
       version = ">= 0.106.0"

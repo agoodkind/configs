@@ -12,7 +12,7 @@ locals {
 module "vault" {
   source = "../../modules/vault/proxy"
 
-  providers = { proxmox = proxmox, pveguest = pveguest }
+  providers = { proxmox = proxmox }
 
   ssh_keys        = trimspace(data.http.github_ssh_keys.response_body)
   service_mapping = local.service_mapping
