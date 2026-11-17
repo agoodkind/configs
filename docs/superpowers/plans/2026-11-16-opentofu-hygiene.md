@@ -1,12 +1,12 @@
 # OpenTofu linting and retirement checks for `configsctl`
 
-**Goal.** Give contributors one command to format OpenTofu code and one command to check it. Give reviewers a separate CI result that verifies when they can safely remove retirement code.
+Give contributors one command to format OpenTofu code and one command to check it. Give reviewers a separate CI result that verifies when they can safely remove retirement code.
 
-**Architecture.** `configsctl fmt` writes formatting fixes. `configsctl lint` checks source files and the repository’s guest configuration. A new `configsctl ci retirement --base <sha> --head <sha>` command compares two revisions and reads state only when the change removes a retirement instruction. The state check uses the backend and encryption settings from the trusted base revision.
+`configsctl fmt` writes formatting fixes. `configsctl lint` checks source files and the repository’s guest configuration. A new `configsctl ci retirement --base <sha> --head <sha>` command compares two revisions and reads state only when the change removes a retirement instruction. The state check uses the backend and encryption settings from the trusted base revision.
 
-**Execution.** Use `subagent-driven-development` and track the steps below.
+Use `subagent-driven-development` and track the steps below.
 
-**Enforcement.** Formatting, selected TFLint rules, proven loop simplifications, unresolved guest references, and unsafe retirement cleanup fail their respective checks. Repeated strings with uncertain meaning produce review findings. The implementation checklist below can serve as the work tracker.
+Formatting, selected TFLint rules, proven loop simplifications, unresolved guest references, and unsafe retirement cleanup fail their respective checks. Repeated strings with uncertain meaning produce review findings. The implementation checklist below can serve as the work tracker.
 
 ## 1. Format and lint OpenTofu source
 
