@@ -28,9 +28,8 @@ locals {
       "module.tack_k3s_base"    = "vault"
       "module.tack_application" = "vault"
 
-      "module.vault"         = "vault"
-      "module.tack_k3s"      = "vault"
-      "module.search_caller" = "vault"
+      "module.vault"    = "vault"
+      "module.tack_k3s" = "vault"
     }
   }
 }
