@@ -81,6 +81,17 @@ resource "cloudflare_ruleset" "goodkind_io_custom_firewall" {
       }
       logging = { enabled = true }
     },
+    {
+      ref         = "tack_mcp_post"
+      enabled     = true
+      description = "Tack MCP clients"
+      expression  = "(http.host in {\"tack.goodkind.io\" \"tack.home.goodkind.io\"} and http.request.method eq \"POST\" and http.request.uri.path eq \"/mcp\" and starts_with(http.request.headers[\"authorization\"][0], \"Bearer \"))"
+      action      = "skip"
+      action_parameters = {
+        phases = local.bot_fight_mode
+      }
+      logging = { enabled = true }
+    },
   ]
 
   lifecycle {
