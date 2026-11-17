@@ -1,7 +1,8 @@
 terraform {
   required_version = ">= 1.11"
   required_providers {
-    proxmox = { source = "bpg/proxmox", version = "0.116.0" }
+    proxmox  = { source = "bpg/proxmox", version = "0.116.0" }
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.4" }
   }
 }
 
@@ -11,6 +12,12 @@ variable "vault_tofu_state_passphrase" {
 }
 
 variable "poweredge_proxmox_root_password" {
+  type      = string
+  sensitive = true
+  ephemeral = true
+}
+
+variable "vault_poweredge_pve_token_secret" {
   type      = string
   sensitive = true
   ephemeral = true
@@ -26,11 +33,25 @@ module "poweredge_hypervisor" {
   source = "../../modules/poweredge/services/poweredge_hypervisor"
 }
 
+locals {
+  api_endpoint = var.poweredge_api_tunnel_port == null ? "https://${module.poweredge_hypervisor.value.hostname}:8006" : "https://127.0.0.1:${var.poweredge_api_tunnel_port}"
+}
+
 provider "proxmox" {
-  endpoint = var.poweredge_api_tunnel_port == null ? "https://${module.poweredge_hypervisor.value.hostname}:8006/" : "https://127.0.0.1:${var.poweredge_api_tunnel_port}/"
+  endpoint = local.api_endpoint
   insecure = var.poweredge_api_tunnel_port != null
   username = "root@pam"
   password = var.poweredge_proxmox_root_password
+}
+
+provider "pveguest" {
+  nodes = {
+    poweredge = {
+      endpoint  = local.api_endpoint
+      api_token = "${module.contracts.proxmox_token_principal}=${var.vault_poweredge_pve_token_secret}"
+      insecure  = var.poweredge_api_tunnel_port != null
+    }
+  }
 }
 
 module "contracts" {
@@ -63,4 +84,10 @@ resource "proxmox_acl" "kernel_modules" {
   user_id   = data.proxmox_virtual_environment_user.automation.user_id
   role_id   = local.kernel_role
   propagate = true
+}
+
+# Read the kernel module list with the automation token after applying the grant.
+data "pveguest_host_kernel_modules" "automation" {
+  node       = "poweredge"
+  depends_on = [proxmox_acl.kernel_modules]
 }
