@@ -3,6 +3,6 @@ auto uplink
 iface uplink inet manual
     address-purge no
     ip-forward on
-    bridge-ports enp4s0
+    bridge-ports enp2s0f0np0
     bridge-stp off
     bridge-fd 0
