@@ -1,6 +1,6 @@
 provider "linux" {
   alias = "compose"
-  ssh   = { host = local.service_mapping.tack.ipv6 }
+  ssh   = { host = local.service_mapping[module.configuration.static_guest_locks["linux_file_line.compose_search"]].ipv6 }
 }
 
 resource "linux_file_line" "compose_search" {

@@ -2,7 +2,7 @@ locals {
   tack_k3s_guest = {
     hostname    = "tack-k3s.vault.goodkind.io"
     service_key = "tack_k3s"
-    node        = "vault"
+    node        = module.vault_host.node.key
     vmid        = 124
     kind        = "qemu"
     ipv4        = "10.250.0.124"

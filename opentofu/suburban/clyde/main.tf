@@ -1,5 +1,3 @@
-locals { repository_root = abspath("${path.module}/../../..") }
-
 module "suburban_config" {
   source = "../../modules/configuration/hosts/suburban"
 }
@@ -35,11 +33,11 @@ locals {
   github_keys             = module.github_keys.public_keys
   proxmox_token_principal = module.contracts.proxmox_token_principal
   nodes = {
-    suburban = {
+    (module.suburban_config.node.key) = {
       endpoint  = "https://[${local.service_mapping.suburban_hypervisor.ipv6}]:8006"
       api_token = "${local.proxmox_token_principal}=${var.vault_suburban_testbed_pve_token_secret}"
       insecure  = true
-      node_name = "hypervisor"
+      node_name = module.suburban_config.node.name
     }
   }
 }

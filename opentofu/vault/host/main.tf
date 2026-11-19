@@ -1,5 +1,3 @@
-locals { repository_root = abspath("${path.module}/../../..") }
-
 module "contracts" {
   source = "../../modules/contracts"
 }

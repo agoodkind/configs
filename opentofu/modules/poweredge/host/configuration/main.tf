@@ -31,3 +31,5 @@ module "poweredge_host" { source = "../.." }
 output "lock_targets" { value = merge(local.lock_targets, { lock_endpoints = {
   "poweredge" = module.poweredge_host.lock_endpoint
 } }) }
+
+output "managed_guests" { value = {} }

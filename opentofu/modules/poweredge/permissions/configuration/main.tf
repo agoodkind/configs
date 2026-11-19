@@ -2,6 +2,10 @@ module "poweredge" {
   source = "../.."
 }
 
+output "service_mapping" { value = {} }
+
+output "managed_guests" { value = {} }
+
 output "lock_targets" {
   value = {
     module_hosts = {

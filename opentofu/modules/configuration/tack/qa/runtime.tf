@@ -21,10 +21,11 @@ output "connector_count" { value = 1 }
 output "snapshots_enabled" { value = false }
 output "search_runtime_identity" { value = { name = "tack-search", id = 1000 } }
 
-output "lxc_capacity" {
-  value = {
+locals {
+  lxc_capacity = {
     tack_qa_suburban      = { memory_mib = 6144, cores = 2, disk_gib = 40 }
     tack_search1_suburban = { memory_mib = 8192, cores = 2, disk_gib = 40 }
   }
 }
+output "lxc_capacity" { value = local.lxc_capacity }
 output "lxc_template_file_id" { value = "${module.suburban_host.guest.image_datastore}:vztmpl/${module.artifacts.debian_lxc_template}" }

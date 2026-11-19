@@ -1,5 +1,5 @@
 locals {
-  search_guest = local.service_mapping.tack_search1
+  search_guest = local.service_mapping[module.configuration.static_guest_locks["linux_file_line.search_firewall_include"]]
   search_callers = [
     local.service_mapping.tack.ipv6,
     local.service_mapping.tack.docker_v6_subnet,

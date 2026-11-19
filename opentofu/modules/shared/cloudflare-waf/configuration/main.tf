@@ -10,3 +10,5 @@ locals {
   }
 }
 output "lock_targets" { value = local.lock_targets }
+
+output "managed_guests" { value = {} }

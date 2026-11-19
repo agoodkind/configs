@@ -1,5 +1,5 @@
 resource "proxmox_virtual_environment_container" "clyde_suburban" {
-  node_name = "hypervisor"
+  node_name = module.host.node.name
   vm_id     = local.service_mapping.clyde_suburban.vmid
 
 
@@ -56,6 +56,8 @@ resource "proxmox_virtual_environment_container" "clyde_suburban" {
     ]
   }
 }
+
+module "host" { source = "../../configuration/hosts/suburban" }
 
 variable "service_mapping" { type = object({
   clyde_suburban = object({

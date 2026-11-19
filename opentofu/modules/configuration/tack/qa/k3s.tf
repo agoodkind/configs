@@ -2,7 +2,7 @@ locals {
   tack_k3s_guest = {
     hostname    = "tack-k3s.suburban.goodkind.io"
     service_key = "tack_k3s_suburban"
-    node        = "suburban"
+    node        = module.suburban_host.node.key
     vmid        = 228
     kind        = "qemu"
     ipv4        = cidrhost(module.suburban_host.vmnet.ipv4_cidr, 10)
