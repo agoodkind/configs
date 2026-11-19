@@ -36,7 +36,8 @@ resource "proxmox_sdn_applier" "vault" {
   depends_on = [
     proxmox_sdn_subnet.vault_ipv4,
     proxmox_sdn_subnet.vault_ipv6,
-    terraform_data.guest_network_activate,
+    remote_file.host_network,
+    module.overlay["vault"],
   ]
 
   lifecycle {
@@ -45,7 +46,7 @@ resource "proxmox_sdn_applier" "vault" {
       proxmox_sdn_vnet.vault,
       proxmox_sdn_subnet.vault_ipv4,
       proxmox_sdn_subnet.vault_ipv6,
-      terraform_data.guest_network_activate,
+      remote_file.host_network,
     ]
   }
 }
