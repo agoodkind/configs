@@ -462,7 +462,7 @@ locals {
         "pveum acl modify ${path} --users ${var.automation_user} --roles ${role} --propagate 1"
       ],
     ]
-    if var.grant_scope == "all" || contains(keys(local.host_artifacts_roles), role)
+    if (var.grant_scope == "all" || contains(keys(local.host_artifacts_roles), role)) && length(local.roles[role].privileges) > 0
   ]), var.grant_scope == "all" ? local.container_options_acl_commands : [])
 
   # Earlier grants put these roles on /vms and /nodes/<node>. `pveum acl
