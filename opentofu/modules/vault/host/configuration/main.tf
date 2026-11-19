@@ -8,7 +8,8 @@ locals {
 output "service_mapping" { value = local.service_mapping }
 locals {
   lock_targets = {
-    "module_hosts" = {
+    node_hosts = { (module.vault_host.node.key) = "vault" }
+    module_hosts = {
       "module.overlay[\"vault\"]"                   = "vault"
       "proxmox_acme_account.vault"                  = "vault"
       "proxmox_acme_certificate.vault"              = "vault"
@@ -23,10 +24,7 @@ locals {
       "proxmox_sdn_subnet.vault_ipv6"               = "vault"
       "remote_file"                                 = "vault"
       "terraform_data.guest_network_packages"       = "vault"
-      "module.guest_network"                        = "vault"
       "proxmox_virtual_environment_container.unifi" = "vault"
-      "pveguest_host_network_interface"             = "vault"
-      "pveguest_host_sriov"                         = "vault"
       "proxmox_network_applier"                     = "vault"
       "linux_sysctl"                                = "vault"
       "linux_file.cloudflared_service"              = "vault"

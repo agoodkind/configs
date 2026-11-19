@@ -32,6 +32,14 @@ locals {
     "linux_file_line.compose_search"          = module.tack.value
     "linux_file_line.search_firewall_include" = module.tack_search1.value
   }
+  # These operations use the Proxmox API while the guest's private SSH address is unavailable.
+  network_lock_hosts = merge([for key in concat(tolist(local.guest_keys), ["tack_k3s"]) : {
+    for resource in concat([
+      "pveguest_apt_packages.network",
+      "pveguest_network_interface.eth0",
+    ], module.vault_host.guest_networks[key].kind == "lxc" ? ["pveguest_container_options.hostnic[0]"] : []) :
+    "module.guest_network[${jsonencode(key)}].${resource}" => "vault"
+  }]...)
   lock_targets = {
     module_hosts = merge({
       "module.tack_k3s_vm"      = "vault"
@@ -39,10 +47,9 @@ locals {
       "module.tack_application" = "vault"
 
       "module.vault"                 = "vault"
-      "module.guest_network"         = "vault"
       "proxmox_hardware_mapping_pci" = "vault"
       "module.tack_k3s"              = "vault"
-    }, { for address, guest in local.search_lock_guests : address => guest.hostname })
+    }, local.network_lock_hosts, { for address, guest in local.search_lock_guests : address => guest.hostname })
   }
 }
 locals { guest_keys = toset(["tack", "tack_app2", "tack_data1", "tack_data2", "tack_data3", "tack_search1"]) }
