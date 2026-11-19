@@ -20,7 +20,7 @@ These checks evaluate configuration and rendered output without changing a host 
 
 ## Configure retirement verification
 
-The retirement workflow reads state with dedicated CI credentials when a change removes a retirement instruction. Repository and environment secrets currently do not provide these credentials. The verifier rejects affected cleanup until an authorized operator configures them. The verifier skips state access when the proposal preserves retirement instructions.
+The retirement workflow reads state with dedicated CI credentials when a change removes a retirement instruction. The required `retirement` status blocks merges when verification fails. The verifier skips state access when the proposal preserves retirement instructions.
 
 1. Create the GitHub environment `retirement-state`. Restrict deployment branches to the selected branch `main` and exclude tags. Preserve branch protection for `main`.
 2. Create dedicated R2 credentials with object-read and bucket-list access for the state bucket and workspace prefixes. Do not grant object writes or deletes.
