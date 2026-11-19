@@ -8,7 +8,8 @@ locals {
 }
 
 module "vault" {
-  source = "../../modules/vault/seaweedfs"
+  source            = "../../modules/vault/seaweedfs"
+  stopped_guest_ids = var.stopped_guest_ids
 
   providers = { proxmox = proxmox }
 

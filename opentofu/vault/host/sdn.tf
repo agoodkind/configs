@@ -1,52 +1,29 @@
-resource "proxmox_sdn_applier" "vault_finalizer" {
-  on_create = false
+removed {
+  from = proxmox_sdn_applier.vault
+  lifecycle { destroy = false }
 }
 
-resource "proxmox_sdn_zone_simple" "vault" {
-  id    = "vault"
-  nodes = ["vault"]
-  mtu   = 1500
-  ipam  = "pve"
-
-  depends_on = [proxmox_sdn_applier.vault_finalizer]
+removed {
+  from = proxmox_sdn_applier.vault_finalizer
+  lifecycle { destroy = false }
 }
 
-resource "proxmox_sdn_vnet" "vault" {
-  id   = "vmnet"
-  zone = proxmox_sdn_zone_simple.vault.id
+removed {
+  from = proxmox_sdn_zone_simple.vault
+  lifecycle { destroy = false }
 }
 
-resource "proxmox_sdn_subnet" "vault_ipv4" {
-  cidr    = "10.250.0.0/24"
-  gateway = "10.250.0.254"
-  snat    = true
-  vnet    = proxmox_sdn_vnet.vault.id
+removed {
+  from = proxmox_sdn_vnet.vault
+  lifecycle { destroy = false }
 }
 
-resource "proxmox_sdn_subnet" "vault_ipv6" {
-  cidr    = "3d06:bad:b01::/64"
-  gateway = "3d06:bad:b01::254"
-  snat    = true
-  vnet    = proxmox_sdn_vnet.vault.id
+removed {
+  from = proxmox_sdn_subnet.vault_ipv4
+  lifecycle { destroy = false }
 }
 
-resource "proxmox_sdn_applier" "vault" {
-  on_destroy = false
-
-  depends_on = [
-    proxmox_sdn_subnet.vault_ipv4,
-    proxmox_sdn_subnet.vault_ipv6,
-    remote_file.host_network,
-    module.overlay["vault"],
-  ]
-
-  lifecycle {
-    replace_triggered_by = [
-      proxmox_sdn_zone_simple.vault,
-      proxmox_sdn_vnet.vault,
-      proxmox_sdn_subnet.vault_ipv4,
-      proxmox_sdn_subnet.vault_ipv6,
-      remote_file.host_network,
-    ]
-  }
+removed {
+  from = proxmox_sdn_subnet.vault_ipv6
+  lifecycle { destroy = false }
 }

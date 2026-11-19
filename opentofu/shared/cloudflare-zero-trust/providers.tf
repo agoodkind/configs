@@ -16,7 +16,7 @@ provider "cloudflare" {
 provider "pveguest" {
   nodes = {
     for environment, connector in local.tack_connectors : connector.guest.node => {
-      endpoint  = "https://[${connector.hypervisor.address}]:8006"
+      endpoint  = format("https://%s:8006", strcontains(connector.hypervisor.address, ":") ? "[${connector.hypervisor.address}]" : connector.hypervisor.address)
       node_name = connector.hypervisor.node_name
       api_token = "${module.contracts.proxmox_token_principal}=${local.tack_proxmox_credentials[environment]}"
       insecure  = true

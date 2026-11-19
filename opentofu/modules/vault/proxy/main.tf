@@ -9,26 +9,10 @@ resource "proxmox_virtual_environment_container" "proxy" {
     dns {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.proxy.hostname)[0]
     }
-    ip_config {
-      ipv4 {
-        address = "${local.service_mapping.proxy.ipv4}/24"
-        gateway = local.service_mapping.vault_hypervisor.ipv4
-      }
-      ipv6 {
-        address = "${local.service_mapping.proxy.ipv6}/64"
-        gateway = local.service_mapping.vault_hypervisor.ipv6
-      }
-    }
   }
 
   features {
     nesting = true
-  }
-
-  network_interface {
-    name        = "eth0"
-    bridge      = "vmnet"
-    mac_address = "bc:24:11:1d:2c:0f"
   }
 
   disk {
@@ -59,8 +43,8 @@ resource "proxmox_virtual_environment_container" "proxy" {
     type             = "ubuntu"
   }
 
-  started       = true
-  start_on_boot = true
+  started       = !contains(var.stopped_guest_ids, local.service_mapping.proxy.vmid)
+  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.proxy.vmid)
   unprivileged  = true
 
   lifecycle {
@@ -78,10 +62,6 @@ variable "service_mapping" { type = object({
     ipv4     = string
     ipv6     = string
   })
-  vault_hypervisor = object({
-    ipv4 = string
-    ipv6 = string
-  })
 }) }
 
 locals { service_mapping = var.service_mapping }
@@ -94,3 +74,5 @@ terraform {
     }
   }
 }
+
+variable "stopped_guest_ids" { type = set(number) }

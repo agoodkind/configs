@@ -3,6 +3,10 @@ module "contracts" {
 }
 
 locals {
+  management_routes = {
+    ipv4 = "${split("/", var.management_ipv4_cidr)[0]}/32"
+    ipv6 = "${split("/", var.management_ipv6_cidr)[0]}/128"
+  }
 }
 
 module "cloudflare" {
@@ -14,8 +18,10 @@ module "cloudflare" {
     cloudflare.tunnels = cloudflare.tunnels
   }
 
-  account_id  = var.cloudflare_account_id
-  owner_email = var.cloudflare_owner_email
+  guest_tunnel_id   = contains(var.tack_k3s_environments, "prod") ? cloudflare_zero_trust_tunnel_cloudflared.tack_k3s["prod"].id : data.cloudflare_zero_trust_tunnel_cloudflared.production[0].id
+  management_routes = local.management_routes
+  account_id        = var.cloudflare_account_id
+  owner_email       = var.cloudflare_owner_email
 
   berylax_beacon_sockaddr = var.berylax_beacon_sockaddr
   berylax_beacon_sha256   = var.berylax_beacon_sha256

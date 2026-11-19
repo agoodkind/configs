@@ -7,7 +7,8 @@ locals {
 }
 
 module "vault" {
-  source = "../../modules/vault/proxy"
+  source            = "../../modules/vault/proxy"
+  stopped_guest_ids = var.stopped_guest_ids
 
   providers = { proxmox = proxmox }
 

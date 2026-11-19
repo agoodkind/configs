@@ -38,8 +38,10 @@ locals {
       "module.tack_k3s_base"    = "vault"
       "module.tack_application" = "vault"
 
-      "module.vault"    = "vault"
-      "module.tack_k3s" = "vault"
+      "module.vault"                 = "vault"
+      "module.guest_network"         = "vault"
+      "proxmox_hardware_mapping_pci" = "vault"
+      "module.tack_k3s"              = "vault"
     }, { for address, guest in local.search_lock_guests : address => guest.hostname })
   }
 }

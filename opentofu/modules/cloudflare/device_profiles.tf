@@ -58,7 +58,7 @@ resource "cloudflare_zero_trust_device_custom_profile" "berylax_lan" {
     { suffix = var.dns_search_suffix },
   ]
 
-  include = var.berylax_include
+  include = concat(var.berylax_include, [for route in var.management_routes : { address = route, description = "Vault management" } if !anytrue([for entry in var.berylax_include : try(cidrcontains(entry.address, split("/", route)[0]), false)])])
 
   lifecycle {
     prevent_destroy = true
@@ -93,7 +93,7 @@ resource "cloudflare_zero_trust_device_custom_profile" "tun_only" {
     { suffix = var.dns_search_suffix },
   ]
 
-  include = var.tun_only_include
+  include = concat(var.tun_only_include, [for route in var.management_routes : { address = route, description = "Vault management" } if !anytrue([for entry in var.tun_only_include : try(cidrcontains(entry.address, split("/", route)[0]), false)])])
 
   lifecycle {
     prevent_destroy = true

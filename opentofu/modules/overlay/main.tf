@@ -194,10 +194,24 @@ variable "grub_cmdline_linux_default" {
   }
 }
 
-variable "network_interfaces_file" {
-  description = "The module writes the file at this local path to /etc/network/interfaces on the host. A null value writes no file."
-  type        = string
-  default     = null
+variable "base_patch_sources" {
+  description = "Select compatible sources for existing patch destinations."
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition = alltrue([for dest, source in var.base_patch_sources :
+      contains(keys(local.base_files), dest) && startswith(dest, "patches/") &&
+      can(regex("^patches/([A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]+\\.patch$", source))
+    ])
+    error_message = "Select an existing base patch and a repository-relative patch source."
+  }
+}
+
+variable "sriov" {
+  description = "Grant SR-IOV and PCI mapping privileges to the automation user."
+  type        = bool
+  default     = false
 }
 
 variable "host_artifact_policies" {
@@ -264,6 +278,7 @@ locals {
 
   file_sources = merge(
     { for source in keys(local.base_files) : source => source },
+    var.base_patch_sources,
     { for component, source in var.additional_patches : "patches/${component}.patch" => source },
   )
 
@@ -347,7 +362,18 @@ locals {
     }
   } : {}
 
-  roles = merge(local.guest_api_roles, local.kernel_modules_roles, local.host_artifacts_roles, local.container_options_roles, {
+  sriov_roles = var.sriov ? {
+    ScopedSRIOV = {
+      path       = "/"
+      privileges = ["Sys.SRIOV.Audit", "Sys.SRIOV.Modify"]
+    }
+    ScopedPCIMapping = {
+      path       = "/mapping/pci"
+      privileges = ["Mapping.Audit", "Mapping.Use", "Mapping.Modify"]
+    }
+  } : {}
+
+  roles = merge(local.sriov_roles, local.guest_api_roles, local.kernel_modules_roles, local.host_artifacts_roles, local.container_options_roles, {
     ScopedContainerFeatures = {
       path = "/"
       privileges = [
@@ -483,7 +509,6 @@ locals {
 
   grub_boot_messages_path = "/etc/default/grub.d/boot-messages.cfg"
 
-  network_interfaces_path = "/etc/network/interfaces"
 }
 
 data "http" "files" {
@@ -681,22 +706,7 @@ resource "terraform_data" "grub_refresh" {
   }
 }
 
-# The module does not run ifreload because a reload can interrupt the management address.
-resource "remote_file" "network_interfaces" {
-  count = var.network_interfaces_file != null ? 1 : 0
-
-  conn {
-    host  = local.remote_host
-    user  = "root"
-    agent = true
-  }
-
-  path        = local.network_interfaces_path
-  content     = file(var.network_interfaces_file)
-  permissions = "0644"
-}
-
-output "network_interfaces_sha256" {
-  description = "SHA-256 of the managed network interfaces file, or null when this module does not manage it."
-  value       = var.network_interfaces_file == null ? null : sha256(remote_file.network_interfaces[0].content)
+removed {
+  from = remote_file.network_interfaces
+  lifecycle { destroy = false }
 }

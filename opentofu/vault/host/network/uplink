@@ -1,8 +1,0 @@
-# ifupdown2 creates the bridge. systemd-networkd manages its addresses.
-auto uplink
-iface uplink inet manual
-    address-purge no
-    ip-forward on
-    bridge-ports enp2s0f0np0
-    bridge-stp off
-    bridge-fd 0

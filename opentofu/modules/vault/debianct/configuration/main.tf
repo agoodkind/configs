@@ -12,7 +12,8 @@ output "service_mapping" { value = local.service_mapping }
 locals {
   lock_targets = {
     "module_hosts" = {
-      "module.vault" = "vault"
+      "module.vault"         = "vault"
+      "module.guest_network" = "vault"
     }
   }
 }

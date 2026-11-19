@@ -6,12 +6,12 @@ variable "guest" {
     vmid              = number
     hostname          = string
     service_key       = string
-    bridge            = string
+    bridge            = optional(string)
     mac_address       = string
     ipv4_cidr         = string
-    ipv4_gateway      = string
+    ipv4_gateway      = optional(string)
     ipv6_cidr         = string
-    ipv6_gateway      = string
+    ipv6_gateway      = optional(string)
     dns_servers       = list(string)
     datastore_id      = string
     image_datastore   = string

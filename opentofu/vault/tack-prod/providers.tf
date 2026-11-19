@@ -8,7 +8,7 @@ provider "proxmox" {
     username = "root"
     node {
       name    = "vault"
-      address = local.service_mapping.vault_hypervisor.ipv6
+      address = local.service_mapping.vault_hypervisor.hostname
     }
   }
 }
@@ -23,7 +23,7 @@ terraform {
   required_providers {
     http     = { source = "hashicorp/http", version = ">= 3.0" }
     proxmox  = { source = "bpg/proxmox", version = "0.116.0" }
-    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.3" }
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.7" }
     remote   = { source = "tenstad/remote", version = ">= 0.2.1" }
     linux    = { source = "labbs/linux", version = "1.3.0" }
   }
