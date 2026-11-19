@@ -7,5 +7,5 @@ readonly CONFIGSCTL_VERSION="main"
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   cd "$(dirname "${BASH_SOURCE[0]}")"
-  exec go run "${CONFIGSCTL_PACKAGE}@${CONFIGSCTL_VERSION}" "$@"
+  exec env GONOPROXY=goodkind.io/configsctl go run "${CONFIGSCTL_PACKAGE}@${CONFIGSCTL_VERSION}" "$@"
 fi
