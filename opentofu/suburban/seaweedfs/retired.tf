@@ -5,11 +5,6 @@ removed {
 }
 
 removed {
-  from = module.suburban
-  lifecycle { destroy = false }
-}
-
-removed {
   from = pveguest_file.seaweedfs_compaction_limit
   lifecycle { destroy = false }
 }
