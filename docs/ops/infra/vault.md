@@ -37,7 +37,7 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
 
 ## Import guests and prepare the SFP port
 
-1. Run `./configsctl tofu "$root" state list` for every guest workspace. Import LXC 102 in step 2. For each other guest missing from its owning state, run `./configsctl tofu "$root" import "$attachment" "vault/$id"` with its address below. The container prefix is `module.vault.proxmox_virtual_environment_container.` except for LXC 102. Review every plan. Stop on guest creation, replacement, disk changes, or changes outside that stage.
+1. Run `./configsctl tofu "$root" state list` for every guest workspace. Import LXC 102 in step 2. Record every other guest missing from its owning state. The container prefix is `module.vault.proxmox_virtual_environment_container.` except for LXC 102. Review every plan. Stop on guest creation, replacement, disk changes, or changes outside that stage.
 
    | ID | Workspace | Service key | Container suffix or complete resource address |
    | --- | --- | --- | --- |
@@ -79,6 +79,8 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
    ip address show dev enp2s0f0np0
    ```
 
+5. After VF 0 discovery and PCI mapping verification, import every guest recorded as missing in step 1. Use the attachment address and ID from the table with `./configsctl tofu "$root" import "$attachment" "vault/$id"`. Confirm that each state entry identifies the original guest and disks before staging any guest configuration.
+
 ## Stage guest networking and replace attachments
 
 1. Stage all guests while their current interfaces and package repositories work. Set the shell variables for each row from the table. This example selects data LXC 120. Target only the interface resource to install its networking packages and edit its persistent network configuration.
@@ -94,14 +96,22 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
    Check the current default routes after staging. LXC 110 uses systemd-networkd. VM 124 uses netplan. The other guests use ifupdown with the ISC DHCP client and resolvconf. Leave Docker forwarding and neighbor discovery active inside the guests.
 
 2. Move one guest at a time in table order. On Vault, run `pct shutdown "$id" --timeout 120` and `pct status "$id"`. For VM 124 use `qm shutdown 124 --timeout 120` and `qm status 124`. Wait for the stopped state.
-3. On the controller, select that guest's variables again. Apply its old net0 removal while the guest stays stopped. For a container, install hostnic0 in a separate targeted apply. For the VM, the first command also removes its cloud-init gateways and installs hostpci0. Skip the second command for the VM.
+3. On the controller, select that guest's variables again. Apply its old net0 removal while the guest stays stopped. For a container, install hostnic0 in a separate targeted apply. For the VM, the first command installs hostpci0. Skip the second command for the VM.
 
    ```sh
    ./configsctl tofu "$root" apply "-var=stopped_guest_ids=[$id]" "-target=$attachment"
    ./configsctl tofu "$root" apply "-var=stopped_guest_ids=[$id]" "-target=$guest.pveguest_container_options.hostnic[0]"
    ```
 
-4. Inspect `pct config "$id"` or `qm config 124` on Vault. Confirm the original disks, removal of net0, and the selected hostnic0 or hostpci0. Use the normal startup settings to start that guest. Activate eth0 only after the controlled boot loads its staged files. For later changes to either networkd backend, repeat the stage, restart, and active sequence.
+4. For stopped VM 124, explicitly delete its old cloud-init network property. The bpg provider omits this property on update. Run these commands on Vault and require a successful check before startup. Compare the reported disk volume and PCI mapping with the saved disk identity and the mapping from the bootstrap step.
+
+   ```sh
+   pvesh set /nodes/vault/qemu/124/config -delete ipconfig0
+   pvesh get /nodes/vault/qemu/124/config --current 1 --output-format json > "$recovery/vm124-after.json"
+   jq -e 'select((has("ipconfig0") or has("net0")) | not) | select(.hostpci0 | contains("vault-tack-k3s")) | {scsi0, hostpci0} | select(.scsi0 != null)' "$recovery/vm124-after.json"
+   ```
+
+   Inspect `pct config "$id"` or `qm config 124` on Vault. Confirm the original disks, removal of net0, and the selected hostnic0 or hostpci0. Use the normal startup settings to start that guest. Activate eth0 only after the controlled boot loads its staged files. For later changes to either networkd backend, repeat the stage, restart, and active sequence.
 
    ```sh
    ./configsctl tofu "$root" apply "-target=$attachment"
@@ -111,9 +121,35 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
 5. In the guest, check `ip -br link show eth0`, `ip address show dev eth0`, `ip route show default`, `ip -6 route show default`, and `getent hosts hypervisor.home.goodkind.io`. Require the assigned MAC, a DHCPv4 lease, a global SLAAC address, all assigned private addresses, and upstream default routes. Reject either old Vault gateway. Test UniFi through its private A and AAAA records from the SFP LAN before removing the old uplink.
 6. Run these database checks after **each** data LXC starts. FoundationDB uses double redundancy and three coordinators. YugabyteDB uses three replicas. The first migrated peer cannot form a majority alone. Verify its processes, addresses, and individual listener connections from VM 124 before continuing. After the second move, check election and database availability again. After the third move, require three live YugabyteDB masters, full FoundationDB replication and one-machine fault tolerance, and a successful Tack read.
 
-   ```sh
-   pct exec 120 -- docker exec tack-fdb-1 fdbcli --timeout 10 --exec 'status details'
-   pct exec 120 -- docker exec tack-yugabyte-1 /home/yugabyte/bin/yb-admin --master_addresses '[3d06:bad:b01::120]:7100,[3d06:bad:b01::121]:7100,[3d06:bad:b01::122]:7100' --certs_dir_name /home/yugabyte/certs list_all_masters
+   Run the queries from the controller through Vault's Proxmox guest command API. Set `VAULT_API_URL` to the HTTPS Proxmox origin with its trusted certificate. Set `VAULT_API_HEADER_FILE` to a private file containing the automation token's complete Authorization header. Run the following in Bash. Each call saves the command ID and response in a private local directory. If a poll or acknowledgment fails, resume with that ID. The API retains completed output until acknowledgment or expiry.
+
+   ```bash
+   guest_query() (
+     set -euo pipefail
+     umask 077
+     record=$(mktemp -d)
+     echo "Guest command records in $record"
+     endpoint="${VAULT_API_URL:?supply the trusted Proxmox origin}/api2/json/nodes/vault/lxc/120"
+     api=(curl --fail-with-body --silent --show-error --max-time 15 --header "@${VAULT_API_HEADER_FILE:?supply the token header file}")
+     jq -n --args '{"command": $ARGS.positional, "timeout": 30, "result-retention": "acknowledged"}' -- "$@" > "$record/request.json"
+     "${api[@]}" --json "@$record/request.json" "$endpoint/exec" > "$record/start.json"
+     pid=$(jq -er '.data.pid | numbers | select(. > 0)' "$record/start.json")
+     deadline=$((SECONDS + 45))
+     while (( SECONDS < deadline )); do
+       "${api[@]}" --get --data-urlencode "pid=$pid" "$endpoint/exec-status" > "$record/status.json"
+       if jq -e '.data.exited == true or .data.exited == 1' "$record/status.json" >/dev/null; then
+         break
+       fi
+       sleep 1
+     done
+     jq -e '.data | select(.exited == true or .exited == 1) | select((."out-data" | type) == "string" and (."err-data" | type) == "string") | .exitcode | numbers' "$record/status.json" >/dev/null
+     jq -r '.data."out-data" | @base64d' "$record/status.json"
+     jq -r '.data."err-data" | @base64d' "$record/status.json" >&2
+     "${api[@]}" --data-urlencode "pid=$pid" "$endpoint/exec-ack" > "$record/ack.json"
+     jq -e '.data | .exitcode == 0 and ([."timed-out", ."out-truncated", ."err-truncated"] | all(. != true and . != 1))' "$record/status.json" >/dev/null
+   )
+   guest_query docker exec tack-fdb-1 fdbcli --timeout 10 --exec 'status details'
+   guest_query docker exec tack-yugabyte-1 /home/yugabyte/bin/yb-admin --master_addresses '[3d06:bad:b01::120]:7100,[3d06:bad:b01::121]:7100,[3d06:bad:b01::122]:7100' --certs_dir_name /home/yugabyte/certs list_all_masters
    ```
 
    From VM 124, test the FoundationDB and YugabyteDB listeners of the peer just moved. Read a known ticket through the normal Tack client and record the result for each move. Following recovery, run `k3s kubectl -n tack rollout status deployment/tack-app` on VM 124, test its connection to Kafka at `[3d06:bad:b01:0:7ac::4]:29092`, and verify Tack search and the existing SeaweedFS backup endpoint.
