@@ -9,8 +9,8 @@ locals {
 }
 
 data "proxmox_hardware_pci" "tack" {
-  node_name = module.vault_network.node.name
-  filters   = { id = local.tack_pci_address }
+  node_name           = module.vault_network.node.name
+  pci_class_blacklist = []
 
   lifecycle {
     postcondition {
@@ -22,10 +22,21 @@ data "proxmox_hardware_pci" "tack" {
 
 locals {
   tack_pci = one([for device in data.proxmox_hardware_pci.tack.devices : device if device.id == local.tack_pci_address])
+  tack_iommu_peers = [for device in data.proxmox_hardware_pci.tack.devices : device.id
+    if device.iommu_group == local.tack_pci.iommu_group && device.id != local.tack_pci_address
+  ]
 }
 
 resource "proxmox_hardware_mapping_pci" "tack" {
   name = "vault-tack-k3s"
+
+  lifecycle {
+    precondition {
+      condition     = length(local.tack_iommu_peers) == 0
+      error_message = "VM 124 VF ${local.tack_pci_address} must be the only PCI device in IOMMU group ${local.tack_pci.iommu_group}. Other devices: ${join(", ", local.tack_iommu_peers)}."
+    }
+  }
+
   map = [{
     node         = module.vault_network.node.name
     path         = local.tack_pci.id
