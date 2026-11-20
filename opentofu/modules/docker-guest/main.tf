@@ -100,6 +100,7 @@ locals {
     ndppd = templatefile("${path.module}/files/ndppd.conf.tftpl", {
       interface = var.uplink_interface
       prefix    = var.ndp_proxy_prefix
+      method    = "auto"
     })
     ndppd_service = file("${path.module}/files/ndppd.service")
     prune_service = file("${path.module}/files/docker-prune.service")
