@@ -50,6 +50,13 @@ output "cloudflared_image" {
   value = "docker.io/cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba"
 }
 
+output "tack_backup_check_release" {
+  value = {
+    commit        = "717ac163a732593411cc7e5bd6000d36e516be61"
+    server_digest = "sha256:29417aec682992e674f3f6528c9cee2e54560b697df5893ab809064b1c28095d"
+  }
+}
+
 output "debian_lxc_template" {
   value = "debian-13-standard_13.1-2_amd64.tar.zst"
 }
