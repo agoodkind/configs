@@ -1,5 +1,5 @@
 [Unit]
-Description=Cloudflare private guest tunnel
+Description=Cloudflare private management tunnel
 After=network-online.target
 Wants=network-online.target
 

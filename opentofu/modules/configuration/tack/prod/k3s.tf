@@ -3,18 +3,16 @@ locals {
     hostname    = "tack-k3s.vault.goodkind.io"
     service_key = "tack_k3s"
     node        = module.vault_host.node.key
-    vmid        = 124
+    vmid        = module.vault_host.guest_networks.tack_k3s.vmid
     kind        = "qemu"
     ipv4        = "10.250.0.124"
     ipv6        = "3d06:bad:b01::124"
-    mac_address = "BC:24:11:A3:52:7C"
+    mac_address = module.vault_host.guest_networks.tack_k3s.mac
   }
   tack_k3s = {
     guest = merge(local.tack_k3s_guest, module.vault_host.guest, {
-      ipv4_cidr    = "${local.tack_k3s_guest.ipv4}/24"
-      ipv4_gateway = module.vault_hypervisor.value.ipv4
-      ipv6_cidr    = "${local.tack_k3s_guest.ipv6}/64"
-      ipv6_gateway = module.vault_hypervisor.value.ipv6
+      ipv4_cidr = "${local.tack_k3s_guest.ipv4}/24"
+      ipv6_cidr = "${local.tack_k3s_guest.ipv6}/64"
     })
     cloud_image = module.artifacts.debian_cloud_image
     artifact    = module.artifacts.k3s

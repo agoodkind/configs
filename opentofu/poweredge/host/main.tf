@@ -72,7 +72,6 @@ locals {
     }
     container_options          = null
     grub_cmdline_linux_default = "systemd.show_status=1"
-    network_interfaces_file    = null
   } }
 }
 
@@ -94,7 +93,6 @@ module "overlay" {
   container_options = each.value.container_options
 
   grub_cmdline_linux_default = each.value.grub_cmdline_linux_default
-  network_interfaces_file    = each.value.network_interfaces_file
 }
 
 # Each ACME account and DNS plugin depends on module.overlay. The automation

@@ -19,6 +19,16 @@ locals {
   }
 }
 
+data "cloudflare_zero_trust_tunnel_cloudflared" "production" {
+  provider   = cloudflare.tunnels
+  count      = contains(var.tack_k3s_environments, "prod") ? 0 : 1
+  account_id = var.cloudflare_account_id
+  filter = {
+    name       = module.contracts.tack_k3s_tunnel_names.prod
+    is_deleted = false
+  }
+}
+
 resource "cloudflare_zero_trust_tunnel_cloudflared" "tack_k3s" {
   provider = cloudflare.tunnels
   for_each = local.tack_connectors
@@ -40,7 +50,8 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "tack_k3s" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.tack_k3s[each.key].id
   source     = "cloudflare"
   config = {
-    ingress = local.tack_ingress[each.key]
+    ingress      = local.tack_ingress[each.key]
+    warp_routing = each.key == "prod" ? { enabled = true } : null
   }
 }
 

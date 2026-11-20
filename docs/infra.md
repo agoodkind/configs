@@ -1,9 +1,9 @@
 # Infrastructure overview
 
-Vault, in San Francisco, runs production LXCs. Its host provides the internal guest network and outbound translation over an ordinary upstream connection. Suburban, in New Jersey, runs the routing testbed.
+Vault runs the production service containers and the Tack Kubernetes VM in San Francisco. Its target configuration assigns the management port to the hypervisor and a separate SFP port to guest virtual functions. Suburban runs the routing testbed in New Jersey.
 
 Cloudflare tunnels provide private guest access and publish web services. Cloudflare hosts DNS for the domain.
 
 OpenTofu owns nonsecret host and feature configuration. Each feature imports the shared identities and defaults that it uses. Guest preparation and controller lock selection read the same native guest definitions. Provider-free roots evaluate the selected feature for controller metadata and host artifacts.
 
-These details are snapshots. Verify the running host before changing production.
+Use the [Vault migration procedure](ops/infra/vault.md) to move existing guests and verify the live network.

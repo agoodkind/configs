@@ -81,7 +81,7 @@ locals {
       zone    = "goodkind.io"
       name    = "hypervisor.home.goodkind.io"
       type    = "A"
-      content = "10.250.0.254"
+      content = split("/", var.management_ipv4_cidr)[0]
       ttl     = 1
       proxied = false
     }
@@ -153,7 +153,7 @@ locals {
       zone    = "goodkind.io"
       name    = "hypervisor.home.goodkind.io"
       type    = "AAAA"
-      content = "3d06:bad:b01::254"
+      content = split("/", var.management_ipv6_cidr)[0]
       ttl     = 1
       proxied = false
     }

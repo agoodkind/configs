@@ -1,84 +1,71 @@
-locals {
-  host_network_files = {
-    private_tunnel_unit = {
-      path   = "/etc/systemd/system/cloudflared.service"
-      source = "cloudflared.service"
-    }
-    bridge = {
-      path   = "/etc/network/interfaces.d/uplink"
-      source = "uplink"
-    }
-    uplink = {
-      path   = "/etc/systemd/network/20-vault-uplink.network"
-      source = "uplink.network"
-    }
-    forwarding = {
-      path   = "/etc/sysctl.d/70-vault-guest-network.conf"
-      source = "forwarding.conf"
-    }
-  }
+removed {
+  from = remote_file.host_network
+  lifecycle { destroy = false }
 }
 
-resource "terraform_data" "guest_network_packages" {
-  triggers_replace = [filesha256("${path.module}/network/install-packages.sh")]
-
-  connection {
-    type  = "ssh"
-    host  = local.overlay_hosts.vault.ssh_host
-    user  = "root"
-    agent = true
-  }
-
-  provisioner "remote-exec" {
-    script = "${path.module}/network/install-packages.sh"
-  }
+resource "linux_file" "cloudflared_service" {
+  path    = "/etc/systemd/system/cloudflared.service"
+  content = file("${path.module}/network/cloudflared.service")
 }
 
-resource "remote_file" "host_network" {
-  for_each = local.host_network_files
-
-  conn {
-    host  = local.overlay_hosts.vault.ssh_host
-    user  = "root"
-    agent = true
-  }
-
-  path        = each.value.path
-  content     = file("${path.module}/network/${each.value.source}")
-  permissions = "0644"
-
-  depends_on = [terraform_data.guest_network_packages]
+resource "linux_systemd_unit" "cloudflared" {
+  name          = "cloudflared.service"
+  enabled       = true
+  active        = true
+  daemon_reload = true
+  triggers      = { unit = linux_file.cloudflared_service.sha256 }
 }
 
-
-locals {
-  guest_network_activation_revision = sha256(jsonencode(concat([
-    terraform_data.guest_network_packages.id,
-    module.overlay["vault"].network_interfaces_sha256,
-    filesha256("${path.module}/network/activate.sh"),
-    ], [
-    for name in keys(remote_file.host_network) :
-    sha256(remote_file.host_network[name].content)
-  ])))
+resource "linux_sysctl" "guest_pf_ipv6" {
+  name  = "net.ipv6.conf.${module.vault_network.guest_pf}.disable_ipv6"
+  value = "1"
+  file  = "/etc/sysctl.d/99-vault-guest-pf.conf"
 }
 
-# Run service activation independently of the SSH session.
-resource "terraform_data" "guest_network_activate" {
-  triggers_replace = [local.guest_network_activation_revision]
+resource "linux_sysctl" "forwarding" {
+  for_each = toset(["net.ipv4.ip_forward", "net.ipv6.conf.all.forwarding"])
+  name     = each.key
+  value    = "0"
+  file     = "/etc/sysctl.d/99-vault-${replace(each.key, ".", "-")}.conf"
+}
 
-  lifecycle {
-    create_before_destroy = true
-  }
+resource "pveguest_host_network_interface" "guest_pf" {
+  node       = "vault"
+  name       = module.vault_network.guest_pf
+  autostart  = true
+  depends_on = [linux_sysctl.guest_pf_ipv6]
+}
 
-  connection {
-    type        = "ssh"
-    host        = local.overlay_hosts.vault.ssh_host
-    user        = "root"
-    agent       = true
-    script_path = "/tmp/vault-network-${local.guest_network_activation_revision}.sh"
-  }
+resource "proxmox_network_applier" "guest_pf" {
+  node_name  = "vault"
+  on_destroy = false
+  triggers   = { interface = pveguest_host_network_interface.guest_pf.change_id }
+}
 
-  provisioner "remote-exec" {
-    script = "${path.module}/network/activate.sh"
-  }
+resource "pveguest_host_sriov" "guests" {
+  node   = "vault"
+  ifname = module.vault_network.guest_pf
+  numvfs = 16
+  vfs = { for guest in module.vault_network.guest_networks : tostring(guest.index) => {
+    mac    = guest.mac
+    driver = guest.driver
+    ifname = guest.ifname
+  } }
+  depends_on = [proxmox_network_applier.guest_pf, module.overlay]
+}
+
+resource "pveguest_host_network_interface" "management" {
+  node      = "vault"
+  name      = "enp4s0"
+  autostart = true
+  cidr      = var.management_ipv4_cidr
+  cidr6     = var.management_ipv6_cidr
+  gateway   = var.management_ipv4_gateway
+  gateway6  = var.management_ipv6_gateway
+}
+
+resource "proxmox_network_applier" "management" {
+  node_name  = "vault"
+  on_destroy = false
+  triggers   = { interface = pveguest_host_network_interface.management.change_id }
 }

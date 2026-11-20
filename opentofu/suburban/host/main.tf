@@ -74,7 +74,6 @@ locals {
     container_options = null
 
     grub_cmdline_linux_default = null
-    network_interfaces_file    = null
 
     host_artifact_workspaces = []
   } }
@@ -107,7 +106,6 @@ module "overlay" {
   container_options = each.value.container_options
 
   grub_cmdline_linux_default = each.value.grub_cmdline_linux_default
-  network_interfaces_file    = each.value.network_interfaces_file
 
   host_artifact_policies = module.host_artifacts[each.key].policies
 }
