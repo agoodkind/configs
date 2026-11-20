@@ -4,6 +4,6 @@ proxy ${interface} {
    timeout 500
    ttl 30000
    rule ${prefix} {
-      auto
+      ${method}
    }
 }
