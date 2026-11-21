@@ -110,7 +110,7 @@ locals {
       mac       = "bc:24:11:a3:52:24"
       addresses = ["3d06:bad:b01::125/64"]
     }
-    # Remove the additional addresses after Tack, DNS, and private administration use the replacements.
+    # Remove the additional tack_k3s addresses after Tack, DNS, and private administration use the replacements.
     tack_k3s = {
       vmid      = 124
       index     = 0
