@@ -13,6 +13,11 @@ variable "guest" {
     ifname    = optional(string)
     addresses = set(string)
   })
+
+  validation {
+    condition     = var.guest.kind != "lxc" || try(trimspace(var.guest.ifname) != "", false)
+    error_message = "Set guest.ifname to a nonblank host interface name when guest.kind is lxc."
+  }
 }
 
 variable "phase" { type = string }
