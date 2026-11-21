@@ -7,7 +7,16 @@ provider "proxmox" {
 terraform {
   required_version = ">= 1.11"
   required_providers {
-    http    = { source = "hashicorp/http", version = ">= 3.0" }
-    proxmox = { source = "bpg/proxmox", version = "0.116.0" }
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.7" }
+    http     = { source = "hashicorp/http", version = ">= 3.0" }
+    proxmox  = { source = "bpg/proxmox", version = "0.116.0" }
   }
+}
+
+provider "pveguest" {
+  nodes = { vault = {
+    endpoint  = trimsuffix(var.proxmox_endpoint, "/")
+    api_token = "${local.proxmox_token_principal}=${var.vault_proxmox_token_secret}"
+    insecure  = true
+  } }
 }

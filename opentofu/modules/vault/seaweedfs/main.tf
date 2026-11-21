@@ -1,8 +1,3 @@
-# Internal-only SeaweedFS object-store LXC on vault. The production
-# twin of the suburban CT 410 store, on the same prod VMNET segment as the tack
-# LXC so the prod tack host reaches its S3 endpoint without crossing segments.
-# Runs the weed binary under systemd (deploy-seaweedfs.yml); never exposed off
-# the segment. Backup destination for the prod tack stores.
 resource "proxmox_virtual_environment_container" "seaweedfs" {
   node_name = module.host.node.name
   vm_id     = local.service_mapping.seaweedfs.vmid
@@ -12,12 +7,6 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
     dns {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.seaweedfs.hostname)[0]
     }
-    ip_config {
-      ipv6 {
-        address = "3d06:bad:b01::118/64"
-        gateway = local.service_mapping.vault_hypervisor.ipv6
-      }
-    }
     user_account {
       keys = [var.ssh_keys]
     }
@@ -25,12 +14,6 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
 
   features {
     nesting = true
-  }
-
-  network_interface {
-    name        = "eth0"
-    bridge      = "vmnet"
-    mac_address = "BC:24:11:00:01:18"
   }
 
   # The object store's IO is asynchronous backup traffic, so its disk lives on
@@ -55,8 +38,8 @@ resource "proxmox_virtual_environment_container" "seaweedfs" {
     type             = "debian"
   }
 
-  started       = true
-  start_on_boot = true
+  started       = !contains(var.stopped_guest_ids, local.service_mapping.seaweedfs.vmid)
+  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.seaweedfs.vmid)
   unprivileged  = true
 
   lifecycle {
@@ -79,9 +62,6 @@ variable "service_mapping" { type = object({
     vmid     = number
     hostname = string
   })
-  vault_hypervisor = object({
-    ipv6 = string
-  })
 }) }
 
 variable "ssh_keys" { type = string }
@@ -96,6 +76,8 @@ terraform {
     }
   }
 }
+
+variable "stopped_guest_ids" { type = set(number) }
 
 output "seaweedfs_vmid" {
   description = "VMID assigned to the vault SeaweedFS LXC."

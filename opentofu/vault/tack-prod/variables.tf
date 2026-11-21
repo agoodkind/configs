@@ -1,7 +1,7 @@
 variable "proxmox_endpoint" {
   description = "Proxmox API base URL for the production vault host including port"
   type        = string
-  default     = "https://[3d06:bad:b01::254]:8006/"
+  default     = "https://hypervisor.home.goodkind.io:8006/"
 }
 
 # `./configsctl tofu` sets each variable named vault_* from the Ansible vault key

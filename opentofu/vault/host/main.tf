@@ -46,20 +46,22 @@ resource "proxmox_acme_dns_plugin" "vault" {
 locals {
 
   overlay_hosts = { vault = {
-    ssh_host       = "hypervisor.home.goodkind.io"
+    ssh_host       = module.configuration.service_mapping.vault_hypervisor.hostname
     node_name      = "vault"
-    commit         = "95540a7f37c0458c8382decfbb4cf77c0f571239"
+    commit         = "000f6d8d126d79a4b8d937fe492b680c5d0e30de"
     guest_api      = true
     kernel_modules = null
 
-    additional_patches = {
-      pve-manager-acme = "patches/pve-manager-acme.patch"
+    container_options = {
+      retained_roles = ["PVEAdmin", "AnsibleCT", "ansible-minimal", "SysModify", "PVEVMAdmin", "ScopedAcmeCertificate"]
+      hostnic = {
+        vmids = [for guest in module.vault_network.guest_networks : guest.vmid if guest.kind == "lxc"]
+        links = [for guest in module.vault_network.guest_networks : guest.ifname if guest.kind == "lxc"]
+      }
+      bpfdelegate = { vmids = [], cmds = [], maps = [], progs = [], attachs = [] }
     }
 
-    container_options = null
-
     grub_cmdline_linux_default = null
-    network_interfaces_file    = "${path.module}/network/interfaces"
   } }
 }
 
@@ -67,20 +69,19 @@ module "overlay" {
   source   = "../../modules/overlay"
   for_each = local.overlay_hosts
 
-  ssh_host           = each.value.ssh_host
-  node_name          = each.value.node_name
-  commit             = each.value.commit
-  guest_api          = each.value.guest_api
-  automation_user    = local.shared_vars.proxmox_api_user
-  additional_patches = each.value.additional_patches
-  kernel_modules     = each.value.kernel_modules
-  acme_account       = local.acme_account
-  acme_plugin        = local.acme_plugin
+  ssh_host        = each.value.ssh_host
+  node_name       = each.value.node_name
+  commit          = each.value.commit
+  guest_api       = each.value.guest_api
+  automation_user = local.shared_vars.proxmox_api_user
+  sriov           = true
+  kernel_modules  = each.value.kernel_modules
+  acme_account    = local.acme_account
+  acme_plugin     = local.acme_plugin
 
   container_options = each.value.container_options
 
   grub_cmdline_linux_default = each.value.grub_cmdline_linux_default
-  network_interfaces_file    = each.value.network_interfaces_file
 }
 
 # Each ACME account and DNS plugin depends on module.overlay. The automation

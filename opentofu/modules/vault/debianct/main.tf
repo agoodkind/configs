@@ -10,23 +10,11 @@ resource "proxmox_virtual_environment_container" "debianct" {
     dns {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.debianct.hostname)[0]
     }
-    ip_config {
-      ipv6 {
-        address = "${local.service_mapping.debianct.ipv6}/64"
-        gateway = local.service_mapping.vault_hypervisor.ipv6
-      }
-    }
   }
 
   features {
     nesting = true
     fuse    = true
-  }
-
-  network_interface {
-    name        = "eth0"
-    bridge      = "vmnet"
-    mac_address = "BC:24:11:73:B0:3C"
   }
 
   disk {
@@ -55,8 +43,8 @@ resource "proxmox_virtual_environment_container" "debianct" {
     type             = "debian"
   }
 
-  started       = true
-  start_on_boot = true
+  started       = !contains(var.stopped_guest_ids, local.service_mapping.debianct.vmid)
+  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.debianct.vmid)
   unprivileged  = true
 
   lifecycle {
@@ -73,9 +61,6 @@ variable "service_mapping" { type = object({
     hostname = string
     ipv6     = string
   })
-  vault_hypervisor = object({
-    ipv6 = string
-  })
 }) }
 
 locals { service_mapping = var.service_mapping }
@@ -88,3 +73,5 @@ terraform {
     }
   }
 }
+
+variable "stopped_guest_ids" { type = set(number) }

@@ -45,8 +45,8 @@ resource "proxmox_virtual_environment_vm" "server" {
   vm_id         = var.guest.vmid
   name          = var.guest.hostname
   tags          = var.tags
-  started       = true
-  on_boot       = true
+  started       = var.started
+  on_boot       = var.started
   boot_order    = ["scsi0"]
   scsi_hardware = "virtio-scsi-single"
 
@@ -63,10 +63,26 @@ resource "proxmox_virtual_environment_vm" "server" {
     discard      = "on"
     iothread     = true
   }
-  network_device {
-    bridge      = var.guest.bridge
-    mac_address = var.guest.mac_address
-    model       = "virtio"
+  dynamic "network_device" {
+    for_each = var.guest.bridge == null ? [] : [var.guest.bridge]
+    content {
+      bridge      = network_device.value
+      mac_address = var.guest.mac_address
+      model       = "virtio"
+    }
+  }
+  dynamic "hostpci" {
+    for_each = var.pci_mapping == null ? [] : [var.pci_mapping]
+    content {
+      device  = "hostpci0"
+      mapping = hostpci.value
+    }
+  }
+  lifecycle {
+    precondition {
+      condition     = (var.guest.bridge == null) != (var.pci_mapping == null)
+      error_message = "Select either a bridge or a PCI mapping for the guest network."
+    }
   }
   agent {
     enabled = true
@@ -80,14 +96,17 @@ resource "proxmox_virtual_environment_vm" "server" {
     datastore_id      = var.guest.datastore_id
     user_data_file_id = proxmox_virtual_environment_file.cloud_init.id
     dns { servers = var.guest.dns_servers }
-    ip_config {
-      ipv4 {
-        address = var.guest.ipv4_cidr
-        gateway = var.guest.ipv4_gateway
-      }
-      ipv6 {
-        address = var.guest.ipv6_cidr
-        gateway = var.guest.ipv6_gateway
+    dynamic "ip_config" {
+      for_each = var.guest.bridge == null ? [] : [var.guest]
+      content {
+        ipv4 {
+          address = var.guest.ipv4_cidr
+          gateway = var.guest.ipv4_gateway
+        }
+        ipv6 {
+          address = var.guest.ipv6_cidr
+          gateway = var.guest.ipv6_gateway
+        }
       }
     }
   }

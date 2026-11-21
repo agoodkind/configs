@@ -57,33 +57,6 @@ variable "grant_scope" {
   }
 }
 
-variable "additional_patches" {
-  description = "Add named patch files from the selected overlay commit."
-  type        = map(string)
-  default     = {}
-
-  validation {
-    condition = alltrue([
-      for component in keys(var.additional_patches) : can(regex("^[A-Za-z0-9][A-Za-z0-9_-]*$", component))
-    ])
-    error_message = "Each additional_patches key must start with a letter or digit and use only letters, digits, underscores, or hyphens."
-  }
-
-  validation {
-    condition = alltrue([
-      for source in values(var.additional_patches) : can(regex("^([A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\\.patch$", source))
-    ])
-    error_message = "Each additional_patches value must be a repository-relative .patch path without empty, dot, or parent directory segments."
-  }
-
-  validation {
-    condition = alltrue([
-      for component in keys(var.additional_patches) : !contains(keys(local.base_files), "patches/${component}.patch")
-    ])
-    error_message = "additional_patches must not replace an existing managed patch component."
-  }
-}
-
 variable "kernel_modules" {
   description = <<-EOT
     The selected overlay commit must include the kernel module API. The API accepts
@@ -194,10 +167,35 @@ variable "grub_cmdline_linux_default" {
   }
 }
 
-variable "network_interfaces_file" {
-  description = "The module writes the file at this local path to /etc/network/interfaces on the host. A null value writes no file."
-  type        = string
-  default     = null
+variable "base_patch_sources" {
+  description = "Add or replace the ordered list of repository-relative .patch paths for each flat patch destination."
+  type        = map(list(string))
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition = alltrue([
+      for destination in keys(var.base_patch_sources) :
+      can(regex("^patches/[A-Za-z0-9][A-Za-z0-9_-]*\\.patch$", destination))
+    ])
+    error_message = "Each base_patch_sources key must have the form patches/<name>.patch. Start the name with a letter or digit and use only letters, digits, underscores, and hyphens."
+  }
+
+  validation {
+    condition = alltrue([
+      for sources in values(var.base_patch_sources) :
+      sources != null ? length(sources) > 0 && alltrue([
+        for source in sources : can(regex("^([A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\\.patch$", source))
+      ]) : false
+    ])
+    error_message = "Each base_patch_sources value must be a nonempty list of repository-relative .patch paths without empty, dot, or parent directory segments."
+  }
+}
+
+variable "sriov" {
+  description = "When grant_scope is all, true grants the SR-IOV and PCI mapping roles to the automation user and false removes those roles."
+  type        = bool
+  default     = false
 }
 
 variable "host_artifact_policies" {
@@ -226,46 +224,41 @@ locals {
   source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${var.commit}"
   script = "/usr/local/sbin/pve-overlay"
 
-  # Key: the file path in agoodkind/proxmox-overlays. Debian creates
-  # /usr/local/sbin and /usr/local/share.
-  base_files = {
-    "pve-overlay" = {
-      path        = local.script
-      permissions = "0755"
-    }
-    "patches/pve-access-control.patch" = {
-      path        = "/usr/local/share/pve-overlay-pve-access-control.patch"
-      permissions = "0644"
-    }
-    "patches/pve-container.patch" = {
-      path        = "/usr/local/share/pve-overlay-pve-container.patch"
-      permissions = "0644"
-    }
-    "patches/pve-http-server.patch" = {
-      path        = "/usr/local/share/pve-overlay-pve-http-server.patch"
-      permissions = "0644"
-    }
-    "patches/pve-manager.patch" = {
-      path        = "/usr/local/share/pve-overlay-pve-manager.patch"
-      permissions = "0644"
-    }
-    "patches/qemu-server.patch" = {
-      path        = "/usr/local/share/pve-overlay-qemu-server.patch"
-      permissions = "0644"
-    }
-  }
-
-  files = merge(local.base_files, {
-    for component in keys(var.additional_patches) : "patches/${component}.patch" => {
-      path        = "/usr/local/share/pve-overlay-${component}.patch"
-      permissions = "0644"
-    }
-  })
-
-  file_sources = merge(
-    { for source in keys(local.base_files) : source => source },
-    { for component, source in var.additional_patches : "patches/${component}.patch" => source },
-  )
+  file_sources = merge({
+    "pve-overlay" = ["pve-overlay"]
+    "patches/pve-access-control.patch" = [
+      "patches/pve-access-control-10-acme.patch",
+      "patches/pve-access-control-20-container-features.patch",
+      "patches/pve-access-control-30-vsock.patch",
+      "patches/pve-access-control-40-guest-api.patch",
+      "patches/pve-access-control-50-bpfdelegate.patch",
+      "patches/pve-access-control-60-hostnic.patch",
+      "patches/pve-access-control-70-kernel-modules.patch",
+      "patches/pve-access-control-80-host-artifacts.patch",
+      "patches/pve-access-control-90-sriov.patch",
+    ]
+    "patches/pve-container.patch" = [
+      "patches/pve-container-10-features.patch",
+      "patches/pve-container-20-guest-api.patch",
+      "patches/pve-container-30-bpfdelegate.patch",
+      "patches/pve-container-40-hostnic.patch",
+    ]
+    "patches/pve-http-server.patch"  = ["patches/pve-http-server.patch"]
+    "patches/pve-manager-acme.patch" = ["patches/pve-manager-10-acme.patch"]
+    "patches/pve-manager.patch" = [
+      "patches/pve-manager-20-kernel-modules.patch",
+      "patches/pve-manager-30-host-artifacts.patch",
+      "patches/pve-manager-31-host-secrets.patch",
+      "patches/pve-manager-32-host-units.patch",
+      "patches/pve-manager-33-installed-source.patch",
+      "patches/pve-manager-40-sriov.patch",
+    ]
+    "patches/qemu-server.patch" = [
+      "patches/qemu-server-10-vsock.patch",
+      "patches/qemu-server-20-guest-api.patch",
+      "patches/qemu-server-30-sriov.patch",
+    ]
+  }, var.base_patch_sources)
 
   # remote_file builds the SSH address as <host>:<port>. An IPv6 address needs
   # brackets in that format.
@@ -347,7 +340,18 @@ locals {
     }
   } : {}
 
-  roles = merge(local.guest_api_roles, local.kernel_modules_roles, local.host_artifacts_roles, local.container_options_roles, {
+  sriov_roles = {
+    ScopedSRIOV = {
+      path       = "/"
+      privileges = ["Sys.SRIOV.Audit", "Sys.SRIOV.Modify"]
+    }
+    ScopedPCIMapping = {
+      path       = "/mapping/pci"
+      privileges = ["Mapping.Audit", "Mapping.Use", "Mapping.Modify"]
+    }
+  }
+
+  roles = merge(var.sriov ? local.sriov_roles : {}, local.guest_api_roles, local.kernel_modules_roles, local.host_artifacts_roles, local.container_options_roles, {
     ScopedContainerFeatures = {
       path = "/"
       privileges = [
@@ -436,7 +440,7 @@ locals {
         "pveum acl modify ${path} --users ${var.automation_user} --roles ${role} --propagate 1"
       ],
     ]
-    if var.grant_scope == "all" || contains(keys(local.host_artifacts_roles), role)
+    if length(local.roles[role].privileges) > 0 && (var.grant_scope == "all" || contains(keys(local.host_artifacts_roles), role))
   ]), var.grant_scope == "all" ? local.container_options_acl_commands : [])
 
   # Earlier grants put these roles on /vms and /nodes/<node>. `pveum acl
@@ -457,10 +461,15 @@ locals {
     ]),
   ]
 
-  container_options_revoke_commands = var.container_options != null ? [] : [
-    for role in local.container_options_role_names : join(" ", [
+  role_paths_to_revoke = merge(
+    var.container_options != null ? {} : { for role in local.container_options_role_names : role => "/" },
+    var.sriov ? {} : { for role, definition in local.sriov_roles : role => definition.path },
+  )
+
+  role_revoke_commands = [
+    for role, path in local.role_paths_to_revoke : join(" ", [
       "if pveum role list --output-format json | grep -q '\"roleid\":\"${role}\"';",
-      "then pveum acl delete / --users ${var.automation_user} --roles ${role};",
+      "then pveum acl delete ${path} --users ${var.automation_user} --roles ${role};",
       "pveum role delete ${role}; fi",
     ])
   ]
@@ -469,7 +478,7 @@ locals {
     "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
     ], var.retain_node_acme_role ? [] : [
     "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
-  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands, local.container_options_revoke_commands) : []
+  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands, local.role_revoke_commands) : []
 
   allowlist_path = "/etc/pve-overlay/kernel-modules.allow"
 
@@ -483,24 +492,23 @@ locals {
 
   grub_boot_messages_path = "/etc/default/grub.d/boot-messages.cfg"
 
-  network_interfaces_path = "/etc/network/interfaces"
 }
 
 data "http" "files" {
-  for_each = local.files
+  for_each = toset(flatten(values(local.file_sources)))
 
-  url = "${local.source}/${local.file_sources[each.key]}"
+  url = "${local.source}/${each.key}"
 
   lifecycle {
     postcondition {
       condition     = self.status_code == 200
-      error_message = "GitHub returned ${self.status_code} for ${local.file_sources[each.key]} at ${var.commit}."
+      error_message = "GitHub returned ${self.status_code} for ${each.key} at ${var.commit}."
     }
   }
 }
 
 resource "remote_file" "files" {
-  for_each = local.files
+  for_each = local.file_sources
 
   conn {
     host  = local.remote_host
@@ -508,9 +516,9 @@ resource "remote_file" "files" {
     agent = true
   }
 
-  path        = each.value.path
-  content     = data.http.files[each.key].response_body
-  permissions = each.value.permissions
+  path        = each.key == "pve-overlay" ? local.script : "/usr/local/share/pve-overlay-${trimprefix(each.key, "patches/")}"
+  content     = join("", [for source in each.value : data.http.files[source].response_body])
+  permissions = each.key == "pve-overlay" ? "0755" : "0644"
 }
 
 # `pve-overlay apply` also installs a dpkg hook. The hook runs
@@ -681,22 +689,7 @@ resource "terraform_data" "grub_refresh" {
   }
 }
 
-# The module does not run ifreload because a reload can interrupt the management address.
-resource "remote_file" "network_interfaces" {
-  count = var.network_interfaces_file != null ? 1 : 0
-
-  conn {
-    host  = local.remote_host
-    user  = "root"
-    agent = true
-  }
-
-  path        = local.network_interfaces_path
-  content     = file(var.network_interfaces_file)
-  permissions = "0644"
-}
-
-output "network_interfaces_sha256" {
-  description = "SHA-256 of the managed network interfaces file, or null when this module does not manage it."
-  value       = var.network_interfaces_file == null ? null : sha256(remote_file.network_interfaces[0].content)
+removed {
+  from = remote_file.network_interfaces
+  lifecycle { destroy = false }
 }

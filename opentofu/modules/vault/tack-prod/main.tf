@@ -7,16 +7,6 @@ resource "proxmox_virtual_environment_container" "tack" {
     dns {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack.hostname)[0]
     }
-    ip_config {
-      ipv4 {
-        address = "10.250.0.117/24"
-        gateway = "10.250.0.254"
-      }
-      ipv6 {
-        address = "3d06:bad:b01::117/64"
-        gateway = local.service_mapping.vault_hypervisor.ipv6
-      }
-    }
     user_account {
       keys = [var.ssh_keys]
     }
@@ -24,12 +14,6 @@ resource "proxmox_virtual_environment_container" "tack" {
 
   features {
     nesting = true
-  }
-
-  network_interface {
-    name        = "eth0"
-    bridge      = "vmnet"
-    mac_address = "BC:24:11:A3:52:17"
   }
 
   # Sized to match the live container. It was grown in place, and Proxmox cannot
@@ -58,8 +42,8 @@ resource "proxmox_virtual_environment_container" "tack" {
     type             = "debian"
   }
 
-  started       = true
-  start_on_boot = true
+  started       = !contains(var.stopped_guest_ids, local.service_mapping.tack.vmid)
+  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.tack.vmid)
   unprivileged  = true
 
   lifecycle {
@@ -86,16 +70,6 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
     dns {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_app2.hostname)[0]
     }
-    ip_config {
-      ipv4 {
-        address = "10.250.0.123/24"
-        gateway = "10.250.0.254"
-      }
-      ipv6 {
-        address = "${local.service_mapping.tack_app2.ipv6}/64"
-        gateway = local.service_mapping.vault_hypervisor.ipv6
-      }
-    }
     user_account {
       keys = [var.ssh_keys]
     }
@@ -103,12 +77,6 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
 
   features {
     nesting = true
-  }
-
-  network_interface {
-    name        = "eth0"
-    bridge      = "vmnet"
-    mac_address = local.service_mapping.tack_app2.mac_address
   }
 
   disk {
@@ -132,8 +100,8 @@ resource "proxmox_virtual_environment_container" "tack_app2" {
     type             = "debian"
   }
 
-  started       = true
-  start_on_boot = true
+  started       = !contains(var.stopped_guest_ids, local.service_mapping.tack_app2.vmid)
+  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.tack_app2.vmid)
   unprivileged  = true
 
   lifecycle {
@@ -156,12 +124,6 @@ resource "proxmox_virtual_environment_container" "tack_data1" {
     dns {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_data1.hostname)[0]
     }
-    ip_config {
-      ipv6 {
-        address = "${local.service_mapping.tack_data1.ipv6}/64"
-        gateway = local.service_mapping.vault_hypervisor.ipv6
-      }
-    }
     user_account {
       keys = [var.ssh_keys]
     }
@@ -169,12 +131,6 @@ resource "proxmox_virtual_environment_container" "tack_data1" {
 
   features {
     nesting = true
-  }
-
-  network_interface {
-    name        = "eth0"
-    bridge      = "vmnet"
-    mac_address = local.service_mapping.tack_data1.mac_address
   }
 
   disk {
@@ -198,8 +154,8 @@ resource "proxmox_virtual_environment_container" "tack_data1" {
     type             = "debian"
   }
 
-  started       = true
-  start_on_boot = true
+  started       = !contains(var.stopped_guest_ids, local.service_mapping.tack_data1.vmid)
+  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.tack_data1.vmid)
   unprivileged  = true
 
   lifecycle {
@@ -222,12 +178,6 @@ resource "proxmox_virtual_environment_container" "tack_data2" {
     dns {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_data2.hostname)[0]
     }
-    ip_config {
-      ipv6 {
-        address = "${local.service_mapping.tack_data2.ipv6}/64"
-        gateway = local.service_mapping.vault_hypervisor.ipv6
-      }
-    }
     user_account {
       keys = [var.ssh_keys]
     }
@@ -235,12 +185,6 @@ resource "proxmox_virtual_environment_container" "tack_data2" {
 
   features {
     nesting = true
-  }
-
-  network_interface {
-    name        = "eth0"
-    bridge      = "vmnet"
-    mac_address = local.service_mapping.tack_data2.mac_address
   }
 
   disk {
@@ -264,8 +208,8 @@ resource "proxmox_virtual_environment_container" "tack_data2" {
     type             = "debian"
   }
 
-  started       = true
-  start_on_boot = true
+  started       = !contains(var.stopped_guest_ids, local.service_mapping.tack_data2.vmid)
+  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.tack_data2.vmid)
   unprivileged  = true
 
   lifecycle {
@@ -288,12 +232,6 @@ resource "proxmox_virtual_environment_container" "tack_data3" {
     dns {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_data3.hostname)[0]
     }
-    ip_config {
-      ipv6 {
-        address = "${local.service_mapping.tack_data3.ipv6}/64"
-        gateway = local.service_mapping.vault_hypervisor.ipv6
-      }
-    }
     user_account {
       keys = [var.ssh_keys]
     }
@@ -301,12 +239,6 @@ resource "proxmox_virtual_environment_container" "tack_data3" {
 
   features {
     nesting = true
-  }
-
-  network_interface {
-    name        = "eth0"
-    bridge      = "vmnet"
-    mac_address = local.service_mapping.tack_data3.mac_address
   }
 
   disk {
@@ -330,8 +262,8 @@ resource "proxmox_virtual_environment_container" "tack_data3" {
     type             = "debian"
   }
 
-  started       = true
-  start_on_boot = true
+  started       = !contains(var.stopped_guest_ids, local.service_mapping.tack_data3.vmid)
+  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.tack_data3.vmid)
   unprivileged  = true
 
   lifecycle {
@@ -354,12 +286,6 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
     dns {
       domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_search1.hostname)[0]
     }
-    ip_config {
-      ipv6 {
-        address = "${local.service_mapping.tack_search1.ipv6}/64"
-        gateway = local.service_mapping.vault_hypervisor.ipv6
-      }
-    }
     user_account {
       keys = [var.ssh_keys]
     }
@@ -367,12 +293,6 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
 
   features {
     nesting = true
-  }
-
-  network_interface {
-    name        = "eth0"
-    bridge      = "vmnet"
-    mac_address = local.service_mapping.tack_search1.mac_address
   }
 
   disk {
@@ -396,8 +316,8 @@ resource "proxmox_virtual_environment_container" "tack_search1" {
     type             = "debian"
   }
 
-  started       = true
-  start_on_boot = true
+  started       = !contains(var.stopped_guest_ids, local.service_mapping.tack_search1.vmid)
+  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.tack_search1.vmid)
   unprivileged  = true
 
   lifecycle {
@@ -416,9 +336,6 @@ variable "service_mapping" { type = object({
   tack = object({
     vmid     = number
     hostname = string
-  })
-  vault_hypervisor = object({
-    ipv6 = string
   })
   tack_app2 = object({
     vmid        = number
@@ -468,6 +385,8 @@ terraform {
     }
   }
 }
+
+variable "stopped_guest_ids" { type = set(number) }
 
 output "tack_vmid" {
   description = "VMID assigned to the Tack LXC container."

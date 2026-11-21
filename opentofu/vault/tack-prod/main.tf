@@ -71,7 +71,8 @@ import {
 }
 
 module "vault" {
-  source = "../../modules/vault/tack-prod"
+  source            = "../../modules/vault/tack-prod"
+  stopped_guest_ids = var.stopped_guest_ids
 
   providers = { proxmox = proxmox }
 
