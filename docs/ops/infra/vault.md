@@ -43,7 +43,6 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
    | --- | --- | --- | --- |
    | 100 | vault/debianct | debianct | debianct |
    | 102 | vault/host | unifi | proxmox_virtual_environment_container.unifi |
-   | 110 | vault/proxy | proxy | proxy |
    | 118 | vault/seaweedfs | seaweedfs | seaweedfs |
    | 117 | vault/tack-prod | tack | tack |
    | 123 | vault/tack-prod | tack_app2 | tack_app2 |
@@ -108,7 +107,7 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
    ./configsctl tofu "$root" apply "-var=staged_guest_ids=[$id]" "-target=$guest.pveguest_network_interface.eth0"
    ```
 
-   Check the current default routes after staging. LXC 110 uses systemd-networkd. VM 124 uses netplan. The other guests use ifupdown with the ISC DHCP client and resolvconf. Leave Docker forwarding and neighbor discovery active inside the guests.
+   Check the current default routes after staging. VM 124 uses netplan. The containers use ifupdown with the ISC DHCP client and resolvconf. Leave Docker forwarding and neighbor discovery active inside the guests.
 
 2. Move one guest at a time in table order. On Vault, run `pct shutdown "$id" --timeout 120` and `pct status "$id"`. For VM 124 use `qm shutdown 124 --timeout 120` and `qm status 124`. Wait for the stopped state.
 3. On the controller, select that guest's variables again. Apply its old net0 removal while the guest stays stopped. For a container, install hostnic0 in a separate targeted apply. For the VM, the first command installs hostpci0. Skip the second command for the VM.

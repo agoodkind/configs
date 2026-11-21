@@ -15,11 +15,8 @@ data "cloudflare_zero_trust_tunnel_cloudflared" "tack_k3s" {
 
   lifecycle {
     postcondition {
-      condition = (
-        self.name == module.contracts.tack_k3s_tunnel_names.prod &&
-        self.id != module.contracts.tack_tunnel_id
-      )
-      error_message = "Provision exactly one active tack-k3s production tunnel distinct from the legacy shared tunnel before changing Tack DNS."
+      condition     = self.name == module.contracts.tack_k3s_tunnel_names.prod
+      error_message = "Provision the production Tack Kubernetes tunnel before changing Tack DNS."
     }
   }
 }

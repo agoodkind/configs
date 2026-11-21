@@ -12,13 +12,11 @@ locals {
 }
 
 module "guest_inputs" {
-  source           = "../../modules/guest-inputs"
-  guest_keys       = module.configuration.guest_keys
-  shared_vars      = local.shared_vars
-  service_mapping  = { for name in module.configuration.guest_keys : name => local.service_mapping[name] }
-  proxy_public_key = module.configuration.proxy_public_key
-  timezone         = "America/Los_Angeles"
-  proxy_address    = module.configuration.proxy_address
+  source          = "../../modules/guest-inputs"
+  guest_keys      = module.configuration.guest_keys
+  shared_vars     = local.shared_vars
+  service_mapping = { for name in module.configuration.guest_keys : name => local.service_mapping[name] }
+  timezone        = "America/Los_Angeles"
 }
 
 module "github_keys" {
@@ -29,7 +27,6 @@ module "github_keys" {
 locals {
   guests                  = module.guest_inputs.guests
   mail_relays             = module.guest_inputs.mail_relays
-  sshpiper_lines          = module.guest_inputs.sshpiper_lines
   github_keys             = module.github_keys.public_keys
   proxmox_token_principal = module.contracts.proxmox_token_principal
   nodes = {
@@ -54,7 +51,7 @@ module "base" {
   authorized_key_lines        = each.value.authorized_key_lines
   extra_authorized_keys_files = each.value.extra_authorized_keys_files
   public_keys                 = each.value.authorized_key_lines == null ? local.github_keys : []
-  restricted_key_lines        = each.value.authorized_key_lines == null ? local.sshpiper_lines : []
+  restricted_key_lines        = []
   mail_relay                  = try(local.mail_relays[each.key], null)
   login_dir                   = local.shared_vars.login_dir
   revision                    = local.shared_vars.guest_prep_revision

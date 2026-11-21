@@ -4,9 +4,6 @@ variable "shared_vars" { type = object({ smtp_host = string, smtp_port = number,
 
 variable "service_mapping" { type = map(object({ hostname = string, vmid = number, node = string, kind = optional(string, "lxc"), mail_username = optional(string), mail_from = optional(string), mail_password_version = optional(number) })) }
 
-variable "proxy_public_key" { type = string }
-variable "proxy_address" { type = string }
-
 variable "timezone" {
   type     = string
   nullable = false
@@ -21,9 +18,8 @@ locals {
 
 
 
-  # A guest listed here receives exactly these lines as its authorized_keys
-  # file, without the GitHub keys and the sshpiper lines. The map key is the
-  # service mapping name of the guest.
+  # Each entry replaces the guest's authorized_keys file.
+  # Use the service mapping name as the key.
   authorized_key_lines_overrides = {}
 
   # This map supplies key-file paths that the module appends after the global
@@ -120,18 +116,6 @@ locals {
       )
     }
   }
-
-
-
-
-
-
-  # sshd accepts the sshpiper upstream key only from the address of the proxy
-  # guest.
-  sshpiper_lines = [
-    "# Managed by Ansible - Restricted by SSHPiper",
-    "from=\"${var.proxy_address}/128\" ${trimspace(var.proxy_public_key)}",
-  ]
 }
 
 output "guests" {
@@ -155,5 +139,3 @@ output "mail_relay_import_ids" {
     name => "${local.guests[name].node}/${local.guests[name].vmid}/${local.guests[name].kind}/${relay.username}/${relay.password_version}"
   }
 }
-
-output "sshpiper_lines" { value = local.sshpiper_lines }
