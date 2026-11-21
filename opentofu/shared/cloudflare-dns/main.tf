@@ -68,15 +68,6 @@ locals {
       ttl     = 1
       proxied = false
     }
-    "goodkind.io/A/*.home.goodkind.io/f078473b" = {
-      zone    = "goodkind.io"
-      name    = "*.home.goodkind.io"
-      type    = "A"
-      content = "10.250.0.110"
-      ttl     = 1
-      proxied = false
-      comment = "proxy"
-    }
     "goodkind.io/A/hypervisor.home.goodkind.io/9f586dc5" = {
       zone    = "goodkind.io"
       name    = "hypervisor.home.goodkind.io"
@@ -122,14 +113,6 @@ locals {
       name    = "unifi.home.goodkind.io"
       type    = "A"
       content = "10.250.0.102"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/*.home.goodkind.io/9b9c74a5" = {
-      zone    = "goodkind.io"
-      name    = "*.home.goodkind.io"
-      type    = "AAAA"
-      content = "3d06:bad:b01::110"
       ttl     = 1
       proxied = false
     }

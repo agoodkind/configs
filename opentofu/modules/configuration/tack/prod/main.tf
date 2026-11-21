@@ -1,4 +1,3 @@
-module "proxy" { source = "../../services/proxy" }
 module "tack" { source = "../../services/tack" }
 module "tack_app2" { source = "../../services/tack_app2" }
 module "tack_data1" { source = "../../services/tack_data1" }
@@ -18,7 +17,6 @@ locals {
   }
   service_mapping = merge(local.container_services, {
     tack_k3s         = local.tack_k3s_guest
-    proxy            = module.proxy.value
     vault_hypervisor = module.vault_hypervisor.value
   })
 }
@@ -65,8 +63,6 @@ output "lock_targets" { value = merge(local.lock_targets, {
     (local.tack_k3s_guest.hostname) = { user = "root", address = local.tack_k3s_guest.ipv6 }
   }, { for guest in local.search_lock_guests : guest.hostname => { user = "root", address = guest.ipv6 } })
 }) }
-output "proxy_public_key" { value = module.proxy.upstream_public_key }
-output "proxy_address" { value = module.proxy.value.ipv6 }
 
 locals {
   provisioned_guests = merge(

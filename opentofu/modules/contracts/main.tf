@@ -1,5 +1,4 @@
 locals {
-  tack_tunnel_id = "4b602332-6413-4f95-8874-561ed6d9b266"
   tack_k3s_tunnel_names = {
     prod = "tack-k3s"
     qa   = "tack-k3s-qa"
@@ -33,5 +32,4 @@ output "shared_vars" { value = local.shared_vars }
 output "proxmox_token_principal" { value = "${local.shared_vars.proxmox_api_user}!${local.shared_vars.proxmox_token_id}" }
 output "cloudflare_zone_ids" { value = local.cloudflare_zone_ids }
 output "tack_domain_aliases" { value = local.tack_domain_aliases }
-output "tack_tunnel_id" { value = local.tack_tunnel_id }
 output "tack_k3s_tunnel_names" { value = local.tack_k3s_tunnel_names }

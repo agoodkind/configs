@@ -1,4 +1,3 @@
-module "proxy" { source = "../../services/proxy" }
 module "suburban_hypervisor" { source = "../../services/suburban_hypervisor" }
 module "suburban_host" { source = "../../hosts/suburban" }
 
@@ -29,7 +28,6 @@ locals {
   }
   service_mapping = merge(local.container_services, {
     tack_k3s_suburban   = local.tack_k3s_guest
-    proxy               = module.proxy.value
     suburban_hypervisor = module.suburban_hypervisor.value
   })
   guest_keys          = toset(["tack_qa_suburban", "tack_search1_suburban"])
@@ -64,8 +62,6 @@ output "lock_targets" {
     })
   })
 }
-output "proxy_public_key" { value = module.proxy.upstream_public_key }
-output "proxy_address" { value = module.proxy.value.ipv6 }
 
 locals {
   provisioned_guests = merge(

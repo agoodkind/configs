@@ -2,19 +2,13 @@ module "contracts" {
   source = "../../modules/contracts"
 }
 
-locals {
-  service_mapping = module.configuration.service_mapping
+removed {
+  from = module.vault
+
+  lifecycle {
+    destroy = true
+  }
 }
-
-module "vault" {
-  source            = "../../modules/vault/proxy"
-  stopped_guest_ids = var.stopped_guest_ids
-
-  providers = { proxmox = proxmox }
-
-  service_mapping = local.service_mapping
-}
-
 
 locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
 
