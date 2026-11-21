@@ -32,10 +32,11 @@ locals {
 }
 
 resource "pveguest_apt_packages" "network" {
-  node     = "vault"
-  vmid     = var.guest.vmid
-  kind     = var.guest.kind
-  packages = concat(["perl", "iproute2", "systemd"], local.packages[var.guest.backend])
+  node           = "vault"
+  vmid           = var.guest.vmid
+  kind           = var.guest.kind
+  packages       = concat(["perl", "iproute2", "systemd"], local.packages[var.guest.backend])
+  start_services = false
 }
 
 resource "pveguest_network_interface" "eth0" {
