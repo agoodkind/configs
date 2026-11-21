@@ -26,26 +26,6 @@ resource "cloudflare_dns_record" "vault_guests" {
   }
 }
 
-moved {
-  from = cloudflare_dns_record.vault_guests["debianct"]
-  to   = cloudflare_dns_record.retired_debianct
-}
-
-moved {
-  from = cloudflare_dns_record.vault_guests["proxy"]
-  to   = cloudflare_dns_record.retired_proxy
-}
-
-moved {
-  from = cloudflare_dns_record.static["goodkind.io/A/*.home.goodkind.io/f078473b"]
-  to   = cloudflare_dns_record.retired_proxy_wildcard_ipv4
-}
-
-moved {
-  from = cloudflare_dns_record.static["goodkind.io/AAAA/*.home.goodkind.io/9b9c74a5"]
-  to   = cloudflare_dns_record.retired_proxy_wildcard_ipv6
-}
-
 resource "cloudflare_dns_record" "tack_public" {
   provider = cloudflare.dns
 
