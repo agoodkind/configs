@@ -14,7 +14,7 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
    export TF_VAR_management_ipv6_gateway="${VAULT_MANAGEMENT_IPV6_GATEWAY:?supply IPv6 gateway}"
    ```
 
-3. On Vault, confirm the physical connections with `bridge link` and `ip -br link`. The existing uplink bridge must use `enp4s0`. Check that the distinct SFP LAN supplies DHCPv4 and IPv6 router advertisements and permits the guest MAC addresses. Verify that `cat /sys/class/net/enp2s0f0np0/device/sriov_totalvfs` reports at least 16. Compare `dpkg-query -W pve-manager pve-container qemu-server` with the tested versions 9.2.28, 6.1.20, and 9.2.15 respectively.
+3. On Vault, confirm the physical connections with `bridge link` and `ip -br link`. The existing uplink bridge must use `enp4s0`. Check that the distinct SFP LAN supplies DHCPv4 and IPv6 router advertisements and permits the guest MAC addresses. Verify that `cat /sys/class/net/enp2s0f0np0/device/sriov_totalvfs` reports at least 16. Compare `dpkg-query -W pve-manager pve-container qemu-server` with the tested versions 9.2.32, 6.1.24, and 9.2.20, respectively.
 4. Record successful private management, guest, and application checks. In a root shell on Vault, save the host files and guest definitions. Keep this shell and the path to its private recovery directory available on the console.
 
    ```sh
@@ -136,7 +136,9 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
 5. In the guest, check `ip -br link show eth0`, `ip address show dev eth0`, `ip route show default`, `ip -6 route show default`, and `getent hosts hypervisor.home.goodkind.io`. Require the assigned MAC, a DHCPv4 lease, a global SLAAC address, all assigned private addresses, and upstream default routes. Reject either old Vault gateway. Test UniFi through its private A and AAAA records from the SFP LAN before removing the old uplink.
 6. Run these database checks after **each** data LXC starts. FoundationDB uses double redundancy and three coordinators. YugabyteDB uses three replicas. The first migrated peer cannot form a majority alone. Verify its processes, addresses, and individual listener connections from VM 124 before continuing. After the second move, check election and database availability again. After the third move, require three live YugabyteDB masters, full FoundationDB replication and one-machine fault tolerance, and a successful Tack read.
 
-   Run the queries from the controller through Vault's Proxmox guest command API. Set `VAULT_API_URL` to the HTTPS Proxmox origin with its trusted certificate. Set `VAULT_API_HEADER_FILE` to a private file containing the automation token's complete Authorization header. Run the following in Bash. Each call saves the command ID and response in a private local directory. If a poll or acknowledgment fails, resume with that ID. The API retains completed output until acknowledgment or expiry.
+   Run the queries from the controller through Vault's Proxmox guest command API. Set `VAULT_API_URL` to the HTTPS Proxmox origin with its trusted certificate. Set `VAULT_API_HEADER_FILE` to a private file containing the automation token's complete Authorization header. Run the following in Bash. Each call prints its private local directory. The function saves the request in `request.json`, the start response in `start.json`, the latest poll response in `status.json`, and the acknowledgment response in `ack.json`.
+
+   If polling or acknowledgment fails, set `record` to the printed directory and recover the command ID with `jq -er '.data.pid' "$record/start.json"`. If polling failed, resume with `exec-status` and the recovered ID. If acknowledgment failed, read the completed output from `status.json` and retry `exec-ack` with the same ID. The API retains completed output until acknowledgment or expiry.
 
    ```bash
    guest_query() (
