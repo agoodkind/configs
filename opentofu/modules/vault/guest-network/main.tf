@@ -6,12 +6,11 @@ terraform {
 
 variable "guest" {
   type = object({
-    vmid      = number
-    kind      = string
-    backend   = string
-    mac       = string
-    ifname    = optional(string)
-    addresses = set(string)
+    vmid    = number
+    kind    = string
+    backend = string
+    mac     = string
+    ifname  = optional(string)
   })
 
   validation {
@@ -48,7 +47,6 @@ resource "pveguest_network_interface" "eth0" {
   phase       = var.phase
   dhcp4       = true
   slaac       = true
-  addresses   = var.guest.addresses
   dns_servers = var.dns_servers
   depends_on  = [pveguest_apt_packages.network]
 }
