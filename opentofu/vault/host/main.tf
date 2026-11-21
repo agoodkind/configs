@@ -48,7 +48,7 @@ locals {
   overlay_hosts = { vault = {
     ssh_host       = module.configuration.service_mapping.vault_hypervisor.hostname
     node_name      = "vault"
-    commit         = "862f4cee3d14d4f8fb57b6111d8541e4a2ddf6af"
+    commit         = "0a920ed3001d5b1a836807d8ac62b178b43e2d33"
     guest_api      = true
     kernel_modules = null
 
