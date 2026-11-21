@@ -63,12 +63,17 @@ locals {
   overlay_hosts = { suburban = {
     ssh_host       = local.service_mapping.suburban_hypervisor.ipv6
     node_name      = "hypervisor"
-    commit         = "95540a7f37c0458c8382decfbb4cf77c0f571239"
+    commit         = "0e16e7fc3a4a59934cd0b31e4e1ac6ee47eb0cf7"
     guest_api      = true
     kernel_modules = null
 
-    additional_patches = {
-      pve-manager-acme = "patches/pve-manager-acme.patch"
+    base_patch_sources = {
+      "patches/pve-access-control.patch" = ["patches/pve-access-control.patch"]
+      "patches/pve-container.patch"      = ["patches/pve-container.patch"]
+      "patches/pve-http-server.patch"    = ["patches/pve-http-server.patch"]
+      "patches/pve-manager-acme.patch"   = ["patches/pve-manager-acme.patch"]
+      "patches/pve-manager.patch"        = ["patches/pve-manager.patch"]
+      "patches/qemu-server.patch"        = ["patches/qemu-server.patch"]
     }
 
     container_options = null
@@ -98,7 +103,7 @@ module "overlay" {
   guest_api          = each.value.guest_api
   automation_user    = local.shared_vars.proxmox_api_user
   grant_scope        = var.overlay_grant_scope
-  additional_patches = each.value.additional_patches
+  base_patch_sources = each.value.base_patch_sources
   kernel_modules     = each.value.kernel_modules
   acme_account       = local.acme_account
   acme_plugin        = local.acme_plugin

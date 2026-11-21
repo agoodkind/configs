@@ -57,33 +57,6 @@ variable "grant_scope" {
   }
 }
 
-variable "additional_patches" {
-  description = "Add named patch files from the selected overlay commit."
-  type        = map(string)
-  default     = {}
-
-  validation {
-    condition = alltrue([
-      for component in keys(var.additional_patches) : can(regex("^[A-Za-z0-9][A-Za-z0-9_-]*$", component))
-    ])
-    error_message = "Each additional_patches key must start with a letter or digit and use only letters, digits, underscores, or hyphens."
-  }
-
-  validation {
-    condition = alltrue([
-      for source in values(var.additional_patches) : can(regex("^([A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\\.patch$", source))
-    ])
-    error_message = "Each additional_patches value must be a repository-relative .patch path without empty, dot, or parent directory segments."
-  }
-
-  validation {
-    condition = alltrue([
-      for component in keys(var.additional_patches) : !contains(keys(local.base_files), "patches/${component}.patch")
-    ])
-    error_message = "additional_patches must not replace an existing managed patch component."
-  }
-}
-
 variable "kernel_modules" {
   description = <<-EOT
     The selected overlay commit must include the kernel module API. The API accepts
@@ -195,16 +168,27 @@ variable "grub_cmdline_linux_default" {
 }
 
 variable "base_patch_sources" {
-  description = "Each key is an existing base patch path under patches/. Each value is a replacement .patch path under patches/ in the selected overlay commit."
-  type        = map(string)
+  description = "Add or replace the ordered list of repository-relative .patch paths for each flat patch destination."
+  type        = map(list(string))
   default     = {}
+  nullable    = false
 
   validation {
-    condition = alltrue([for dest, source in var.base_patch_sources :
-      contains(keys(local.base_files), dest) && startswith(dest, "patches/") &&
-      can(regex("^patches/([A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]+\\.patch$", source))
+    condition = alltrue([
+      for destination in keys(var.base_patch_sources) :
+      can(regex("^patches/[A-Za-z0-9][A-Za-z0-9_-]*\\.patch$", destination))
     ])
-    error_message = "Each base_patch_sources key must be an existing base patch path under patches/. Each value must be a repository-relative source path under patches/ that ends in .patch."
+    error_message = "Each base_patch_sources key must have the form patches/<name>.patch. Start the name with a letter or digit and use only letters, digits, underscores, and hyphens."
+  }
+
+  validation {
+    condition = alltrue([
+      for sources in values(var.base_patch_sources) :
+      sources != null ? length(sources) > 0 && alltrue([
+        for source in sources : can(regex("^([A-Za-z0-9_-][A-Za-z0-9_.-]*/)*[A-Za-z0-9_-][A-Za-z0-9_.-]*\\.patch$", source))
+      ]) : false
+    ])
+    error_message = "Each base_patch_sources value must be a nonempty list of repository-relative .patch paths without empty, dot, or parent directory segments."
   }
 }
 
@@ -240,47 +224,41 @@ locals {
   source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${var.commit}"
   script = "/usr/local/sbin/pve-overlay"
 
-  # Key: the file path in agoodkind/proxmox-overlays. Debian creates
-  # /usr/local/sbin and /usr/local/share.
-  base_files = {
-    "pve-overlay" = {
-      path        = local.script
-      permissions = "0755"
-    }
-    "patches/pve-access-control.patch" = {
-      path        = "/usr/local/share/pve-overlay-pve-access-control.patch"
-      permissions = "0644"
-    }
-    "patches/pve-container.patch" = {
-      path        = "/usr/local/share/pve-overlay-pve-container.patch"
-      permissions = "0644"
-    }
-    "patches/pve-http-server.patch" = {
-      path        = "/usr/local/share/pve-overlay-pve-http-server.patch"
-      permissions = "0644"
-    }
-    "patches/pve-manager.patch" = {
-      path        = "/usr/local/share/pve-overlay-pve-manager.patch"
-      permissions = "0644"
-    }
-    "patches/qemu-server.patch" = {
-      path        = "/usr/local/share/pve-overlay-qemu-server.patch"
-      permissions = "0644"
-    }
-  }
-
-  files = merge(local.base_files, {
-    for component in keys(var.additional_patches) : "patches/${component}.patch" => {
-      path        = "/usr/local/share/pve-overlay-${component}.patch"
-      permissions = "0644"
-    }
-  })
-
-  file_sources = merge(
-    { for source in keys(local.base_files) : source => source },
-    var.base_patch_sources,
-    { for component, source in var.additional_patches : "patches/${component}.patch" => source },
-  )
+  file_sources = merge({
+    "pve-overlay" = ["pve-overlay"]
+    "patches/pve-access-control.patch" = [
+      "patches/pve-access-control-10-acme.patch",
+      "patches/pve-access-control-20-container-features.patch",
+      "patches/pve-access-control-30-vsock.patch",
+      "patches/pve-access-control-40-guest-api.patch",
+      "patches/pve-access-control-50-bpfdelegate.patch",
+      "patches/pve-access-control-60-hostnic.patch",
+      "patches/pve-access-control-70-kernel-modules.patch",
+      "patches/pve-access-control-80-host-artifacts.patch",
+      "patches/pve-access-control-90-sriov.patch",
+    ]
+    "patches/pve-container.patch" = [
+      "patches/pve-container-10-features.patch",
+      "patches/pve-container-20-guest-api.patch",
+      "patches/pve-container-30-bpfdelegate.patch",
+      "patches/pve-container-40-hostnic.patch",
+    ]
+    "patches/pve-http-server.patch"  = ["patches/pve-http-server.patch"]
+    "patches/pve-manager-acme.patch" = ["patches/pve-manager-10-acme.patch"]
+    "patches/pve-manager.patch" = [
+      "patches/pve-manager-20-kernel-modules.patch",
+      "patches/pve-manager-30-host-artifacts.patch",
+      "patches/pve-manager-31-host-secrets.patch",
+      "patches/pve-manager-32-host-units.patch",
+      "patches/pve-manager-33-installed-source.patch",
+      "patches/pve-manager-40-sriov.patch",
+    ]
+    "patches/qemu-server.patch" = [
+      "patches/qemu-server-10-vsock.patch",
+      "patches/qemu-server-20-guest-api.patch",
+      "patches/qemu-server-30-sriov.patch",
+    ]
+  }, var.base_patch_sources)
 
   # remote_file builds the SSH address as <host>:<port>. An IPv6 address needs
   # brackets in that format.
@@ -517,20 +495,20 @@ locals {
 }
 
 data "http" "files" {
-  for_each = local.files
+  for_each = toset(flatten(values(local.file_sources)))
 
-  url = "${local.source}/${local.file_sources[each.key]}"
+  url = "${local.source}/${each.key}"
 
   lifecycle {
     postcondition {
       condition     = self.status_code == 200
-      error_message = "GitHub returned ${self.status_code} for ${local.file_sources[each.key]} at ${var.commit}."
+      error_message = "GitHub returned ${self.status_code} for ${each.key} at ${var.commit}."
     }
   }
 }
 
 resource "remote_file" "files" {
-  for_each = local.files
+  for_each = local.file_sources
 
   conn {
     host  = local.remote_host
@@ -538,9 +516,9 @@ resource "remote_file" "files" {
     agent = true
   }
 
-  path        = each.value.path
-  content     = data.http.files[each.key].response_body
-  permissions = each.value.permissions
+  path        = each.key == "pve-overlay" ? local.script : "/usr/local/share/pve-overlay-${trimprefix(each.key, "patches/")}"
+  content     = join("", [for source in each.value : data.http.files[source].response_body])
+  permissions = each.key == "pve-overlay" ? "0755" : "0644"
 }
 
 # `pve-overlay apply` also installs a dpkg hook. The hook runs
