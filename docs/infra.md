@@ -1,6 +1,6 @@
 # Infrastructure overview
 
-Vault runs the production service containers and the Tack Kubernetes VM in San Francisco. Its target configuration assigns the management port to the hypervisor and a separate SFP port to guest virtual functions. Suburban runs the routing testbed in New Jersey.
+Vault runs the production service containers and the Tack Kubernetes VM in San Francisco. Its OpenTofu configuration assigns the management port to the hypervisor and a separate SFP port to guest virtual functions. Suburban runs the routing testbed in New Jersey.
 
 Cloudflare tunnels provide private guest access and publish web services. Cloudflare hosts DNS for the domain.
 
