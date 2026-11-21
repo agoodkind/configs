@@ -1,6 +1,5 @@
 locals {
   guest_networks = {
-    # Release this VF and these addresses after the replacement Kubernetes VM serves debianct clients and private administration.
     debianct = {
       vmid      = 100
       index     = 1
@@ -9,7 +8,7 @@ locals {
       driver    = "iavf"
       ifname    = "vfct100"
       mac       = "bc:24:11:73:b0:3c"
-      addresses = ["3d06:bad:b01::100/64"]
+      addresses = []
     }
     # Release this VF and these addresses after the replacement Kubernetes VM serves unifi clients and private administration.
     unifi = {
