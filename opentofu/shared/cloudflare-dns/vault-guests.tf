@@ -1,6 +1,5 @@
 locals {
   vault_guest_keys = toset([
-    "debianct",
     "proxy",
     "seaweedfs",
     "tack",
@@ -26,6 +25,11 @@ resource "cloudflare_dns_record" "vault_guests" {
   lifecycle {
     prevent_destroy = true
   }
+}
+
+moved {
+  from = cloudflare_dns_record.vault_guests["debianct"]
+  to   = cloudflare_dns_record.retired_debianct
 }
 
 resource "cloudflare_dns_record" "tack_public" {

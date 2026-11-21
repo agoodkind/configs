@@ -1,4 +1,3 @@
-module "debianct" { source = "../../../configuration/services/debianct" }
 module "proxy" { source = "../../../configuration/services/proxy" }
 module "seaweedfs" { source = "../../../configuration/services/seaweedfs" }
 module "tack" { source = "../../../configuration/services/tack" }
@@ -11,7 +10,6 @@ module "poweredge_hypervisor" { source = "../../../poweredge/services/poweredge_
 locals {
   service_mapping = {
     poweredge_hypervisor = module.poweredge_hypervisor.value
-    debianct             = module.debianct.value
     proxy                = module.proxy.value
     seaweedfs            = module.seaweedfs.value
     tack                 = module.tack.value
