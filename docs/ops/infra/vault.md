@@ -70,15 +70,26 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
    ./configsctl tofu vault/host apply -target=pveguest_host_sriov.guests
    ```
 
-4. On Vault, verify the hardware before changing guests. Require an addressless PF, 16 VFs, VF 0 bound to vfio-pci, and indices 1 through 10 bound to iavf with the assigned MACs and host interface names. Check the complete IOMMU group in sysfs before creating the mapping. Vault's physical group membership still requires verification. VM 124 requires VF 0 to be the only PCI device in its group, including any PCI bridges in the comparison. Stop if the final comparison fails. Indices 11 through 15 remain available.
+4. On Vault, verify the hardware before changing guests. Require an addressless PF, 16 VFs, VF 0 bound to vfio-pci, and indices 1 through 10 bound to iavf with the assigned MACs and host interface names. Check the complete IOMMU group in sysfs before creating the mapping. Vault's physical group membership still requires verification. VM 124 requires VF 0 to be the only PCI device in its group. Count any PCI bridges as group members. Stop if the commands report an error. Indices 11 through 15 remain available.
 
    ```sh
    pvesh get /nodes/vault/sriov/enp2s0f0np0 --output-format json-pretty
    ip address show dev enp2s0f0np0
-   vf=$(readlink -e /sys/class/net/enp2s0f0np0/device/virtfn0)
-   members=$(ls -1 "$vf/iommu_group/devices")
-   printf '%s\n' "$members"
-   test -n "$vf" && test "$members" = "${vf##*/}"
+   (
+     if ! vf=$(readlink -e /sys/class/net/enp2s0f0np0/device/virtfn0); then
+       printf 'Cannot find VF 0 for enp2s0f0np0.\n' >&2
+       exit 1
+     fi
+     if ! members=$(ls -A1 "$vf/iommu_group/devices/"); then
+       printf 'Cannot list the IOMMU group for VF 0 at %s.\n' "${vf##*/}" >&2
+       exit 1
+     fi
+     printf '%s\n' "$members"
+     if [ "$members" != "${vf##*/}" ]; then
+       printf 'VF 0 at %s must be the only device in its IOMMU group.\n' "${vf##*/}" >&2
+       exit 1
+     fi
+   )
    ```
 
    From the controller, run `./configsctl tofu vault/tack-prod apply -target=proxmox_hardware_mapping_pci.tack`. On Vault, compare the resulting `pvesh get /cluster/mapping/pci/vault-tack-k3s --output-format json-pretty` with the VF's PCI address and group.
