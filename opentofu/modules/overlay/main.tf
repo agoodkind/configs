@@ -195,7 +195,7 @@ variable "grub_cmdline_linux_default" {
 }
 
 variable "base_patch_sources" {
-  description = "Select compatible sources for existing patch destinations."
+  description = "Each key is an existing base patch path under patches/. Each value is a replacement .patch path under patches/ in the selected overlay commit."
   type        = map(string)
   default     = {}
 
@@ -204,12 +204,12 @@ variable "base_patch_sources" {
       contains(keys(local.base_files), dest) && startswith(dest, "patches/") &&
       can(regex("^patches/([A-Za-z0-9_-]+/)*[A-Za-z0-9_.-]+\\.patch$", source))
     ])
-    error_message = "Select an existing base patch and a repository-relative patch source."
+    error_message = "Each base_patch_sources key must be an existing base patch path under patches/. Each value must be a repository-relative source path under patches/ that ends in .patch."
   }
 }
 
 variable "sriov" {
-  description = "Grant SR-IOV and PCI mapping privileges to the automation user."
+  description = "When grant_scope is all, true grants the SR-IOV and PCI mapping roles to the automation user and false removes those roles."
   type        = bool
   default     = false
 }
@@ -362,7 +362,7 @@ locals {
     }
   } : {}
 
-  sriov_roles = var.sriov ? {
+  sriov_roles = {
     ScopedSRIOV = {
       path       = "/"
       privileges = ["Sys.SRIOV.Audit", "Sys.SRIOV.Modify"]
@@ -371,9 +371,9 @@ locals {
       path       = "/mapping/pci"
       privileges = ["Mapping.Audit", "Mapping.Use", "Mapping.Modify"]
     }
-  } : {}
+  }
 
-  roles = merge(local.sriov_roles, local.guest_api_roles, local.kernel_modules_roles, local.host_artifacts_roles, local.container_options_roles, {
+  roles = merge(var.sriov ? local.sriov_roles : {}, local.guest_api_roles, local.kernel_modules_roles, local.host_artifacts_roles, local.container_options_roles, {
     ScopedContainerFeatures = {
       path = "/"
       privileges = [
@@ -483,10 +483,15 @@ locals {
     ]),
   ]
 
-  container_options_revoke_commands = var.container_options != null ? [] : [
-    for role in local.container_options_role_names : join(" ", [
+  role_paths_to_revoke = merge(
+    var.container_options != null ? {} : { for role in local.container_options_role_names : role => "/" },
+    var.sriov ? {} : { for role, definition in local.sriov_roles : role => definition.path },
+  )
+
+  role_revoke_commands = [
+    for role, path in local.role_paths_to_revoke : join(" ", [
       "if pveum role list --output-format json | grep -q '\"roleid\":\"${role}\"';",
-      "then pveum acl delete / --users ${var.automation_user} --roles ${role};",
+      "then pveum acl delete ${path} --users ${var.automation_user} --roles ${role};",
       "pveum role delete ${role}; fi",
     ])
   ]
@@ -495,7 +500,7 @@ locals {
     "pveum acl delete /vms --users ${var.automation_user} --roles ScopedContainerFeatures,ScopedVsock",
     ], var.retain_node_acme_role ? [] : [
     "pveum acl delete /nodes/${var.node_name} --users ${var.automation_user} --roles ScopedAcmeCertificate",
-  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands, local.container_options_revoke_commands) : []
+  ], local.guest_api_revoke_commands, local.kernel_modules_revoke_commands, local.role_revoke_commands) : []
 
   allowlist_path = "/etc/pve-overlay/kernel-modules.allow"
 
