@@ -350,17 +350,6 @@ locals {
         flatten_cname = false
       }
     }
-    "goodkind.io/CNAME/vault-oob.goodkind.io/1df39f47" = {
-      zone    = "goodkind.io"
-      name    = "vault-oob.goodkind.io"
-      type    = "CNAME"
-      content = "88f11d0d-6148-4670-891d-72c0286ca48d.cfargotunnel.com"
-      ttl     = 1
-      proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
     "goodkind.io/CNAME/www.goodkind.io/7a96705b" = {
       zone    = "goodkind.io"
       name    = "www.goodkind.io"
