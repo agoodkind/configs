@@ -6,6 +6,14 @@ output "debian_cloud_image" {
   }
 }
 
+output "debian_generic_image" {
+  value = {
+    url       = "https://cloud.debian.org/images/cloud/trixie/20261103-2651/debian-13-generic-amd64-20261103-2651.qcow2"
+    file_name = "debian-13-generic-amd64-20261103-2651.qcow2"
+    sha512    = "1207e6e3efaff8ee77ab7a32c156a3eea6a9e53f94cfc48efbd1f49ba554ca36ac62ab27395aa813a1775a8c0a393b1a1ce5377d9e5670f6113e3110c57fee4b"
+  }
+}
+
 output "k3s" {
   value = {
     version = "v1.37.2+k3s1"
