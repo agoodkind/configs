@@ -21,7 +21,7 @@ locals {
       mac       = "bc:24:11:9e:dc:6d"
       addresses = []
     }
-    # Release this VF and these addresses after the replacement Kubernetes VM serves tack clients and private administration.
+    # Release this VF and its static IPv6 address after the replacement Kubernetes VM serves Tack clients and private administration.
     tack = {
       vmid      = 117
       index     = 4
@@ -30,7 +30,7 @@ locals {
       driver    = "iavf"
       ifname    = "vfct117"
       mac       = "bc:24:11:a3:52:17"
-      addresses = ["10.250.0.117/24", "3d06:bad:b01::117/64"]
+      addresses = ["3d06:bad:b01::117/64"]
     }
     # Release this VF and these addresses after the replacement Kubernetes VM serves seaweedfs clients and private administration.
     seaweedfs = {
@@ -76,7 +76,7 @@ locals {
       mac       = "bc:24:11:a3:52:22"
       addresses = ["3d06:bad:b01::122/64"]
     }
-    # Release this VF and these addresses after the replacement Kubernetes VM serves tack app2 clients and private administration.
+    # Release this VF and its static IPv6 address after the replacement Kubernetes VM serves tack app2 clients and private administration.
     tack_app2 = {
       vmid      = 123
       index     = 9
@@ -85,7 +85,7 @@ locals {
       driver    = "iavf"
       ifname    = "vfct123"
       mac       = "bc:24:11:a3:52:23"
-      addresses = ["10.250.0.123/24", "3d06:bad:b01::123/64"]
+      addresses = ["3d06:bad:b01::123/64"]
     }
     # Release this VF and these addresses after the replacement Kubernetes VM serves tack search1 clients and private administration.
     tack_search1 = {
@@ -98,7 +98,7 @@ locals {
       mac       = "bc:24:11:a3:52:24"
       addresses = ["3d06:bad:b01::125/64"]
     }
-    # Remove the additional tack_k3s addresses after Tack, DNS, and private administration use the replacements.
+    # Remove the static tack_k3s IPv6 address after Tack, DNS, and private administration use the replacements.
     tack_k3s = {
       vmid      = 124
       index     = 0
@@ -107,7 +107,7 @@ locals {
       driver    = "vfio-pci"
       ifname    = null
       mac       = "bc:24:11:a3:52:7c"
-      addresses = ["10.250.0.124/24", "3d06:bad:b01::124/64"]
+      addresses = ["3d06:bad:b01::124/64"]
     }
   }
 }

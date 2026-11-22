@@ -2,8 +2,8 @@ variable "management_ipv4_cidr" {
   description = "Static management IPv4 address and prefix on Vault enp4s0."
   type        = string
   validation {
-    condition     = can(cidrnetmask(var.management_ipv4_cidr)) && !try(cidrcontains("10.250.0.0/24", split("/", var.management_ipv4_cidr)[0]) || cidrcontains(var.management_ipv4_cidr, "10.250.0.0"), false)
-    error_message = "Supply a management IPv4 CIDR outside the private guest subnet."
+    condition     = can(cidrnetmask(var.management_ipv4_cidr))
+    error_message = "Supply a valid management IPv4 CIDR."
   }
 }
 

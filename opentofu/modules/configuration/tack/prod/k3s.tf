@@ -5,13 +5,11 @@ locals {
     node        = module.vault_host.node.key
     vmid        = module.vault_host.guest_networks.tack_k3s.vmid
     kind        = "qemu"
-    ipv4        = "10.250.0.124"
     ipv6        = "3d06:bad:b01::124"
     mac_address = module.vault_host.guest_networks.tack_k3s.mac
   }
   tack_k3s = {
     guest = merge(local.tack_k3s_guest, module.vault_host.guest, {
-      ipv4_cidr = "${local.tack_k3s_guest.ipv4}/24"
       ipv6_cidr = "${local.tack_k3s_guest.ipv6}/64"
     })
     cloud_image = module.artifacts.debian_generic_image

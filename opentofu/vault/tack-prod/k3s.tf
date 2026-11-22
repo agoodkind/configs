@@ -95,7 +95,6 @@ output "tack_k3s" {
     vmid     = module.tack_k3s.vmid
     node     = module.tack_k3s.node
     hostname = module.tack_k3s.hostname
-    ipv4     = module.tack_k3s.ipv4
     ipv6     = module.tack_k3s.ipv6
     cluster  = module.tack_k3s.cluster
   }

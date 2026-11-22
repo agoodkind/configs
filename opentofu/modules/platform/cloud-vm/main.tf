@@ -99,9 +99,12 @@ resource "proxmox_virtual_environment_vm" "server" {
     dynamic "ip_config" {
       for_each = var.guest.bridge == null ? [] : [var.guest]
       content {
-        ipv4 {
-          address = var.guest.ipv4_cidr
-          gateway = var.guest.ipv4_gateway
+        dynamic "ipv4" {
+          for_each = var.guest.ipv4_cidr == null ? [] : [var.guest.ipv4_cidr]
+          content {
+            address = ipv4.value
+            gateway = var.guest.ipv4_gateway
+          }
         }
         ipv6 {
           address = var.guest.ipv6_cidr
