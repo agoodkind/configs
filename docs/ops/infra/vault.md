@@ -132,7 +132,7 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
    ./configsctl tofu "$root" apply "-target=$guest.pveguest_network_interface.eth0"
    ```
 
-5. In the guest, check `ip -br link show eth0`, `ip address show dev eth0`, `ip route show default`, `ip -6 route show default`, and `getent hosts hypervisor.home.goodkind.io`. Require the assigned MAC, a DHCPv4 lease, a global SLAAC address, all assigned private addresses, and upstream default routes. Reject either old Vault gateway. Test UniFi through its private A and AAAA records from the SFP LAN before removing the old uplink.
+5. In the guest, check `ip -br link show eth0`, `ip address show dev eth0`, `ip route show default`, `ip -6 route show default`, and `getent hosts hypervisor.home.goodkind.io`. Require the assigned MAC, a DHCPv4 lease, a global SLAAC address, all assigned private addresses, and upstream default routes. Reject either old Vault gateway. Test UniFi from the SFP LAN using its DHCPv4 and SLAAC addresses before removing the old uplink.
 6. Run these database checks after **each** data LXC starts. FoundationDB uses double redundancy and three coordinators. YugabyteDB uses three replicas. The first migrated peer cannot form a majority alone. Verify its processes, addresses, and individual listener connections from VM 124 before continuing. After the second move, check election and database availability again. After the third move, require three live YugabyteDB masters, full FoundationDB replication and one-machine fault tolerance, and a successful Tack read.
 
    Run the queries from the controller through Vault's Proxmox guest command API. Set `VAULT_API_URL` to the HTTPS Proxmox origin with its trusted certificate. Set `VAULT_API_HEADER_FILE` to a private file containing the automation token's complete Authorization header. Run the following in Bash. Each call prints its private local directory. The function saves the request in `request.json`, the start response in `start.json`, the latest poll response in `status.json`, and the acknowledgment response in `ack.json`.
@@ -172,20 +172,16 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
 
 ## Switch private access and management
 
-1. Confirm both production connector Pods are ready on VM 124. Enable private routing and verify the existing Tack HTTP ingress. Provision the specific management routes and WARP profile entries through the independent Vault tunnel.
+1. Confirm both production connector Pods are ready on VM 124. Verify the existing Tack HTTP ingress. Provision the specific management routes and WARP profile entries through the independent Vault tunnel.
 
    ```sh
    ./configsctl tofu shared/cloudflare-zero-trust apply '-target=cloudflare_zero_trust_tunnel_cloudflared_config.tack_k3s["prod"]'
    ./configsctl tofu shared/cloudflare-zero-trust apply -target=module.cloudflare.cloudflare_zero_trust_tunnel_cloudflared_route.vault_management -target=module.cloudflare.cloudflare_zero_trust_device_custom_profile.berylax_lan -target=module.cloudflare.cloudflare_zero_trust_device_custom_profile.tun_only
    ```
 
-2. Establish a direct controller SSH and API connection through the existing management LAN. The broad guest routes currently include the old management addresses. If necessary, temporarily resolve `hypervisor.home.goodkind.io` on the controller to the working management LAN address. Keep the independent console open. Switch the guest routes, then test private IPv4 and IPv6, UniFi, and guest SSH from a WARP client.
+2. Establish a direct controller SSH and API connection through the existing management LAN. If necessary, temporarily resolve `hypervisor.home.goodkind.io` on the controller to the working management LAN address. Keep the independent console open.
 
-   ```sh
-   ./configsctl tofu shared/cloudflare-zero-trust apply -target=module.cloudflare.cloudflare_zero_trust_tunnel_cloudflared_route.home_ipv4 -target=module.cloudflare.cloudflare_zero_trust_tunnel_cloudflared_route.home_guests
-   ```
-
-3. On the Vault console, verify LXC 102 uses its VF and responds at its private service addresses. Move the old bridge include and networkd definition outside their active directories. If networkd manages only the retiring uplink, disable its host service after cutover. Preserve other managed links.
+3. On the Vault console, verify LXC 102 uses its VF and responds at its automatically assigned LAN addresses. Move the old bridge include and networkd definition outside their active directories. If networkd manages only the retiring uplink, disable its host service after cutover. Preserve other managed links.
 
    ```sh
    mv /etc/network/interfaces.d/uplink "$recovery/uplink.retired"
@@ -201,7 +197,7 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
 
    If the old management connection drops during activation, inspect the running addresses and pending configuration on the console. Use `pvesh set /nodes/vault/network` to complete a pending, reviewed activation. If the obsolete bridge still owns the port, detach it on the console with `ip link set enp4s0 nomaster`, remove the unused bridge with `ip link delete uplink type bridge`, and run `ifreload -a`. Verify direct addresses, both gateways, and the host tunnel before continuing.
 
-5. Update management DNS. Remove temporary controller name overrides. From a WARP client, check IPv4 and IPv6 SSH and port 8006 by the management name. Confirm the specific routes use the host connector and the two guest prefixes use Tack.
+5. Update management DNS. Remove temporary controller name overrides. From a WARP client, check IPv4 and IPv6 SSH and port 8006 by the management name. Confirm the specific routes use the host connector.
 
    ```sh
    ./configsctl tofu shared/cloudflare-dns apply '-target=cloudflare_dns_record.static["goodkind.io/A/hypervisor.home.goodkind.io/9f586dc5"]' '-target=cloudflare_dns_record.static["goodkind.io/AAAA/hypervisor.home.goodkind.io/ec2ffb07"]'
@@ -230,4 +226,4 @@ Schedule a Tack maintenance window. The old guest bridge and the SFP LAN use sep
 1. Stop migration applies. Keep the maintenance window open until the Tack application and its database majority use the same Ethernet network.
 2. If host management fails, use the physical console. Restore the saved interface files, networkd unit, and forwarding settings. Restore the saved SDN definitions if necessary. Inspect the pending changes and apply them with `pvesh set /cluster/sdn`. Enable the original network services, run `ifreload -a`, and restore only the retired translation rules from the saved firewall configuration. Confirm original management and host connector access.
 3. Restore each affected guest's saved network files, including the original manager configuration and DHCP hooks. Remove the provider's additional per-interface files created during staging. Shut down the guest. Remove its VF attachment with `pct set "$id" -delete hostnic0` or `qm set 124 -delete hostpci0`. Restore its exact saved net0 and on-boot setting. For example, use `pct set "$id" -net0 "$original_net0"` for a container. For VM 124, also restore its saved cloud-init IP configuration. Start the guest and verify original addresses, routes, and disks.
-4. Restore the old guest tunnel routes and management DNS records through the previous deployed configuration. Confirm host and guest access from WARP. If reverting the overlay, release every VF attachment and remove the saved VF declaration through the node API first. Review a fresh plan against the restored configuration before resuming ordinary applies.
+4. Restore the old management DNS records through the previous deployed configuration. Confirm host access from WARP and guest access from the guest LAN. If reverting the overlay, release every VF attachment and remove the saved VF declaration through the node API first. Review a fresh plan against the restored configuration before resuming ordinary applies.

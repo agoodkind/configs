@@ -108,14 +108,6 @@ locals {
       ttl     = 1
       proxied = false
     }
-    "goodkind.io/A/unifi.home.goodkind.io/e1a87412" = {
-      zone    = "goodkind.io"
-      name    = "unifi.home.goodkind.io"
-      type    = "A"
-      content = "10.250.0.102"
-      ttl     = 1
-      proxied = false
-    }
     "goodkind.io/AAAA/berylax.goodkind.io/71fc9381" = {
       zone    = "goodkind.io"
       name    = "berylax.goodkind.io"
@@ -161,14 +153,6 @@ locals {
       name    = "nas.home.goodkind.io"
       type    = "AAAA"
       content = "3d06:bad:b01:1::3"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/unifi.home.goodkind.io/3f88d2f2" = {
-      zone    = "goodkind.io"
-      name    = "unifi.home.goodkind.io"
-      type    = "AAAA"
-      content = "3d06:bad:b01::102"
       ttl     = 1
       proxied = false
     }
