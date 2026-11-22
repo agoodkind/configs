@@ -3,6 +3,10 @@ services:
     networks:
       default:
         ipv6_address: 3d06:bad:b01:0:7ac::2
+  audit-consumer:
+    networks:
+      default:
+        ipv6_address: 3d06:bad:b01:0:7ac::5
   kafka:
     restart: "no"
     environment:
