@@ -35,9 +35,8 @@ For a QEMU virtual machine with a configured serial console:
 ssh -t root@<proxmox-host> 'qm terminal <vmid>'
 ```
 
-OPNsense also has a serial control channel; see
-[the OPNsense out-of-band daemon](../opnsense/daemon.md). For hypervisor
-recovery, see [emergency out-of-band access](oob.md).
+For OPNsense serial access, see
+[the OPNsense out-of-band daemon](../opnsense/daemon.md).
 
 ## Diagnostics-only SSH options
 
