@@ -14,7 +14,7 @@ locals {
       ipv4_cidr = "${local.tack_k3s_guest.ipv4}/24"
       ipv6_cidr = "${local.tack_k3s_guest.ipv6}/64"
     })
-    cloud_image = module.artifacts.debian_cloud_image
+    cloud_image = module.artifacts.debian_generic_image
     artifact    = module.artifacts.k3s
     cluster_network = {
       pod_cidr     = "fd42:7461:636b:300::/56"
