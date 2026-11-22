@@ -1,21 +1,3 @@
-removed {
-  from = remote_file.host_network
-  lifecycle { destroy = false }
-}
-
-resource "linux_file" "cloudflared_service" {
-  path    = "/etc/systemd/system/cloudflared.service"
-  content = file("${path.module}/network/cloudflared.service")
-}
-
-resource "linux_systemd_unit" "cloudflared" {
-  name          = "cloudflared.service"
-  enabled       = true
-  active        = true
-  daemon_reload = true
-  triggers      = { unit = linux_file.cloudflared_service.sha256 }
-}
-
 resource "linux_sysctl" "guest_pf_ipv6" {
   name  = "net.ipv6.conf.${module.vault_network.guest_pf}.disable_ipv6"
   value = "1"

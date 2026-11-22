@@ -4,19 +4,18 @@ variables {
     tack = {
       hostname      = "tack-prod-001.vault.goodkind.io"
       vmid          = 117
+      node          = "vault"
       ipv6          = "2001:db8::117"
       mail_username = "host-tack-home-goodkind-io"
       mail_from     = "tack@goodkind.io"
     }
-    proxy = { ipv6 = "2001:db8::110" }
   }
   shared_vars = {
     smtp_host        = "mail.smtp2go.com"
     smtp_port        = 587
     smtp_from_domain = "goodkind.io"
   }
-  proxy_vars = { sshpiper_upstream_pubkey = "ssh-ed25519 test" }
-  timezone   = "America/Los_Angeles"
+  timezone = "America/Los_Angeles"
 }
 
 run "renamed_vault_guest" {

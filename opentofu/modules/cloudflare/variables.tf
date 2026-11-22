@@ -25,33 +25,8 @@ variable "berylax_beacon_sha256" {
   type        = string
 }
 
-variable "dns_search_suffix" {
-  description = "DNS search suffix pushed to devices by every profile."
-  type        = string
-}
-
-variable "berylax_include" {
-  description = <<-EOT
-    Split-tunnel include list for the on-LAN Berylax profile, in the exact order
-    Cloudflare stores it. The order is load bearing, because the provider diffs
-    this list by position. A list in a different order makes the provider send one
-    entry holding both an address and a host, and the API rejects that with
-    error 2049.
-  EOT
-  type = list(object({
-    address     = optional(string)
-    host        = optional(string)
-    description = optional(string)
-  }))
-}
-
-variable "tun_only_include" {
-  description = <<-EOT
-    Split-tunnel include list for the away profile, in the exact order
-    Cloudflare stores it. The provider diffs this list by position. A reordered
-    list can make it send one entry with both an address and a host, which the
-    API rejects with error 2049.
-  EOT
+variable "warp_include" {
+  description = "Split tunnel include list for both WARP profiles."
   type = list(object({
     address     = optional(string)
     host        = optional(string)

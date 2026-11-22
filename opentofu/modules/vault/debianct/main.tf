@@ -6,10 +6,7 @@ resource "proxmox_virtual_environment_container" "debianct" {
   vm_id     = local.service_mapping.debianct.vmid
 
   initialization {
-    hostname = split(".", local.service_mapping.debianct.hostname)[0]
-    dns {
-      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.debianct.hostname)[0]
-    }
+    hostname = local.service_mapping.debianct.hostname
   }
 
   features {
@@ -59,7 +56,6 @@ variable "service_mapping" { type = object({
   debianct = object({
     vmid     = number
     hostname = string
-    ipv6     = string
   })
 }) }
 

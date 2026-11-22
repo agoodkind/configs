@@ -142,12 +142,12 @@ provider "registry.opentofu.org/tenstad/remote" {
 }
 
 provider "tofu.home.arpa/agoodkind/pveguest" {
-  version     = "0.1.7"
-  constraints = ">= 0.1.1, >= 0.1.3, >= 0.1.7, 0.1.7"
+  version     = "0.1.9"
+  constraints = ">= 0.1.1, >= 0.1.3, >= 0.1.9, 0.1.9"
   hashes = [
-    "h1:7uayrWfV0MYvK7wLx+7lHHBTD9HkG/g9gm2WUZhWbTc=",
-    "h1:TNQSyIWLbcFgr7naIZicxm7s86MqXlqjhsYL1bOk/nk=",
-    "h1:pfnbg9EbzkXkVbtqicZAOjOe7Viss+iYzW4l+5hRzzM=",
-    "h1:uCNAC/7JezTsOBtoRJsgSKl1msEGcjQ8zFIN5KUDhkM=",
+    "h1:2vCjzYQK6U0otQKB2PxHc7kihGepyGe9ElYl8yl9aCg=",
+    "h1:enSg1dlJ+YWf1xFrrY54ARstMyfOFWmq16zPExwWCGs=",
+    "h1:l+A3TfCvlcmdgj7mktBuvQRBzDbqHxilnuT7pXT7AiY=",
+    "h1:vFkXrtyMb/i7KKUH6Krmu86I3WTKWJLDdKQfxuUCNdc=",
   ]
 }

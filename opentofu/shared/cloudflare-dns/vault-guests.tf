@@ -1,7 +1,5 @@
 locals {
   vault_guest_keys = toset([
-    "debianct",
-    "proxy",
     "seaweedfs",
     "tack",
     "tack_app2",

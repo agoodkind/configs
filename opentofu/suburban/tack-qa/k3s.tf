@@ -13,7 +13,6 @@ module "tack_k3s_vm" {
 }
 locals { k3s_preparation = {
   public_keys                              = local.github_keys
-  restricted_key_lines                     = local.sshpiper_lines
   timezone                                 = module.configuration.vm_recipe.timezone
   login_dir                                = local.shared_vars.login_dir
   revision                                 = local.shared_vars.guest_prep_revision
@@ -32,7 +31,7 @@ module "tack_k3s_base" {
   networkd_wait_online_enabled = true
 
   public_keys                              = local.k3s_preparation.public_keys
-  restricted_key_lines                     = local.k3s_preparation.restricted_key_lines
+  restricted_key_lines                     = []
   timezone                                 = local.k3s_preparation.timezone
   login_dir                                = local.k3s_preparation.login_dir
   revision                                 = local.k3s_preparation.revision

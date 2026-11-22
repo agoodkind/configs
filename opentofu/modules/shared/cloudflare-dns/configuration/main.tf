@@ -1,5 +1,3 @@
-module "debianct" { source = "../../../configuration/services/debianct" }
-module "proxy" { source = "../../../configuration/services/proxy" }
 module "seaweedfs" { source = "../../../configuration/services/seaweedfs" }
 module "tack" { source = "../../../configuration/services/tack" }
 module "tack_app2" { source = "../../../configuration/services/tack_app2" }
@@ -11,8 +9,6 @@ module "poweredge_hypervisor" { source = "../../../poweredge/services/poweredge_
 locals {
   service_mapping = {
     poweredge_hypervisor = module.poweredge_hypervisor.value
-    debianct             = module.debianct.value
-    proxy                = module.proxy.value
     seaweedfs            = module.seaweedfs.value
     tack                 = module.tack.value
     tack_app2            = module.tack_app2.value
@@ -29,7 +25,5 @@ locals {
   }
 }
 output "lock_targets" { value = local.lock_targets }
-output "proxy_public_key" { value = module.proxy.upstream_public_key }
-output "proxy_address" { value = module.proxy.value.ipv6 }
 
 output "managed_guests" { value = {} }

@@ -1,8 +1,19 @@
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${subnet}
+          ip_range: ${dynamic_range}
+
 services:
   app:
     networks:
       default:
         ipv6_address: 3d06:bad:b01:0:7ac::2
+  audit-consumer:
+    networks:
+      default:
+        ipv6_address: 3d06:bad:b01:0:7ac::5
   kafka:
     restart: "no"
     environment:

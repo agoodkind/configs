@@ -21,10 +21,6 @@ resource "cloudflare_dns_record" "static" {
   comment  = try(each.value.comment, null)
   tags     = try(each.value.tags, null)
   settings = try(each.value.settings, null)
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "cloudflare_dns_record" "static_silver" {
@@ -68,15 +64,6 @@ locals {
       ttl     = 1
       proxied = false
     }
-    "goodkind.io/A/*.home.goodkind.io/f078473b" = {
-      zone    = "goodkind.io"
-      name    = "*.home.goodkind.io"
-      type    = "A"
-      content = "10.250.0.110"
-      ttl     = 1
-      proxied = false
-      comment = "proxy"
-    }
     "goodkind.io/A/hypervisor.home.goodkind.io/9f586dc5" = {
       zone    = "goodkind.io"
       name    = "hypervisor.home.goodkind.io"
@@ -114,22 +101,6 @@ locals {
       name    = "suburban-hypervisor.goodkind.io"
       type    = "A"
       content = "10.240.0.148"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/A/unifi.home.goodkind.io/e1a87412" = {
-      zone    = "goodkind.io"
-      name    = "unifi.home.goodkind.io"
-      type    = "A"
-      content = "10.250.0.102"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/*.home.goodkind.io/9b9c74a5" = {
-      zone    = "goodkind.io"
-      name    = "*.home.goodkind.io"
-      type    = "AAAA"
-      content = "3d06:bad:b01::110"
       ttl     = 1
       proxied = false
     }
@@ -178,14 +149,6 @@ locals {
       name    = "nas.home.goodkind.io"
       type    = "AAAA"
       content = "3d06:bad:b01:1::3"
-      ttl     = 1
-      proxied = false
-    }
-    "goodkind.io/AAAA/unifi.home.goodkind.io/3f88d2f2" = {
-      zone    = "goodkind.io"
-      name    = "unifi.home.goodkind.io"
-      type    = "AAAA"
-      content = "3d06:bad:b01::102"
       ttl     = 1
       proxied = false
     }
@@ -381,28 +344,6 @@ locals {
       name    = "suburban-pikvm.goodkind.io"
       type    = "CNAME"
       content = "6e73b6d4-2e0a-4a0c-b72f-b8b70d20f909.cfargotunnel.com"
-      ttl     = 1
-      proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
-    "goodkind.io/CNAME/vault-oob.goodkind.io/1df39f47" = {
-      zone    = "goodkind.io"
-      name    = "vault-oob.goodkind.io"
-      type    = "CNAME"
-      content = "88f11d0d-6148-4670-891d-72c0286ca48d.cfargotunnel.com"
-      ttl     = 1
-      proxied = true
-      settings = {
-        flatten_cname = false
-      }
-    }
-    "goodkind.io/CNAME/vault-test.goodkind.io/e7daee7a" = {
-      zone    = "goodkind.io"
-      name    = "vault-test.goodkind.io"
-      type    = "CNAME"
-      content = "50453c03-7d04-40fa-a86e-a8c88e851b78.cfargotunnel.com"
       ttl     = 1
       proxied = true
       settings = {
