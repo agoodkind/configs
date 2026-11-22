@@ -1,6 +1,6 @@
 terraform {
   required_providers {
-    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = ">= 0.1.7" }
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = ">= 0.1.9" }
   }
 }
 
@@ -23,6 +23,11 @@ variable "guest" {
 variable "phase" { type = string }
 variable "dns_servers" { type = list(string) }
 
+variable "ipv6_proxy_neighbors" {
+  type    = set(string)
+  default = null
+}
+
 locals {
   packages = {
     netplan  = ["netplan.io"]
@@ -40,18 +45,19 @@ resource "pveguest_apt_packages" "network" {
 }
 
 resource "pveguest_network_interface" "eth0" {
-  node        = "vault"
-  vmid        = var.guest.vmid
-  kind        = var.guest.kind
-  backend     = var.guest.backend
-  name        = "eth0"
-  mac         = var.guest.mac
-  phase       = var.phase
-  dhcp4       = true
-  slaac       = true
-  addresses   = var.guest.addresses
-  dns_servers = var.dns_servers
-  depends_on  = [pveguest_apt_packages.network]
+  node                 = "vault"
+  vmid                 = var.guest.vmid
+  kind                 = var.guest.kind
+  backend              = var.guest.backend
+  name                 = "eth0"
+  mac                  = var.guest.mac
+  phase                = var.phase
+  dhcp4                = true
+  slaac                = true
+  addresses            = var.guest.addresses
+  dns_servers          = var.dns_servers
+  ipv6_proxy_neighbors = var.ipv6_proxy_neighbors
+  depends_on           = [pveguest_apt_packages.network]
 }
 
 resource "pveguest_container_options" "hostnic" {

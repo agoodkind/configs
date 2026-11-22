@@ -7,7 +7,7 @@ provider "proxmox" {
 terraform {
   required_version = ">= 1.11"
   required_providers {
-    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.7" }
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = "0.1.9" }
     http     = { source = "hashicorp/http", version = ">= 3.0" }
     proxmox  = { source = "bpg/proxmox", version = "0.116.0" }
   }
