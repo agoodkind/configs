@@ -11,8 +11,11 @@ module "tack_release" {
   role = "owner"
 
   additional_compose_files = ["docker-compose.k3s-kafka.yml"]
-  configuration_revisions  = { search_endpoint = linux_file_line.compose_search.line }
-  health_url               = "http://[3d06:bad:b01:0:7ac::2]:8000/healthz"
+  configuration_revisions = {
+    search_endpoint = linux_file_line.compose_search.line
+    compose_overlay = pveguest_file.k3s_kafka_overlay.write_id
+  }
+  health_url = "http://[3d06:bad:b01:0:7ac::2]:8000/healthz"
 
   commit          = local.tack_release.commit
   server_digest   = local.tack_release.server_digest
