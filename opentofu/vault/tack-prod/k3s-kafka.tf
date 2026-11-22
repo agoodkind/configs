@@ -1,10 +1,14 @@
 locals {
   k3s_kafka_guest = local.guests["tack"]
-  docker_ipam = {
+  k3s_kafka_compose = templatefile("${path.module}/files/k3s-kafka.compose.yml.tftpl", {
     subnet        = local.service_mapping.tack.docker_v6_subnet
-    gateway       = local.service_mapping.tack.docker_v6_gateway
     dynamic_range = cidrsubnet(local.service_mapping.tack.docker_v6_subnet, 1, 1)
-  }
+  })
+
+  k3s_kafka_services = yamldecode(local.k3s_kafka_compose).services
+  k3s_kafka_proxy_neighbors = toset([
+    for name in ["app", "kafka"] : local.k3s_kafka_services[name].networks.default.ipv6_address
+  ])
 }
 
 resource "pveguest_file" "k3s_kafka_overlay" {
@@ -12,7 +16,7 @@ resource "pveguest_file" "k3s_kafka_overlay" {
   vmid    = local.k3s_kafka_guest.vmid
   kind    = local.k3s_kafka_guest.kind
   path    = "/root/tack/docker-compose.k3s-kafka.yml"
-  content = templatefile("${path.module}/files/k3s-kafka.compose.yml.tftpl", local.docker_ipam)
+  content = local.k3s_kafka_compose
 }
 
 resource "pveguest_file" "k3s_kafka_firewall" {
@@ -57,10 +61,9 @@ resource "pveguest_systemd_unit" "k3s_kafka_listener" {
   active  = true
 
   restart_on = {
+    compose  = pveguest_download.compose_network.write_id
     overlay  = pveguest_file.k3s_kafka_overlay.write_id
     firewall = pveguest_file.k3s_kafka_firewall.write_id
     unit     = pveguest_file.k3s_kafka_unit["tack-k3s-kafka-listener.service"].write_id
   }
-
-  depends_on = [pveguest_systemd_unit.compose_network]
 }

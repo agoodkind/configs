@@ -13,9 +13,10 @@ variable "stopped_guest_ids" {
 }
 
 module "guest_network" {
-  source      = "../../modules/vault/guest-network"
-  for_each    = { for key in concat(tolist(module.configuration.guest_keys), ["tack_k3s"]) : key => module.vault_network.guest_networks[key] }
-  guest       = each.value
-  phase       = contains(var.staged_guest_ids, each.value.vmid) ? "staged" : "active"
-  dns_servers = module.vault_network.guest.dns_servers
+  source               = "../../modules/vault/guest-network"
+  for_each             = { for key in concat(tolist(module.configuration.guest_keys), ["tack_k3s"]) : key => module.vault_network.guest_networks[key] }
+  guest                = each.value
+  phase                = contains(var.staged_guest_ids, each.value.vmid) ? "staged" : "active"
+  dns_servers          = module.vault_network.guest.dns_servers
+  ipv6_proxy_neighbors = each.key == "tack" ? local.k3s_kafka_proxy_neighbors : null
 }
