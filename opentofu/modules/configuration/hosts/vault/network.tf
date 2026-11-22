@@ -10,7 +10,7 @@ locals {
       mac       = "bc:24:11:73:b0:3c"
       addresses = []
     }
-    # Release this VF and these addresses after the replacement Kubernetes VM serves unifi clients and private administration.
+    # Release this VF after a Kubernetes VM replaces the UniFi LXC.
     unifi = {
       vmid      = 102
       index     = 2
@@ -19,7 +19,7 @@ locals {
       driver    = "iavf"
       ifname    = "vfct102"
       mac       = "bc:24:11:9e:dc:6d"
-      addresses = ["10.250.0.102/24", "3d06:bad:b01::102/64"]
+      addresses = []
     }
     # Release this VF and these addresses after the replacement Kubernetes VM serves tack clients and private administration.
     tack = {

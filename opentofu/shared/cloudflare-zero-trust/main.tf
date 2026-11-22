@@ -2,11 +2,38 @@ module "contracts" {
   source = "../../modules/contracts"
 }
 
+module "vault_network" {
+  source = "../../modules/configuration/hosts/vault"
+}
+
 locals {
-  management_routes = {
-    ipv4 = "${split("/", var.management_ipv4_cidr)[0]}/32"
-    ipv6 = "${split("/", var.management_ipv6_cidr)[0]}/128"
-  }
+  # TODO: Replace fixed guest addresses with hostnames that k3s resolves
+  # independently of the guest addresses.
+  tack_static_route_label = "tack-tmp-statics"
+  tack_static_guests = [
+    "tack", "seaweedfs", "tack_data1", "tack_data2", "tack_data3",
+    "tack_app2", "tack_k3s", "tack_search1",
+  ]
+  tack_static_routes = contains(var.tack_k3s_environments, "prod") ? flatten([
+    for guest in local.tack_static_guests : [
+      for cidr in module.vault_network.guest_networks[guest].addresses :
+      "${split("/", cidr)[0]}/${strcontains(cidr, ":") ? 128 : 32}"
+    ]
+  ]) : []
+
+  warp_include = concat([
+    { address = "3eef::/48", description = "Suburban testbed IPv6" },
+    { address = "3d06:bad:b01:200::/56", description = "Suburban IPv6" },
+    { address = "10.240.0.0/16", description = "Suburban IPv4" },
+    { address = "3d06:bad:b01:2600::/56", description = "Suburban NAT64" },
+    { address = "3d06:bad:b01:6400::/56", description = "Production NAT64" },
+    { address = "100.96.0.0/12", description = "WARP device addresses" },
+    ], [
+    for route in local.tack_static_routes : {
+      address     = route
+      description = local.tack_static_route_label
+    }
+  ], [{ host = "*.cloudflareaccess.com" }])
 }
 
 module "cloudflare" {
@@ -14,56 +41,16 @@ module "cloudflare" {
 
   providers = {
     cloudflare         = cloudflare.zero_trust
-    cloudflare.routes  = cloudflare.tunnel_routes
     cloudflare.tunnels = cloudflare.tunnels
   }
 
-  guest_tunnel_id   = contains(var.tack_k3s_environments, "prod") ? cloudflare_zero_trust_tunnel_cloudflared.tack_k3s["prod"].id : data.cloudflare_zero_trust_tunnel_cloudflared.production[0].id
-  management_routes = local.management_routes
-  account_id        = var.cloudflare_account_id
-  owner_email       = var.cloudflare_owner_email
+  account_id  = var.cloudflare_account_id
+  owner_email = var.cloudflare_owner_email
 
   berylax_beacon_sockaddr = var.berylax_beacon_sockaddr
   berylax_beacon_sha256   = var.berylax_beacon_sha256
 
-  dns_search_suffix = "home.goodkind.io"
-
-  # Both lists below are in the order Cloudflare stores them. The provider diffs
-  # a split-tunnel list by position. Reordering an entry can make the provider
-  # send one object with both address and host set, which the API rejects.
-  #
-  # The Berylax list still splits the site prefix into eight fragments that add up
-  # to the /48 minus 3d06:bad:b01:300::/56. Rewriting it as explicit /56 entries
-  # is a content change, so it stays out of this import.
-  berylax_include = [
-    { address = "3eef::/48", description = "suburban testbed v6" },
-    { address = "3d06:bad:b01::/55", description = "v6-all except Berylax LAN /56" },
-    { address = "3d06:bad:b01:800::/53", description = "v6-all except Berylax LAN /56" },
-    { address = "3d06:bad:b01:8000::/49", description = "v6-all except Berylax LAN /56" },
-    { address = "3d06:bad:b01:400::/54", description = "v6-all except Berylax LAN /56" },
-    { address = "3d06:bad:b01:4000::/50", description = "v6-all except Berylax LAN /56" },
-    { address = "3d06:bad:b01:200::/56", description = "v6-all except Berylax LAN /56" },
-    { address = "3d06:bad:b01:2000::/51", description = "v6-all except Berylax LAN /56" },
-    { address = "3d06:bad:b01:1000::/52", description = "v6-all except Berylax LAN /56" },
-    { address = "100.96.0.0/12", description = "WARP device IPs" },
-    { address = "10.250.0.0/16", description = "home-v4" },
-    { address = "10.240.0.0/16", description = "suburban-v4" },
-    { host = "*.cloudflareaccess.com" },
-  ]
-
-  tun_only_include = [
-    { address = "3d06:bad:b01::/56", description = "home" },
-    { address = "3d06:bad:b01:6400::/56", description = "production NAT64" },
-    { address = "3d06:bad:b01:2600::/56", description = "suburban NAT64" },
-    { address = "3d06:bad:b01:2400::/56", description = "monkeybrains sim NPTv6 egress" },
-    { address = "3d06:bad:b01:2300::/56", description = "att sim NPTv6 egress" },
-    { address = "3d06:bad:b01:2200::/56", description = "webpass sim NPTv6 egress" },
-    { address = "3d06:bad:b01:200::/56", description = "suburban" },
-    { address = "100.96.0.0/12", description = "WARP device IPs" },
-    { address = "10.250.0.0/16", description = "home-v4" },
-    { address = "10.240.0.0/16", description = "suburban-v4" },
-    { host = "*.cloudflareaccess.com" },
-  ]
+  warp_include = local.warp_include
 }
 
 module "configuration" { source = "../../modules/shared/cloudflare-zero-trust/configuration" }

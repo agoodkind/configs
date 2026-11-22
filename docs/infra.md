@@ -6,4 +6,4 @@ Cloudflare tunnels provide private guest access and publish web services. Cloudf
 
 OpenTofu owns nonsecret host and feature configuration. Each feature imports the shared identities and defaults that it uses. Guest preparation and controller lock selection read the same native guest definitions. Provider-free roots evaluate the selected feature for controller metadata and host artifacts.
 
-Use the [Vault migration procedure](ops/infra/vault.md) to move existing guests and verify the live network.
+Use [Inspect Vault networking](ops/infra/vault.md) to check live host and guest network state.

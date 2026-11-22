@@ -6,8 +6,6 @@
 # Profiles are first match by precedence. The lower number wins.
 
 locals {
-  # Settings both profiles share. They differ only in name, match, precedence,
-  # and include list.
   profile_defaults = {
     enabled                        = true
     allow_mode_switch              = true
@@ -24,7 +22,7 @@ locals {
   }
 }
 
-# The Berylax LAN beacon selects this profile, which omits its LAN prefix.
+# The Berylax LAN beacon selects this profile.
 # Precedence 499 puts it ahead of the away profile.
 resource "cloudflare_zero_trust_device_custom_profile" "berylax_lan" {
   account_id  = var.account_id
@@ -54,11 +52,8 @@ resource "cloudflare_zero_trust_device_custom_profile" "berylax_lan" {
     mode = "warp"
   }
 
-  dns_search_suffixes = [
-    { suffix = var.dns_search_suffix },
-  ]
-
-  include = concat(var.berylax_include, [for route in var.management_routes : { address = route, description = "Vault management" } if !anytrue([for entry in var.berylax_include : try(cidrcontains(entry.address, split("/", route)[0]), false)])])
+  dns_search_suffixes = []
+  include             = var.warp_include
 
   lifecycle {
     prevent_destroy = true
@@ -89,11 +84,8 @@ resource "cloudflare_zero_trust_device_custom_profile" "tun_only" {
     mode = "warp"
   }
 
-  dns_search_suffixes = [
-    { suffix = var.dns_search_suffix },
-  ]
-
-  include = concat(var.tun_only_include, [for route in var.management_routes : { address = route, description = "Vault management" } if !anytrue([for entry in var.tun_only_include : try(cidrcontains(entry.address, split("/", route)[0]), false)])])
+  dns_search_suffixes = []
+  include             = var.warp_include
 
   lifecycle {
     prevent_destroy = true

@@ -19,16 +19,6 @@ locals {
   }
 }
 
-data "cloudflare_zero_trust_tunnel_cloudflared" "production" {
-  provider   = cloudflare.tunnels
-  count      = contains(var.tack_k3s_environments, "prod") ? 0 : 1
-  account_id = var.cloudflare_account_id
-  filter = {
-    name       = module.contracts.tack_k3s_tunnel_names.prod
-    is_deleted = false
-  }
-}
-
 resource "cloudflare_zero_trust_tunnel_cloudflared" "tack_k3s" {
   provider = cloudflare.tunnels
   for_each = local.tack_connectors
