@@ -23,7 +23,7 @@ locals {
       "proxmox_sdn_subnet.vault_ipv4"               = "vault"
       "proxmox_sdn_subnet.vault_ipv6"               = "vault"
       "remote_file"                                 = "vault"
-      "terraform_data.guest_network_packages"       = "vault"
+      "terraform_data"                              = "vault"
       "proxmox_virtual_environment_container.unifi" = "vault"
       "proxmox_network_applier"                     = "vault"
       "linux_sysctl"                                = "vault"
