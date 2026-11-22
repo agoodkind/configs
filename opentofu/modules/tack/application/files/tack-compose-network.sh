@@ -36,9 +36,11 @@ wait_for_kafka() {
 }
 
 main() {
+    local expected_range=${1:?Specify the Docker IPv6 allocation range}
     local required_file
     local existing_network
     local network_mode
+    local allocation_range
 
     cd "${COMPOSE_DIRECTORY}"
     for required_file in "${COMPOSE_FILES[@]}" .env; do
@@ -59,12 +61,13 @@ main() {
             exit 1
         fi
         network_mode=$(/usr/bin/docker network inspect --format '{{index .Options "com.docker.network.bridge.gateway_mode_ipv6"}}' "${NETWORK_NAME}")
-        if [[ "${network_mode}" != "${ROUTED_MODE}" ]]; then
-            printf 'Network %s uses IPv6 mode %s; recreate the Compose network.\n' "${NETWORK_NAME}" "${network_mode}"
+        allocation_range=$(/usr/bin/docker network inspect --format '{{range .IPAM.Config}}{{.IPRange}}{{end}}' "${NETWORK_NAME}")
+        if [[ "${network_mode}" != "${ROUTED_MODE}" || "${allocation_range}" != "${expected_range}" ]]; then
+            printf 'Recreating %s with routed IPv6 and allocation range %s.\n' "${NETWORK_NAME}" "${expected_range}"
             /usr/bin/systemctl stop "${LISTENER_UNIT}"
             "${COMPOSE_COMMAND[@]}" down
         else
-            printf 'Network %s already uses routed IPv6; preserve the network and running Kafka.\n' "${NETWORK_NAME}"
+            printf 'Network %s uses routed IPv6 and allocation range %s.\n' "${NETWORK_NAME}" "${allocation_range}"
         fi
     fi
 

@@ -1,3 +1,11 @@
+networks:
+  default:
+    ipam:
+      config: !override
+        - subnet: ${subnet}
+          gateway: ${gateway}
+          ip_range: ${dynamic_range}
+
 services:
   app:
     networks:

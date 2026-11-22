@@ -1,5 +1,10 @@
 locals {
   k3s_kafka_guest = local.guests["tack"]
+  docker_ipam = {
+    subnet        = local.service_mapping.tack.docker_v6_subnet
+    gateway       = local.service_mapping.tack.docker_v6_gateway
+    dynamic_range = cidrsubnet(local.service_mapping.tack.docker_v6_subnet, 1, 1)
+  }
 }
 
 resource "pveguest_file" "k3s_kafka_overlay" {
@@ -7,7 +12,7 @@ resource "pveguest_file" "k3s_kafka_overlay" {
   vmid    = local.k3s_kafka_guest.vmid
   kind    = local.k3s_kafka_guest.kind
   path    = "/root/tack/docker-compose.k3s-kafka.yml"
-  content = file("${path.module}/files/k3s-kafka.compose.yml")
+  content = templatefile("${path.module}/files/k3s-kafka.compose.yml.tftpl", local.docker_ipam)
 }
 
 resource "pveguest_file" "k3s_kafka_firewall" {

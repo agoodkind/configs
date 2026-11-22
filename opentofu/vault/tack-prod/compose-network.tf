@@ -15,7 +15,7 @@ resource "pveguest_file" "compose_network_unit" {
   kind    = local.k3s_kafka_guest.kind
   path    = "/etc/systemd/system/tack-compose-network.service"
   mode    = "0644"
-  content = file("${path.module}/../../modules/tack/application/files/tack-compose-network.service")
+  content = templatefile("${path.module}/../../modules/tack/application/files/tack-compose-network.service.tftpl", local.docker_ipam)
 }
 
 resource "pveguest_file" "compose_network_script" {
