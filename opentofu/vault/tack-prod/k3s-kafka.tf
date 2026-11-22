@@ -1,5 +1,11 @@
 locals {
-  k3s_kafka_guest = local.guests["tack"]
+  k3s_kafka_guest   = local.guests["tack"]
+  k3s_kafka_compose = file("${path.module}/files/k3s-kafka.compose.yml")
+
+  k3s_kafka_services = yamldecode(local.k3s_kafka_compose).services
+  k3s_kafka_proxy_neighbors = toset([
+    for name in ["app", "kafka"] : local.k3s_kafka_services[name].networks.default.ipv6_address
+  ])
 }
 
 resource "pveguest_file" "k3s_kafka_overlay" {
@@ -7,7 +13,7 @@ resource "pveguest_file" "k3s_kafka_overlay" {
   vmid    = local.k3s_kafka_guest.vmid
   kind    = local.k3s_kafka_guest.kind
   path    = "/root/tack/docker-compose.k3s-kafka.yml"
-  content = file("${path.module}/files/k3s-kafka.compose.yml")
+  content = local.k3s_kafka_compose
 }
 
 resource "pveguest_file" "k3s_kafka_firewall" {
