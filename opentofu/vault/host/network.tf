@@ -1,8 +1,3 @@
-removed {
-  from = remote_file.host_network
-  lifecycle { destroy = false }
-}
-
 resource "linux_sysctl" "guest_pf_ipv6" {
   name  = "net.ipv6.conf.${module.vault_network.guest_pf}.disable_ipv6"
   value = "1"
