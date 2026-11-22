@@ -1,3 +1,10 @@
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${subnet}
+          ip_range: ${dynamic_range}
+
 services:
   app:
     networks:
