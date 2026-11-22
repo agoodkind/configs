@@ -8,7 +8,7 @@ variable "guest" {
     service_key       = string
     bridge            = optional(string)
     mac_address       = string
-    ipv4_cidr         = string
+    ipv4_cidr         = optional(string)
     ipv4_gateway      = optional(string)
     ipv6_cidr         = string
     ipv6_gateway      = optional(string)
@@ -20,11 +20,11 @@ variable "guest" {
 
   validation {
     condition = (
-      can(cidrnetmask(var.guest.ipv4_cidr)) &&
+      (var.guest.ipv4_cidr == null || can(cidrnetmask(var.guest.ipv4_cidr))) &&
       can(cidrhost(var.guest.ipv6_cidr, 0)) && strcontains(var.guest.ipv6_cidr, ":") &&
       length(var.guest.dns_servers) > 0
     )
-    error_message = "Set a valid IPv4 CIDR, IPv6 CIDR, and at least one DNS server for the VM."
+    error_message = "Set a valid IPv6 CIDR and at least one DNS server for the VM. The optional IPv4 CIDR must be valid."
   }
 }
 

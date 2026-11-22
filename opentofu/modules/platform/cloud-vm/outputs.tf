@@ -14,8 +14,8 @@ output "hostname" {
 }
 
 output "ipv4" {
-  description = "Static IPv4 address of the VM."
-  value       = split("/", var.guest.ipv4_cidr)[0]
+  description = "Static IPv4 address of the VM, or null when the guest does not configure one."
+  value       = var.guest.ipv4_cidr == null ? null : split("/", var.guest.ipv4_cidr)[0]
 }
 
 output "ipv6" {
