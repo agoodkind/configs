@@ -21,10 +21,6 @@ resource "cloudflare_dns_record" "static" {
   comment  = try(each.value.comment, null)
   tags     = try(each.value.tags, null)
   settings = try(each.value.settings, null)
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "cloudflare_dns_record" "static_silver" {
