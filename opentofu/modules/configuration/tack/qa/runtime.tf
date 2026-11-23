@@ -10,8 +10,8 @@ output "store_images" {
 }
 output "overlays" { value = module.artifacts.tack_overlays }
 
-locals { release_key = "74576c94ab9ec6662e9634978d72cb6f06de4470" }
-output "release" { value = module.artifacts.tack_releases[local.release_key] }
+locals { release_commit = "779e7618fe694a56f4100bacece9c3cb8d646f1f" }
+output "release" { value = module.artifacts.tack_releases[local.release_commit] }
 output "cloudflared_image" { value = module.artifacts.cloudflared_image }
 
 output "vm_capacity" { value = { cores = 2, memory_mib = 4096, disk_gib = 40 } }
