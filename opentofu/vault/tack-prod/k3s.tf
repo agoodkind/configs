@@ -1,11 +1,12 @@
 module "tack_k3s_vm" {
-  source      = "../../modules/platform/cloud-vm"
-  guest       = module.configuration.tack_k3s.guest
-  cloud_image = module.configuration.tack_k3s.cloud_image
-  vm_capacity = module.configuration.vm_capacity
-  tags        = module.configuration.vm_recipe.tags
-  pci_mapping = proxmox_hardware_mapping_pci.tack.name
-  started     = !contains(var.stopped_guest_ids, local.tack_vf.vmid)
+  source                = "../../modules/platform/cloud-vm"
+  guest                 = module.configuration.tack_k3s.guest
+  cloud_image           = module.configuration.tack_k3s.cloud_image
+  vm_capacity           = module.configuration.vm_capacity
+  tags                  = module.configuration.vm_recipe.tags
+  pci_mapping           = proxmox_hardware_mapping_pci.tack.name
+  secondary_pci_mapping = proxmox_hardware_mapping_pci.tack_secondary.name
+  started               = !contains(var.stopped_guest_ids, local.tack_vf.vmid)
   initialization = {
     public_keys     = local.k3s_preparation.public_keys
     packages        = module.configuration.vm_recipe.packages

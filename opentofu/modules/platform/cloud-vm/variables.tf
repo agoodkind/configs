@@ -63,6 +63,17 @@ variable "pci_mapping" {
   type    = string
   default = null
 }
+
+variable "secondary_pci_mapping" {
+  type    = string
+  default = null
+
+  validation {
+    condition     = var.secondary_pci_mapping == null || (var.pci_mapping != null && var.secondary_pci_mapping != var.pci_mapping)
+    error_message = "Set a primary PCI mapping and use a different mapping for the secondary PCI device."
+  }
+}
+
 variable "started" {
   type    = bool
   default = true

@@ -6,17 +6,35 @@ terraform {
 
 variable "guest" {
   type = object({
-    vmid      = number
-    kind      = string
-    backend   = string
-    mac       = string
-    ifname    = optional(string)
-    addresses = set(string)
+    vmid             = number
+    kind             = string
+    backend          = string
+    mac              = string
+    ifname           = optional(string)
+    addresses        = set(string)
+    secondary_mac    = string
+    secondary_ifname = optional(string)
+    primary_member   = string
   })
 
   validation {
     condition     = var.guest.kind != "lxc" || try(trimspace(var.guest.ifname) != "", false)
     error_message = "Set guest.ifname to a nonblank host interface name when guest.kind is lxc."
+  }
+
+  validation {
+    condition     = try(trimspace(var.guest.secondary_mac) != "" && lower(var.guest.secondary_mac) != lower(var.guest.mac), false)
+    error_message = "Set guest.secondary_mac to a MAC address that differs from guest.mac."
+  }
+
+  validation {
+    condition     = var.guest.kind != "lxc" || try(trimspace(var.guest.secondary_ifname) != "" && var.guest.secondary_ifname != var.guest.ifname, false)
+    error_message = "Set guest.secondary_ifname to a nonblank host interface name that differs from guest.ifname when guest.kind is lxc."
+  }
+
+  validation {
+    condition     = try(contains(["vf0", "vf1"], var.guest.primary_member), false)
+    error_message = "Set guest.primary_member to vf0 or vf1."
   }
 }
 
@@ -58,11 +76,25 @@ resource "pveguest_network_interface" "eth0" {
   dns_servers          = var.dns_servers
   ipv6_proxy_neighbors = var.ipv6_proxy_neighbors
   depends_on           = [pveguest_apt_packages.network]
+
+  bond = {
+    members = [
+      { name = "vf0", mac = var.guest.mac },
+      { name = "vf1", mac = var.guest.secondary_mac },
+    ]
+    primary          = var.guest.primary_member
+    miimon           = 100
+    fail_over_mac    = "active"
+    primary_reselect = "failure"
+  }
 }
 
 resource "pveguest_container_options" "hostnic" {
-  count   = var.guest.kind == "lxc" ? 1 : 0
-  node    = "vault"
-  vmid    = var.guest.vmid
-  options = { hostnic0 = "link=${var.guest.ifname},name=eth0" }
+  count = var.guest.kind == "lxc" ? 1 : 0
+  node  = "vault"
+  vmid  = var.guest.vmid
+  options = {
+    hostnic0 = "link=${var.guest.ifname},name=vf0"
+    hostnic1 = "link=${var.guest.secondary_ifname},name=vf1"
+  }
 }
