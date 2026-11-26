@@ -1,0 +1,37 @@
+name: Publish Tack release pins
+
+on:
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [tack-release-ready]
+
+permissions: {}
+
+concurrency:
+  group: tack-release-publisher
+  queue: max
+
+jobs:
+  publish:
+    if: github.repository == 'agoodkind/configs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: tack-release-publisher
+    steps:
+      - name: Create Configs publisher token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        id: publisher
+        with:
+          client-id: ${{ vars.TACK_RELEASE_PUBLISHER_CLIENT_ID }}
+          private-key: ${{ secrets.TACK_RELEASE_PUBLISHER_PRIVATE_KEY }}
+          owner: agoodkind
+          repositories: configs
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Publish or reconcile the release PR
+        uses: agoodkind/tofu-workflows/.github/actions/tack-release@0afbabcd48b7ac17fb4c92383d5d10490923a98d
+        with:
+          publisher-token: ${{ steps.publisher.outputs.token }}
+          publisher-slug: ${{ steps.publisher.outputs.app-slug }}
+          reporter-app-id: ${{ vars.TERRAKUBE_PLAN_REPORTER_APP_ID }}
