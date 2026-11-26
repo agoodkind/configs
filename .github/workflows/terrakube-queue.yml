@@ -19,15 +19,17 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       targets: ${{ steps.matrix.outputs.targets }}
+      library_commit: ${{ steps.library.outputs.commit }}
     steps:
       - name: Check out the queue implementation
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        id: library
+        uses: actions/checkout@v7
         with:
           repository: agoodkind/tofu-workflows
-          ref: b355da95a2c0a5822d9417208991ec3b7fcf3680
+          ref: refs/heads/main
           persist-credentials: false
           path: library
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: library/go.mod
           cache: false
@@ -35,7 +37,7 @@ jobs:
         working-directory: library
         run: go build -o "$RUNNER_TEMP/terrakube-queue" ./cmd/terrakube-queue
       - name: Read protected Configs main
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7
         with:
           ref: refs/heads/main
           fetch-depth: 0
@@ -65,13 +67,13 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Check out the queue implementation
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7
         with:
           repository: agoodkind/tofu-workflows
-          ref: b355da95a2c0a5822d9417208991ec3b7fcf3680
+          ref: ${{ needs.enrollments.outputs.library_commit }}
           persist-credentials: false
           path: library
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: library/go.mod
           cache: false
@@ -79,20 +81,20 @@ jobs:
         working-directory: library
         run: go build -o "$RUNNER_TEMP/terrakube-queue" ./cmd/terrakube-queue
       - name: Connect to the private Terrakube API
-        uses: Boostport/setup-cloudflare-warp@1a6a55dc16c68abe496dd85bd413d86cc5d794d8
+        uses: Boostport/setup-cloudflare-warp@v1
         with:
           organization: ${{ vars.WARP_ORGANIZATION }}
           auth_client_id: ${{ secrets.WARP_CLIENT_ID }}
           auth_client_secret: ${{ secrets.WARP_CLIENT_SECRET }}
       - name: Authorize the workspace promotion
         id: publisher
-        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc
+        uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ vars.PROMOTION_APP_CLIENT_ID }}
           private-key: ${{ secrets.PROMOTION_APP_PRIVATE_KEY }}
           permission-contents: write
       - name: Fetch Configs main and the promotion branches
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@v7
         with:
           ref: refs/heads/main
           fetch-depth: 0
