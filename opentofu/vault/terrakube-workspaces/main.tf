@@ -13,34 +13,18 @@ provider "terrakube" {
 }
 
 locals {
+  enrollment = jsondecode(file("${path.root}/../../../.github/terrakube/enrollments.json"))
   deployments = {
-    "suburban/tack-qa" = {
-      name   = "tack-qa-deploy"
-      branch = "terrakube/tack-qa"
-    }
-    "vault/tack-prod" = {
-      name   = "tack-prod-deploy"
-      branch = "terrakube/tack-prod"
-    }
+    for deployment in flatten([for app in local.enrollment.apps : app.deployments]) :
+    trimprefix(deployment.root, "opentofu/") => deployment
   }
-
-  secret_fields = ["vault", "vault_password", "ssh_private_key", "ssh_known_hosts", "provider_token"]
-
-  bindings = merge([
-    for selector in keys(local.deployments) : {
-      for field in local.secret_fields : "${selector}:${field}" => {
-        selector = selector
-        field    = field
-      }
-    }
-  ]...)
 }
 
 resource "terrakube_organization_template" "deploy" {
   for_each = local.deployments
 
   organization_id = var.terrakube_deploy_organization_id
-  name            = each.value.name
+  name            = "${each.value.name}-deploy"
   description     = "Plan and apply a promoted Configs revision with configsctl."
   version         = "1.0.0"
   content = yamlencode({
@@ -55,6 +39,19 @@ resource "terrakube_organization_template" "deploy" {
       }]
     }]
   })
+
+  lifecycle {
+    precondition {
+      condition = (
+        local.enrollment.version == 1 &&
+        can(regex("^[a-z0-9]+(-[a-z0-9]+)*$", each.value.name)) &&
+        can(regex("^opentofu/[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)+$", each.value.root)) &&
+        can(regex("^terrakube/[a-z0-9]+(-[a-z0-9]+)*$", each.value.promotion_branch)) &&
+        can(regex("^[a-z0-9]+(-[a-z0-9]+)*$", each.value.environment))
+      )
+      error_message = "The deployment enrollment requires version 1 and a valid name, Configs root and promotion branch."
+    }
+  }
 }
 
 resource "terrakube_workspace_vcs" "deploy" {
@@ -62,16 +59,57 @@ resource "terrakube_workspace_vcs" "deploy" {
 
   organization_id                     = var.terrakube_deploy_organization_id
   vcs_id                              = var.terrakube_deploy_vcs_id
-  name                                = each.value.name
+  name                                = "${each.value.name}-deploy"
   execution_mode                      = "remote"
   repository                          = "https://github.com/agoodkind/configs.git"
-  branch                              = each.value.branch
-  folder                              = "opentofu/${each.key}"
+  branch                              = each.value.promotion_branch
+  folder                              = each.value.root
   template_id                         = terrakube_organization_template.deploy[each.key].id
   iac_type                            = "tofu"
   iac_version                         = "1.13.9"
   allow_remote_apply                  = false
   restrict_apply_to_configured_branch = true
+}
+
+resource "terrakube_federated_credential" "deploy_queue" {
+  for_each = local.deployments
+
+  name       = "configs-deploy-${each.value.name}"
+  issuer_url = "https://token.actions.githubusercontent.com"
+  audience   = "terrakube-configs-deploy"
+}
+
+resource "terrakube_federated_credential_claim" "deploy_queue" {
+  for_each = merge([
+    for selector, deployment in local.deployments : {
+      for key, value in {
+        sub          = "repo:agoodkind/configs:environment:${deployment.environment}"
+        ref          = "refs/heads/main"
+        workflow_ref = "agoodkind/configs/.github/workflows/terrakube-queue.yml@refs/heads/main"
+      } : "${selector}:${key}" => { selector = selector, key = key, value = value }
+    }
+  ]...)
+
+  federated_credential_id = terrakube_federated_credential.deploy_queue[each.value.selector].id
+  claim_key               = each.value.key
+  claim_value             = each.value.value
+}
+
+resource "terrakube_workspace_access" "deploy_queue" {
+  for_each = local.deployments
+
+  organization_id  = var.terrakube_deploy_organization_id
+  workspace_id     = terrakube_workspace_vcs.deploy[each.key].id
+  name             = terrakube_federated_credential.deploy_queue[each.key].name
+  role             = "custom"
+  manage_job       = false
+  plan_job         = true
+  approve_job      = true
+  destroy_job      = false
+  manage_state     = false
+  manage_workspace = false
+
+  depends_on = [terrakube_federated_credential_claim.deploy_queue]
 }
 
 resource "terrakube_workspace_variable" "executor_setting" {
@@ -94,16 +132,16 @@ resource "terrakube_workspace_variable" "executor_setting" {
   sensitive       = false
 }
 
-resource "terrakube_workspace_variable" "credential" {
-  for_each = local.bindings
+resource "terrakube_workspace_variable" "service_account" {
+  for_each = local.deployments
 
   organization_id  = var.terrakube_deploy_organization_id
-  workspace_id     = terrakube_workspace_vcs.deploy[each.value.selector].id
-  key              = "CONFIGS_DEPLOY_${upper(each.value.field)}"
-  value_wo         = var.vault_terrakube_deployment_secrets[each.value.selector][each.value.field]
-  value_wo_version = var.terrakube_deployment_secret_versions[each.value.selector]
+  workspace_id     = terrakube_workspace_vcs.deploy[each.key].id
+  key              = "OP_SERVICE_ACCOUNT_TOKEN_${upper(replace(each.value.name, "-", "_"))}"
+  value_wo         = var.vault_terrakube_service_account_tokens[each.key]
+  value_wo_version = var.terrakube_deployment_secret_versions[each.key]
   category         = "ENV"
-  description      = "Protected input for this Configs deployment workspace."
+  description      = "Read the 1Password vault for this deployment."
   hcl              = false
   sensitive        = true
 }
@@ -114,6 +152,7 @@ output "deployment_targets" {
       organization_id = var.terrakube_deploy_organization_id
       workspace_id    = workspace.id
       template_id     = terrakube_organization_template.deploy[selector].id
+      environment     = local.deployments[selector].environment
     }
   }
 }
