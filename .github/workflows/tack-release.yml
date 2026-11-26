@@ -30,7 +30,7 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
       - name: Publish or reconcile the release PR
-        uses: agoodkind/tofu-workflows/.github/actions/tack-release@0afbabcd48b7ac17fb4c92383d5d10490923a98d
+        uses: agoodkind/tofu-workflows/.github/actions/tack-release@77fd1a9ae9be7c919aed40217ba4cb38edec725e
         with:
           publisher-token: ${{ steps.publisher.outputs.token }}
           publisher-slug: ${{ steps.publisher.outputs.app-slug }}
