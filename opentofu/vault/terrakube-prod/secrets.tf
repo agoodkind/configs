@@ -5,16 +5,18 @@ locals {
   ldap_admin  = "cn=admin,${local.ldap_root}"
   admin_group = "TERRAKUBE_ADMIN"
   dex_configuration = {
-    issuer    = "${local.dashboard_url}/dex"
+    issuer    = local.dex_issuer
     storage   = { type = "memory" }
     web       = { http = "[::]:5556" }
     telemetry = { http = "[::]:5558" }
     oauth2    = { responseTypes = ["code", "token", "id_token"], skipApprovalScreen = true }
     staticClients = [{
-      id           = "terrakube"
-      name         = "Terrakube"
-      public       = true
-      redirectURIs = [local.dashboard_url]
+      id     = local.dex_client_id
+      name   = "Terrakube"
+      public = true
+      redirectURIs = concat([local.dashboard_url], [
+        for port in local.discovery["login.v1"].ports : "http://localhost:${port}/login"
+      ])
     }]
     connectors = [{
       type = "ldap"
@@ -52,7 +54,7 @@ locals {
     terrakube-api-secrets = merge(local.api_storage_credentials, {
       InternalSecret         = local.signing_secret
       PatSecret              = base64encode(local.credentials.pat_secret)
-      DexClientId            = "terrakube"
+      DexClientId            = local.dex_client_id
       TerrakubeRedisPassword = local.credentials.valkey_password
       DatasourcePassword     = local.credentials.postgres_password
     })
@@ -67,7 +69,7 @@ locals {
     terrakube-registry-secrets = merge(local.api_storage_credentials, {
       InternalSecret = local.signing_secret
       PatSecret      = base64encode(local.credentials.pat_secret)
-      AppClientId    = "terrakube"
+      AppClientId    = local.dex_client_id
     })
     terrakube-postgres = { password = local.credentials.postgres_password }
     terrakube-valkey   = { default = local.credentials.valkey_password }

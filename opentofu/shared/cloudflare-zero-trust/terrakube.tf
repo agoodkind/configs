@@ -1,5 +1,22 @@
 module "terrakube" { source = "../../modules/vault/terrakube-prod/configuration" }
 
+variable "terrakube_native_webhook_enabled" {
+  description = "Publish the Terrakube webhook after the installed release verifies the original GitHub request bytes."
+  type        = bool
+  default     = false
+}
+
+locals {
+  terrakube_webhook_ingress = concat(var.terrakube_native_webhook_enabled ? [
+    {
+      hostname       = module.terrakube.webhook.hostname
+      path           = module.terrakube.webhook.path
+      service        = module.terrakube.webhook.origin
+      origin_request = { http_host_header = module.terrakube.webhook.hostname }
+    },
+  ] : [], [{ service = "http_status:404" }])
+}
+
 resource "cloudflare_zero_trust_tunnel_cloudflared" "terrakube" {
   provider = cloudflare.tunnels
 
@@ -19,15 +36,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "terrakube" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.terrakube.id
   source     = "cloudflare"
   config = {
-    ingress = [
-      {
-        hostname       = module.terrakube.webhook.hostname
-        path           = module.terrakube.webhook.path
-        service        = module.terrakube.webhook.origin
-        origin_request = { http_host_header = module.terrakube.webhook.hostname }
-      },
-      { service = "http_status:404" },
-    ]
+    ingress      = local.terrakube_webhook_ingress
     warp_routing = { enabled = true }
   }
 }

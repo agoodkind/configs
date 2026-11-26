@@ -1,7 +1,7 @@
 enableIPv6: true
 security:
   useOpenLDAP: false
-  dexClientId: terrakube
+  dexClientId: ${jsonencode(dex_client_id)}
   adminGroup: TERRAKUBE_ADMIN
 dex:
   enabled: false
@@ -27,6 +27,8 @@ api:
     databaseUser: terrakube
     databasePort: "5432"
   env:
+    - name: TerraformLoginEnabled
+      value: "false"
     - name: AwsEndpoint
       value: ${jsonencode(storage.endpoint)}
     - name: AwsEndpointRegion

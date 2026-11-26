@@ -23,6 +23,13 @@ http {
         ssl_certificate_key /etc/terrakube/tls/tls.key;
         ssl_protocols TLSv1.2 TLSv1.3;
 
+        set $api_origin http://terrakube-api-service.terrakube.svc.cluster.local:8080;
+        set $registry_origin http://terrakube-registry-service.terrakube.svc.cluster.local:8075;
+
+        location = /.well-known/terraform.json {
+            default_type application/json;
+            alias /etc/nginx/terrakube/terraform.json;
+        }
         location = /healthz {
             return 200;
         }
@@ -31,12 +38,10 @@ http {
             proxy_pass $origin;
         }
         location ~ ^/(access-token|admin/v1|api|app|callback|context|importer|logs|migrate|notification|oauth|pat|policy|proxy|registry/v1|remote|terraform/index\.json|tfoutput|tfstate|tofu|v3/api-docs|vcs|version|\.well-known)(/|$) {
-            set $origin http://terrakube-api-service.terrakube.svc.cluster.local:8080;
-            proxy_pass $origin;
+            proxy_pass $api_origin;
         }
         location /terraform/ {
-            set $origin http://terrakube-registry-service.terrakube.svc.cluster.local:8075;
-            proxy_pass $origin;
+            proxy_pass $registry_origin;
         }
         location / {
             set $origin http://terrakube-ui-service.terrakube.svc.cluster.local:8080;
