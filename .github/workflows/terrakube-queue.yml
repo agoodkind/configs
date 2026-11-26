@@ -1,0 +1,112 @@
+name: Terrakube deployment queue
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  enrollments:
+    if: >-
+      vars.TERRAKUBE_DEPLOYMENT_ENABLED == 'true' &&
+      github.repository == 'agoodkind/configs' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      targets: ${{ steps.matrix.outputs.targets }}
+      library_commit: ${{ steps.library.outputs.commit }}
+    steps:
+      - name: Check out the queue implementation
+        id: library
+        uses: actions/checkout@v7
+        with:
+          repository: agoodkind/tofu-workflows
+          ref: refs/heads/main
+          persist-credentials: false
+          path: library
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: library/go.mod
+          cache: false
+      - name: Build the queue command
+        working-directory: library
+        run: go build -o "$RUNNER_TEMP/terrakube-queue" ./cmd/terrakube-queue
+      - name: Read protected Configs main
+        uses: actions/checkout@v7
+        with:
+          ref: refs/heads/main
+          fetch-depth: 0
+          persist-credentials: false
+          path: configs
+      - name: Select enabled deployments
+        id: matrix
+        run: |
+          printf 'targets=' >> "$GITHUB_OUTPUT"
+          "$RUNNER_TEMP/terrakube-queue" matrix "$GITHUB_WORKSPACE/configs" deploy >> "$GITHUB_OUTPUT"
+
+  submit:
+    needs: enrollments
+    if: needs.enrollments.outputs.targets != '[]'
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.enrollments.outputs.targets) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ${{ matrix.target.environment }}
+    concurrency:
+      group: terrakube-queue-${{ matrix.target.name }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out the queue implementation
+        uses: actions/checkout@v7
+        with:
+          repository: agoodkind/tofu-workflows
+          ref: ${{ needs.enrollments.outputs.library_commit }}
+          persist-credentials: false
+          path: library
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: library/go.mod
+          cache: false
+      - name: Build the queue command
+        working-directory: library
+        run: go build -o "$RUNNER_TEMP/terrakube-queue" ./cmd/terrakube-queue
+      - name: Connect to the private Terrakube API
+        uses: Boostport/setup-cloudflare-warp@v1
+        with:
+          organization: ${{ vars.WARP_ORGANIZATION }}
+          auth_client_id: ${{ secrets.WARP_CLIENT_ID }}
+          auth_client_secret: ${{ secrets.WARP_CLIENT_SECRET }}
+      - name: Authorize the workspace promotion
+        id: publisher
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.PROMOTION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PROMOTION_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Fetch Configs main and the promotion branches
+        uses: actions/checkout@v7
+        with:
+          ref: refs/heads/main
+          fetch-depth: 0
+          token: ${{ steps.publisher.outputs.token }}
+          path: configs
+      - name: Submit the next reviewed commit
+        env:
+          TERRAKUBE_API_URL: ${{ vars.TERRAKUBE_API_URL }}
+          TERRAKUBE_ORGANIZATION_ID: ${{ vars.TERRAKUBE_ORGANIZATION_ID }}
+          TERRAKUBE_WORKSPACE_ID: ${{ vars.TERRAKUBE_WORKSPACE_ID }}
+          TERRAKUBE_TEMPLATE_ID: ${{ vars.TERRAKUBE_TEMPLATE_ID }}
+          TERRAKUBE_BASELINE_SHA: ${{ vars.TERRAKUBE_BASELINE_SHA }}
+          WORKSPACE: ${{ matrix.target.name }}
+          PROMOTION_ENVIRONMENT: ${{ matrix.target.environment }}
+        run: '"$RUNNER_TEMP/terrakube-queue" "$WORKSPACE" "$GITHUB_WORKSPACE/configs"'

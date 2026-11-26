@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "name": "tack",
+      "repository": "agoodkind/tack",
+      "deployments": [
+        {
+          "name": "tack-qa",
+          "root": "opentofu/suburban/tack-qa",
+          "promotion_branch": "terrakube/tack-qa",
+          "environment": "terrakube-tack-qa",
+          "enabled": false,
+          "shared_inputs": [
+            "configsctl",
+            "configsctl.yml",
+            "common",
+            "ansible/inventory/group_vars/all",
+            "opentofu/guest",
+            "opentofu/shared",
+            "opentofu/terraform.d",
+            "opentofu/terraform.tfvars"
+          ]
+        },
+        {
+          "name": "tack-prod",
+          "root": "opentofu/vault/tack-prod",
+          "promotion_branch": "terrakube/tack-prod",
+          "environment": "terrakube-tack-prod",
+          "enabled": false,
+          "shared_inputs": [
+            "configsctl",
+            "configsctl.yml",
+            "common",
+            "ansible/inventory/group_vars/all",
+            "opentofu/guest",
+            "opentofu/shared",
+            "opentofu/terraform.d",
+            "opentofu/terraform.tfvars"
+          ]
+        }
+      ],
+      "release": {
+        "adapter": "tack",
+        "source_branch": "main",
+        "workflow": ".github/workflows/build-push.yml"
+      }
+    }
+  ]
+}
