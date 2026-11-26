@@ -1,0 +1,25 @@
+dn: ${root}
+objectClass: dcObject
+objectClass: organization
+dc: terrakube
+o: Terrakube
+
+dn: ou=users,${root}
+objectClass: organizationalUnit
+ou: users
+
+dn: ${user}
+objectClass: inetOrgPerson
+cn: operator
+sn: Operator
+mail:: ${email}
+userPassword:: ${password_hash}
+
+dn: ou=groups,${root}
+objectClass: organizationalUnit
+ou: groups
+
+dn: cn=${group},ou=groups,${root}
+objectClass: groupOfNames
+cn: ${group}
+member: ${user}

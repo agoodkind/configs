@@ -1,0 +1,245 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: terrakube-postgres
+  namespace: ${namespace}
+spec:
+  clusterIP: None
+  selector:
+    app: terrakube-postgres
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: terrakube-postgres
+  namespace: ${namespace}
+spec:
+  serviceName: terrakube-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: terrakube-postgres
+  template:
+    metadata:
+      labels:
+        app: terrakube-postgres
+      annotations:
+        terrakube.goodkind.io/credential-version: "${secret_revision}"
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: docker.io/library/postgres:17.12-bookworm@sha256:1eff563f6c868b9b433566e9f3cf6e5c79fbd3b95bf70ec7277d376cdbfc50d7
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: terrakube
+            - name: POSTGRES_USER
+              value: terrakube
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: terrakube-postgres
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, terrakube, -d, terrakube]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        storageClassName: local-path
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 40Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: terrakube-openldap-service
+  namespace: ${namespace}
+spec:
+  selector:
+    app: terrakube-openldap
+  ports:
+    - name: ldap
+      port: 1389
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: terrakube-openldap
+  namespace: ${namespace}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: terrakube-openldap
+  template:
+    metadata:
+      labels:
+        app: terrakube-openldap
+      annotations:
+        terrakube.goodkind.io/credential-version: "${secret_revision}"
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: openldap
+          image: docker.io/bitnamilegacy/openldap:2.6.10-debian-12-r4@sha256:966fd39ed25813890e9bd57dac56def163bbcfe64967e0bae59ab018d505bd93
+          ports:
+            - name: ldap
+              containerPort: 1389
+          env:
+            - name: LDAP_ROOT
+              value: dc=terrakube,dc=internal
+            - name: LDAP_ADMIN_USERNAME
+              value: admin
+            - name: LDAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: terrakube-ldap
+                  key: password
+            - name: LDAP_SKIP_DEFAULT_TREE
+              value: "yes"
+            - name: LDAP_ALLOW_ANON_BINDING
+              value: "no"
+            - name: LDAP_CUSTOM_LDIF_DIR
+              value: /ldifs
+          readinessProbe:
+            tcpSocket:
+              port: ldap
+          volumeMounts:
+            - name: ldif
+              mountPath: /ldifs
+              readOnly: true
+      volumes:
+        - name: ldif
+          secret:
+            secretName: terrakube-ldap
+            items:
+              - key: local.ldif
+                path: local.ldif
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: terrakube-dex
+  namespace: ${namespace}
+spec:
+  selector:
+    app: terrakube-dex
+  ports:
+    - name: http
+      port: 5556
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: terrakube-dex
+  namespace: ${namespace}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: terrakube-dex
+  template:
+    metadata:
+      labels:
+        app: terrakube-dex
+      annotations:
+        terrakube.goodkind.io/credential-version: "${secret_revision}"
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: dex
+          image: ghcr.io/dexidp/dex:v2.44.0@sha256:5d0656fce7d453c0e3b2706abf40c0d0ce5b371fb0b73b3cf714d05f35fa5f86
+          args: [dex, serve, /etc/dex/config.yaml]
+          ports:
+            - name: http
+              containerPort: 5556
+            - name: telemetry
+              containerPort: 5558
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: telemetry
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dex
+              readOnly: true
+      volumes:
+        - name: config
+          secret:
+            secretName: terrakube-dex
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: terrakube-proxy
+  namespace: ${namespace}
+data:
+  nginx.conf: |
+    ${proxy_config}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: terrakube-proxy
+  namespace: ${namespace}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: terrakube-proxy
+  template:
+    metadata:
+      labels:
+        app: terrakube-proxy
+      annotations:
+        terrakube.goodkind.io/proxy-revision: "${proxy_revision}"
+        terrakube.goodkind.io/credential-version: "${secret_revision}"
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      automountServiceAccountToken: false
+      containers:
+        - name: nginx
+          image: docker.io/library/nginx:1.30.8-alpine@sha256:8eb04fe3b385090e9aa02961f77398ad09b6bf33ab07f6669a5bb7acce22c0d3
+          command: [nginx, -g, "daemon off;", -c, /etc/nginx/terrakube/nginx.conf]
+          readinessProbe:
+            httpGet:
+              host: "${dashboard_ipv6}"
+              path: /healthz
+              port: 443
+              scheme: HTTPS
+          volumeMounts:
+            - name: proxy
+              mountPath: /etc/nginx/terrakube
+              readOnly: true
+            - name: tls
+              mountPath: /etc/terrakube/tls
+              readOnly: true
+      volumes:
+        - name: proxy
+          configMap:
+            name: terrakube-proxy
+        - name: tls
+          secret:
+            secretName: terrakube-dashboard-tls

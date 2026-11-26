@@ -1,0 +1,65 @@
+events {}
+http {
+    resolver [${dns}] ipv4=off valid=30s;
+    resolver_timeout 5s;
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        '' close;
+    }
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    server {
+        listen [${dashboard.ipv6}]:443 ssl;
+        server_name ${dashboard.hostname};
+        ssl_certificate /etc/terrakube/tls/tls.crt;
+        ssl_certificate_key /etc/terrakube/tls/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        location = /healthz {
+            return 200;
+        }
+        location ~ ^/dex(/|$) {
+            set $origin http://terrakube-dex.terrakube.svc.cluster.local:5556;
+            proxy_pass $origin;
+        }
+        location ~ ^/(access-token|admin/v1|api|app|callback|context|importer|logs|migrate|notification|oauth|pat|policy|proxy|registry/v1|remote|terraform/index\.json|tfoutput|tfstate|tofu|v3/api-docs|vcs|version|\.well-known)(/|$) {
+            set $origin http://terrakube-api-service.terrakube.svc.cluster.local:8080;
+            proxy_pass $origin;
+        }
+        location /terraform/ {
+            set $origin http://terrakube-registry-service.terrakube.svc.cluster.local:8075;
+            proxy_pass $origin;
+        }
+        location / {
+            set $origin http://terrakube-ui-service.terrakube.svc.cluster.local:8080;
+            proxy_pass $origin;
+        }
+    }
+
+    server {
+        listen [::1]:8081;
+        server_name ${webhook.hostname};
+
+        if ($host != ${webhook.hostname}) {
+            return 404;
+        }
+        if ($request_method != POST) {
+            return 405;
+        }
+        location ~ "${webhook.path}" {
+            set $origin http://terrakube-api-service.terrakube.svc.cluster.local:8080;
+            proxy_pass $origin;
+        }
+        location / {
+            return 404;
+        }
+    }
+}

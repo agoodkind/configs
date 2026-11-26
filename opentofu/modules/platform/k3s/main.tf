@@ -121,7 +121,7 @@ resource "pveguest_systemd_unit" "server" {
     configuration        = pveguest_file.configuration.write_id
     server_token         = pveguest_file.server_token.write_id
     snapshot_credentials = try(pveguest_file.snapshot_credentials[0].write_id, "disabled")
-    registry             = pveguest_file.registry.write_id
+    registry             = try(pveguest_file.registry[0].write_id, "disabled")
     service              = pveguest_file.service.write_id
   }, { for key, certificate in pveguest_file.snapshot_ca : key => certificate.write_id })
 }

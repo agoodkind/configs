@@ -1,0 +1,80 @@
+enableIPv6: true
+security:
+  useOpenLDAP: false
+  dexClientId: terrakube
+  adminGroup: TERRAKUBE_ADMIN
+dex:
+  enabled: false
+  config:
+    issuer: ${jsonencode(issuer)}
+storage:
+  defaultStorage: false
+  httpBackend: false
+  aws:
+    bucketName: ${jsonencode(storage.bucket)}
+    region: ${jsonencode(storage.region)}
+api:
+  existingSecret: true
+  defaultDatabase: false
+  loadSampleData: false
+  automountServiceAccountToken: false
+  podAnnotations:
+    terrakube.goodkind.io/credential-version: ${jsonencode(secret_revision)}
+  properties:
+    databaseType: POSTGRESQL
+    databaseHostname: terrakube-postgres
+    databaseName: terrakube
+    databaseUser: terrakube
+    databasePort: "5432"
+  env:
+    - name: AwsEndpoint
+      value: ${jsonencode(storage.endpoint)}
+    - name: AwsEndpointRegion
+      value: ${jsonencode(storage.region)}
+valkey:
+  auth:
+    usersExistingSecret: terrakube-valkey
+    aclUsers:
+      default:
+        password: ""
+  dataStorage:
+    enabled: true
+    className: local-path
+    requestedSize: 5Gi
+    keepPvc: true
+  podAnnotations:
+    terrakube.goodkind.io/credential-version: ${jsonencode(secret_revision)}
+executor:
+  existingSecret: true
+  emptyDirSecret: false
+  podAnnotations:
+    terrakube.goodkind.io/credential-version: ${jsonencode(secret_revision)}
+  env:
+    - name: AwsEndpoint
+      value: ${jsonencode(storage.endpoint)}
+    - name: AwsEndpointRegion
+      value: ${jsonencode(storage.region)}
+registry:
+  existingSecret: true
+  podAnnotations:
+    terrakube.goodkind.io/credential-version: ${jsonencode(secret_revision)}
+  env:
+    - name: AwsEndpoint
+      value: ${jsonencode(storage.endpoint)}
+    - name: AwsEndpointRegion
+      value: ${jsonencode(storage.region)}
+ingress:
+  useTls: true
+  api:
+    enabled: false
+    domain: ${jsonencode(hostname)}
+  ui:
+    enabled: false
+    domain: ${jsonencode(hostname)}
+  registry:
+    enabled: false
+    domain: ${jsonencode(hostname)}
+  dex:
+    enabled: false
+  executor:
+    enabled: false
