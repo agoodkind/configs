@@ -23,13 +23,13 @@ jobs:
     steps:
       - name: Check out the queue implementation
         id: library
-        uses: actions/checkout@v7
+        uses: actions/checkout@main
         with:
           repository: agoodkind/tofu-workflows
           ref: refs/heads/main
           persist-credentials: false
           path: library
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@main
         with:
           go-version-file: library/go.mod
           cache: false
@@ -37,7 +37,7 @@ jobs:
         working-directory: library
         run: go build -o "$RUNNER_TEMP/terrakube-queue" ./cmd/terrakube-queue
       - name: Read protected Configs main
-        uses: actions/checkout@v7
+        uses: actions/checkout@main
         with:
           ref: refs/heads/main
           fetch-depth: 0
@@ -67,13 +67,13 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Check out the queue implementation
-        uses: actions/checkout@v7
+        uses: actions/checkout@main
         with:
           repository: agoodkind/tofu-workflows
           ref: ${{ needs.enrollments.outputs.library_commit }}
           persist-credentials: false
           path: library
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@main
         with:
           go-version-file: library/go.mod
           cache: false
@@ -81,20 +81,20 @@ jobs:
         working-directory: library
         run: go build -o "$RUNNER_TEMP/terrakube-queue" ./cmd/terrakube-queue
       - name: Connect to the private Terrakube API
-        uses: Boostport/setup-cloudflare-warp@v1
+        uses: Boostport/setup-cloudflare-warp@main
         with:
           organization: ${{ vars.WARP_ORGANIZATION }}
           auth_client_id: ${{ secrets.WARP_CLIENT_ID }}
           auth_client_secret: ${{ secrets.WARP_CLIENT_SECRET }}
       - name: Authorize the workspace promotion
         id: publisher
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@main
         with:
           client-id: ${{ vars.PROMOTION_APP_CLIENT_ID }}
           private-key: ${{ secrets.PROMOTION_APP_PRIVATE_KEY }}
           permission-contents: write
       - name: Fetch Configs main and the promotion branches
-        uses: actions/checkout@v7
+        uses: actions/checkout@main
         with:
           ref: refs/heads/main
           fetch-depth: 0
