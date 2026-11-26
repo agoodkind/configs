@@ -13,7 +13,7 @@ locals {
       secondary_ifname = "vfct100b"
       primary_member   = "vf0"
     }
-    # Release this VF after a Kubernetes VM replaces the UniFi LXC.
+    # Remove these VF assignments after a Kubernetes VM replaces the UniFi LXC.
     unifi = {
       vmid             = 102
       index            = 2
@@ -27,7 +27,7 @@ locals {
       secondary_ifname = "vfct102b"
       primary_member   = "vf1"
     }
-    # Release this VF and its static IPv6 address after the replacement Kubernetes VM serves Tack clients and private administration.
+    # Remove these VF assignments and the static IPv6 address after the replacement Kubernetes VM serves Tack clients and private administration.
     tack = {
       vmid             = 117
       index            = 4
@@ -41,7 +41,7 @@ locals {
       secondary_ifname = "vfct117b"
       primary_member   = "vf1"
     }
-    # Release this VF and these addresses after the replacement Kubernetes VM serves seaweedfs clients and private administration.
+    # Remove these VF assignments and addresses after the replacement Kubernetes VM serves seaweedfs clients and private administration.
     seaweedfs = {
       vmid             = 118
       index            = 5
@@ -55,7 +55,7 @@ locals {
       secondary_ifname = "vfct118b"
       primary_member   = "vf0"
     }
-    # Release this VF and these addresses after the replacement Kubernetes VM serves tack data1 clients and private administration.
+    # Remove these VF assignments and addresses after the replacement Kubernetes VM serves tack data1 clients and private administration.
     tack_data1 = {
       vmid             = 120
       index            = 6
@@ -69,7 +69,7 @@ locals {
       secondary_ifname = "vfct120b"
       primary_member   = "vf1"
     }
-    # Release this VF and these addresses after the replacement Kubernetes VM serves tack data2 clients and private administration.
+    # Remove these VF assignments and addresses after the replacement Kubernetes VM serves tack data2 clients and private administration.
     tack_data2 = {
       vmid             = 121
       index            = 7
@@ -83,7 +83,7 @@ locals {
       secondary_ifname = "vfct121b"
       primary_member   = "vf0"
     }
-    # Release this VF and these addresses after the replacement Kubernetes VM serves tack data3 clients and private administration.
+    # Remove these VF assignments and addresses after the replacement Kubernetes VM serves tack data3 clients and private administration.
     tack_data3 = {
       vmid             = 122
       index            = 8
@@ -97,7 +97,7 @@ locals {
       secondary_ifname = "vfct122b"
       primary_member   = "vf1"
     }
-    # Release this VF and its static IPv6 address after the replacement Kubernetes VM serves tack app2 clients and private administration.
+    # Remove these VF assignments and the static IPv6 address after the replacement Kubernetes VM serves tack app2 clients and private administration.
     tack_app2 = {
       vmid             = 123
       index            = 9
@@ -111,7 +111,7 @@ locals {
       secondary_ifname = "vfct123b"
       primary_member   = "vf0"
     }
-    # Release this VF and these addresses after the replacement Kubernetes VM serves tack search1 clients and private administration.
+    # Remove these VF assignments and addresses after the replacement Kubernetes VM serves tack search1 clients and private administration.
     tack_search1 = {
       vmid             = 125
       index            = 10
