@@ -21,11 +21,12 @@ locals {
     "providers.v1" = "${local.dashboard_url}/terraform/providers/v1/"
   }
   chart_values = templatefile("${path.module}/files/values.yaml.tftpl", {
-    hostname        = module.configuration.dashboard.hostname
-    issuer          = local.dex_issuer
-    dex_client_id   = local.dex_client_id
-    storage         = var.terrakube_artifact_storage
-    secret_revision = tostring(var.terrakube_credentials_version)
+    hostname         = module.configuration.dashboard.hostname
+    issuer           = local.dex_issuer
+    dex_client_id    = local.dex_client_id
+    storage          = var.terrakube_artifact_storage
+    executor_version = var.terrakube_executor_version
+    secret_revision  = tostring(var.terrakube_credentials_version)
   })
   proxy_configuration = templatefile("${path.module}/files/nginx.conf.tftpl", {
     dashboard = module.configuration.dashboard
@@ -77,6 +78,15 @@ resource "pveguest_file" "namespace" {
   path = "${local.manifest_path}/terrakube-namespace.yaml"
   content = join("---\n", [
     yamlencode({ apiVersion = "v1", kind = "Namespace", metadata = { name = local.namespace } }),
+    yamlencode({
+      apiVersion = "v1"
+      kind       = "ConfigMap"
+      metadata   = { name = "terrakube-executor-connection", namespace = local.namespace }
+      data = {
+        AwsEndpoint       = var.terrakube_artifact_storage.endpoint
+        AwsEndpointRegion = var.terrakube_artifact_storage.region
+      }
+    }),
     yamlencode({
       apiVersion = "v1"
       kind       = "ConfigMap"

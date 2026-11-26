@@ -80,3 +80,13 @@ variable "terrakube_credentials_version" {
     error_message = "Use a positive integer credential version."
   }
 }
+
+variable "terrakube_executor_version" {
+  type        = string
+  description = "Reviewed tofu-workflows commit and published executor image digest."
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{40}@sha256:[0-9a-f]{64}$", var.terrakube_executor_version))
+    error_message = "Supply the full tofu-workflows commit and executor digest as COMMIT@sha256:DIGEST."
+  }
+}

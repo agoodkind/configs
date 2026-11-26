@@ -17,7 +17,12 @@ api:
   existingSecret: true
   defaultDatabase: false
   loadSampleData: false
-  automountServiceAccountToken: false
+  automountServiceAccountToken: true
+  serviceAccountName: terrakube-api
+  ephemeralExecution:
+    enabled: true
+    backoffLimit: "0"
+    emptyDirSecret: false
   podAnnotations:
     terrakube.goodkind.io/credential-version: ${jsonencode(secret_revision)}
   properties:
@@ -47,6 +52,8 @@ valkey:
   podAnnotations:
     terrakube.goodkind.io/credential-version: ${jsonencode(secret_revision)}
 executor:
+  image: ghcr.io/agoodkind/tofu-workflows-terrakube-executor
+  version: ${jsonencode(executor_version)}
   existingSecret: true
   emptyDirSecret: false
   podAnnotations:
