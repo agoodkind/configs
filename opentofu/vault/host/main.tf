@@ -22,7 +22,7 @@ resource "proxmox_acme_certificate" "vault" {
 
   domains = [
     {
-      domain = "vault.home.goodkind.io"
+      domain = local.vault_host.fqdn
       plugin = proxmox_acme_dns_plugin.vault.plugin
     }
   ]
@@ -46,7 +46,7 @@ resource "proxmox_acme_dns_plugin" "vault" {
 locals {
 
   overlay_hosts = { vault = {
-    ssh_host       = module.configuration.service_mapping.vault_hypervisor.hostname
+    ssh_host       = local.vault_host.fqdn
     node_name      = "vault"
     commit         = "7bfcf61825698c49af0f822c31def8525707f79d"
     guest_api      = true
@@ -101,6 +101,9 @@ locals {
   acme_plugin_data_version = 2
 }
 
-locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
+locals {
+  proxmox_token_principal = module.contracts.proxmox_token_principal
+  vault_host              = module.configuration.service_mapping.vault_hypervisor
+}
 
 module "configuration" { source = "../../modules/vault/host/configuration" }

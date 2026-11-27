@@ -6,7 +6,7 @@ locals {
 provider "linux" {
   ssh = {
     host     = local.overlay_hosts.vault.ssh_host
-    host_key = module.configuration.service_mapping.vault_hypervisor.ssh_host_key
+    host_key = local.vault_host.ssh_host_key
   }
 }
 
