@@ -1,0 +1,13 @@
+{
+  "name": "Configs Terrakube Plan",
+  "url": "https://github.com/agoodkind/configs",
+  "public": false,
+  "hook_attributes": {
+    "url": "https://github.com/agoodkind/configs",
+    "active": false
+  },
+  "default_permissions": {
+    "checks": "write"
+  },
+  "default_events": []
+}
