@@ -65,7 +65,7 @@ locals {
   tack_secondary_pci_address = data.pveguest_host_sriov.guests_secondary.actual_vfs[tostring(local.tack_vf.index)].pci
   tack_secondary_pci = one([
     for device in data.proxmox_hardware_pci.tack.devices : device
-    if device.id == local.tack_secondary_pci_address && device.iommu_group >= 0
+    if device.id == local.tack_secondary_pci_address
   ])
   tack_secondary_iommu_peers = [for device in data.proxmox_hardware_pci.tack.devices : device.id
     if device.iommu_group == local.tack_secondary_pci.iommu_group && device.id != local.tack_secondary_pci_address

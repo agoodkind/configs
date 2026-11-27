@@ -1,6 +1,6 @@
 terraform {
   required_providers {
-    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = ">= 0.1.9" }
+    pveguest = { source = "tofu.home.arpa/agoodkind/pveguest", version = ">= 0.1.10" }
   }
 }
 
@@ -23,18 +23,8 @@ variable "guest" {
   }
 
   validation {
-    condition     = try(trimspace(var.guest.secondary_mac) != "" && lower(var.guest.secondary_mac) != lower(var.guest.mac), false)
-    error_message = "Set guest.secondary_mac to a MAC address that differs from guest.mac."
-  }
-
-  validation {
     condition     = var.guest.kind != "lxc" || try(trimspace(var.guest.secondary_ifname) != "" && var.guest.secondary_ifname != var.guest.ifname, false)
     error_message = "Set guest.secondary_ifname to a nonblank host interface name that differs from guest.ifname when guest.kind is lxc."
-  }
-
-  validation {
-    condition     = try(contains(["vf0", "vf1"], var.guest.primary_member), false)
-    error_message = "Set guest.primary_member to vf0 or vf1."
   }
 }
 
