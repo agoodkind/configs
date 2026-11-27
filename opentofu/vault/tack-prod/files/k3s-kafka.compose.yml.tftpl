@@ -12,10 +12,19 @@ services:
     command: ["--help"]
     restart: "no"
     ports: !reset []
+    network_mode: host
+    networks: !reset {}
+    extra_hosts:
+      kafka: ${kafka_address}
+  audit-ops:
+    network_mode: host
+    networks: !reset {}
+    extra_hosts:
+      kafka: ${kafka_address}
   audit-consumer:
     networks:
       default:
-        ipv6_address: 3d06:bad:b01:0:7ac::5
+        ipv6_address: ${consumer_address}
   kafka:
     restart: "no"
     environment:

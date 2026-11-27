@@ -18,5 +18,5 @@ module "guest_network" {
   guest                = each.value
   phase                = contains(var.staged_guest_ids, each.value.vmid) ? "staged" : "active"
   dns_servers          = module.vault_network.guest.dns_servers
-  ipv6_proxy_neighbors = each.key == "tack" ? [local.k3s_kafka_address] : null
+  ipv6_proxy_neighbors = each.key == "tack" ? [local.k3s_kafka_address, local.audit_consumer_address] : null
 }
