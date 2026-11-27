@@ -125,6 +125,16 @@ locals {
       secondary_ifname = "vfct125b"
       primary_member   = "vf1"
     }
+    terrakube = {
+      vmid      = 126
+      index     = 3
+      kind      = "qemu"
+      backend   = "netplan"
+      driver    = "vfio-pci"
+      ifname    = null
+      mac       = "bc:24:11:a3:52:7e"
+      addresses = ["3d06:bad:b01::126/64", "fd42:7466:3::126/128"]
+    }
     # Remove the static tack_k3s IPv6 address after Tack, DNS, and private administration use the replacements.
     tack_k3s = {
       vmid             = 124

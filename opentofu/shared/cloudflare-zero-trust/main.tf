@@ -22,6 +22,7 @@ locals {
   ]) : []
 
   warp_include = concat([
+    { address = module.terrakube.dashboard.route, description = "Terrakube dashboard" },
     { address = "3eef::/48", description = "Suburban testbed IPv6" },
     { address = "3d06:bad:b01:200::/56", description = "Suburban IPv6" },
     { address = "10.240.0.0/16", description = "Suburban IPv4" },
