@@ -1,16 +1,11 @@
 # Provision service vaults in 1Password
 
-Run this procedure from a clean Configs checkout after its changes merge into
-main. Automatic deployment does not include this root. These commands use
-OpenTofu directly because `configsctl tofu` always reads the legacy Ansible
-vault, even when the process already supplies credentials.
-
 ## Install the provider
 
 Use OpenTofu 1.11 or later and the
 [v0.1.0 release](https://github.com/agoodkind/onepassword-admin/releases/tag/v0.1.0)
-from the owned fork. The archive must match the operating system and
-architecture of the machine that runs OpenTofu.
+from agoodkind/onepassword-admin. Choose the archive for the operating system
+and architecture of the machine that runs OpenTofu.
 
 1. Set `OPADMIN_PLATFORM` to the matching platform, such as `darwin_arm64` or
    `linux_amd64`. Set `OPADMIN_ARCHIVE` to the absolute path of
@@ -38,17 +33,17 @@ architecture of the machine that runs OpenTofu.
    `TF_VAR_vault_tofu_state_passphrase`. Follow the credential and passphrase
    requirements in [OpenTofu state operations](../../../opentofu/backend.md).
    Keep their values out of command arguments and repository files.
-2. Supply a 1Password service account token through `OP_SERVICE_ACCOUNT_TOKEN`.
-   The account must permit vault creation. Use this token only for provisioning;
+2. Supply a 1Password service account token with permission to create vaults
+   through `OP_SERVICE_ACCOUNT_TOKEN`. Use this token only for provisioning;
    application deployments must use their own credentials.
 
 ## Review and apply the plan
 
 1. Edit the service and environment selections in the
-   [provisioning root](../../../opentofu/shared/onepassword-vaults/main.tf), then
-   merge those changes before applying them. Each selected pair creates a
-   separate vault. Changing either identifier changes its resource address.
-   The module blocks vault deletion and replacement with `prevent_destroy`.
+   [provisioning root](../../../opentofu/shared/onepassword-vaults/main.tf).
+   Each selected pair creates a separate vault. Changing either identifier
+   changes its resource address.
+   OpenTofu blocks vault deletion and replacement with `prevent_destroy`.
 2. Initialize the root with the local provider mirror:
 
    ```sh
@@ -70,4 +65,4 @@ architecture of the machine that runs OpenTofu.
    tofu -chdir=opentofu/shared/onepassword-vaults output -json vault_ids
    ```
 
-   The output maps each service and environment to its vault ID.
+   `vault_ids` maps each service and environment to its vault ID.
