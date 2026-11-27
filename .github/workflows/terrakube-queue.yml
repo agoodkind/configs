@@ -10,11 +10,14 @@ on:
 permissions:
   contents: read
 
+env:
+  TERRAKUBE_QUEUE_REPOSITORY: ${{ github.repository_owner }}/tofu-workflows
+  DEPLOYMENT_CHECKOUT: deployment
+
 jobs:
   enrollments:
     if: >-
       vars.TERRAKUBE_DEPLOYMENT_ENABLED == 'true' &&
-      github.repository == 'agoodkind/configs' &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     outputs:
@@ -25,7 +28,7 @@ jobs:
         id: library
         uses: actions/checkout@v7
         with:
-          repository: agoodkind/tofu-workflows
+          repository: ${{ env.TERRAKUBE_QUEUE_REPOSITORY }}
           ref: refs/heads/main
           persist-credentials: false
           path: library
@@ -36,18 +39,18 @@ jobs:
       - name: Build the queue command
         working-directory: library
         run: go build -o "$RUNNER_TEMP/terrakube-queue" ./cmd/terrakube-queue
-      - name: Read protected Configs main
+      - name: Read the protected deployment branch
         uses: actions/checkout@v7
         with:
           ref: refs/heads/main
           fetch-depth: 0
           persist-credentials: false
-          path: configs
+          path: ${{ env.DEPLOYMENT_CHECKOUT }}
       - name: Select enabled deployments
         id: matrix
         run: |
           printf 'targets=' >> "$GITHUB_OUTPUT"
-          "$RUNNER_TEMP/terrakube-queue" matrix "$GITHUB_WORKSPACE/configs" deploy >> "$GITHUB_OUTPUT"
+          "$RUNNER_TEMP/terrakube-queue" matrix "$GITHUB_WORKSPACE/$DEPLOYMENT_CHECKOUT" deploy >> "$GITHUB_OUTPUT"
 
   submit:
     needs: enrollments
@@ -69,7 +72,7 @@ jobs:
       - name: Check out the queue implementation
         uses: actions/checkout@v7
         with:
-          repository: agoodkind/tofu-workflows
+          repository: ${{ env.TERRAKUBE_QUEUE_REPOSITORY }}
           ref: ${{ needs.enrollments.outputs.library_commit }}
           persist-credentials: false
           path: library
@@ -93,14 +96,14 @@ jobs:
           client-id: ${{ vars.PROMOTION_APP_CLIENT_ID }}
           private-key: ${{ secrets.PROMOTION_APP_PRIVATE_KEY }}
           permission-contents: write
-      - name: Fetch Configs main and the promotion branches
+      - name: Fetch main and the promotion branches
         uses: actions/checkout@v7
         with:
           ref: refs/heads/main
           fetch-depth: 0
           token: ${{ steps.publisher.outputs.token }}
           persist-credentials: false
-          path: configs
+          path: ${{ env.DEPLOYMENT_CHECKOUT }}
       - name: Submit the next reviewed commit
         env:
           TERRAKUBE_API_URL: ${{ vars.TERRAKUBE_API_URL }}
@@ -113,4 +116,4 @@ jobs:
           # Use the workflow repository to verify the Git origin and Terrakube workspace source.
           PROMOTION_GITHUB_REPOSITORY: ${{ github.repository }}
           PROMOTION_GITHUB_TOKEN: ${{ steps.publisher.outputs.token }}
-        run: '"$RUNNER_TEMP/terrakube-queue" "$WORKSPACE" "$GITHUB_WORKSPACE/configs"'
+        run: '"$RUNNER_TEMP/terrakube-queue" "$WORKSPACE" "$GITHUB_WORKSPACE/$DEPLOYMENT_CHECKOUT"'
