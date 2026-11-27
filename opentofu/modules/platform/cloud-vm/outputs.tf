@@ -20,7 +20,11 @@ output "ipv4" {
 
 output "ipv6" {
   description = "Static IPv6 address of the VM and Kubernetes node."
-  value       = split("/", var.guest.ipv6_cidr)[0]
+  value       = var.guest.ipv6_cidr == null ? null : split("/", var.guest.ipv6_cidr)[0]
+}
+
+output "cloud_image_id" {
+  value = var.cloud_image == null ? var.shared_cloud_image_id : proxmox_download_file.cloud_image[0].id
 }
 
 output "guest" {

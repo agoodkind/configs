@@ -6,6 +6,7 @@ terraform {
 }
 
 resource "proxmox_download_file" "cloud_image" {
+  count              = var.cloud_image == null ? 0 : 1
   node_name          = var.guest.node_name
   datastore_id       = var.guest.image_datastore
   content_type       = "import"
@@ -13,6 +14,11 @@ resource "proxmox_download_file" "cloud_image" {
   url                = var.cloud_image.url
   checksum           = var.cloud_image.sha512
   checksum_algorithm = "sha512"
+}
+
+moved {
+  from = proxmox_download_file.cloud_image
+  to   = proxmox_download_file.cloud_image[0]
 }
 
 resource "proxmox_virtual_environment_file" "cloud_init" {
@@ -57,7 +63,7 @@ resource "proxmox_virtual_environment_vm" "server" {
   memory { dedicated = var.vm_capacity.memory_mib }
   disk {
     datastore_id = var.guest.datastore_id
-    import_from  = proxmox_download_file.cloud_image.id
+    import_from  = var.cloud_image == null ? var.shared_cloud_image_id : proxmox_download_file.cloud_image[0].id
     interface    = "scsi0"
     size         = var.vm_capacity.disk_gib
     discard      = "on"
@@ -100,11 +106,15 @@ resource "proxmox_virtual_environment_vm" "server" {
     }
   }
   initialization {
-    datastore_id      = var.guest.datastore_id
-    user_data_file_id = proxmox_virtual_environment_file.cloud_init.id
-    dns { servers = var.guest.dns_servers }
+    datastore_id         = var.guest.datastore_id
+    user_data_file_id    = proxmox_virtual_environment_file.cloud_init.id
+    network_data_file_id = var.network_data_file_id
+    dynamic "dns" {
+      for_each = var.network_data_file_id == null ? [var.guest.dns_servers] : []
+      content { servers = dns.value }
+    }
     dynamic "ip_config" {
-      for_each = var.guest.bridge == null ? [] : [var.guest]
+      for_each = var.guest.bridge == null || var.network_data_file_id != null ? [] : [var.guest]
       content {
         dynamic "ipv4" {
           for_each = var.guest.ipv4_cidr == null ? [] : [var.guest.ipv4_cidr]

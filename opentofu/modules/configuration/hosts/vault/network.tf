@@ -125,6 +125,19 @@ locals {
       secondary_ifname = null
       primary_member   = "vf0"
     }
+    tack_k3s_worker_1 = {
+      vmid             = 127
+      index            = 9
+      kind             = "qemu"
+      backend          = "netplan"
+      driver           = "vfio-pci"
+      ifname           = null
+      mac              = "bc:24:11:a3:52:7f"
+      addresses        = []
+      secondary_mac    = "be:24:11:a3:52:7f"
+      secondary_ifname = null
+      primary_member   = "vf1"
+    }
   }
 }
 
