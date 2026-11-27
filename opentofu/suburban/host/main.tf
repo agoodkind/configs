@@ -54,8 +54,7 @@ module "suburban" {
 
   providers = { proxmox = proxmox.suburban }
 
-  service_mapping  = local.service_mapping
-  routing_networks = module.routing.networks
+  service_mapping = local.service_mapping
 }
 
 locals {
@@ -135,5 +134,3 @@ locals {
 locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
 
 module "configuration" { source = "../../modules/suburban/host/configuration" }
-
-module "routing" { source = "../../modules/suburban/routing" }

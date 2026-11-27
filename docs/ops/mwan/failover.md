@@ -29,8 +29,7 @@ BGP Graceful Restart (RFC 4724) lets the agent restart its BGP process without
 flapping its routes in the helper. The helper retains the restarter's prefixes
 for `restart_time` seconds and only flushes them if the session does not come
 back. With GR off, an agent restart drops the WAN route until the session
-returns. Every deploy reboots the gateway. Production and the testbed set GR
-off, so OPNsense selects the backup peer during that reboot.
+returns. Every deploy reboots the gateway. Production disables GR, so OPNsense selects the backup peer during that reboot.
 
 When GR is enabled the speaker negotiates the capability globally and per
 peer, and allows graceful restart on stop. The agent shutdown path skips the
@@ -43,10 +42,7 @@ loader bakes in the defaults so an empty block matches documented behaviour.
 
 The OPNsense FRR side has its own toggle,
 `OPNsense.quagga.bgp.graceful = '1'` in the router config. Production
-operators flip it via the OPNsense GUI under Routing -> BGP -> General. The
-testbed does not provide GUI access from the controller. The operator drives the
-`mwan-opnsense` gRPC API to mutate the router config directly, then runs
-`configctl quagga reload bgp`. Verify with:
+operators flip it via the OPNsense GUI under Routing -> BGP -> General. Verify with:
 
 ```bash
 vtysh -c 'show running-config router bgp' | grep 'bgp graceful-restart'
@@ -129,8 +125,7 @@ Watchdog builds that predate `92e1a93` delete only `known-good-*` snapshots
 to meet the total limit.
 
 The host template applies the same `max_known_good_snapshots` and
-`max_total_snapshots` values on every hypervisor, including the testbed
-hypervisor `suburban`. Inventory does not override these values.
+`max_total_snapshots` values on the production hypervisor. Inventory does not override these values.
 
 A committed deploy keeps its `pre-deploy-*` snapshot until an operator
 deletes it, unless a watchdog that includes `92e1a93` deletes it under a

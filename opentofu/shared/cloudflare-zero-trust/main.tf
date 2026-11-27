@@ -22,10 +22,8 @@ locals {
   ]) : []
 
   warp_include = concat([
-    { address = "3eef::/48", description = "Suburban testbed IPv6" },
     { address = "3d06:bad:b01:200::/56", description = "Suburban IPv6" },
     { address = "10.240.0.0/16", description = "Suburban IPv4" },
-    { address = "3d06:bad:b01:2600::/56", description = "Suburban NAT64" },
     { address = "3d06:bad:b01:6400::/56", description = "Production NAT64" },
     { address = "100.96.0.0/12", description = "WARP device addresses" },
     ], [

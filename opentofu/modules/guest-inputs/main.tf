@@ -22,21 +22,6 @@ locals {
   # Use the service mapping name as the key.
   authorized_key_lines_overrides = {}
 
-  # This map supplies key-file paths that the module appends after the global
-  # key-file path for individual guests.
-  # Each map key is the service mapping name of the guest.
-  # ISP simulators use /etc/ssh/authorized_keys.d/mwan-testbed.
-  # The MWAN testbed deploy writes that file.
-  authorized_keys_files_overrides = {
-    isp_astound_suburban = local.isp_simulator_key_files
-    isp_att_suburban     = local.isp_simulator_key_files
-    isp_mbrains_suburban = local.isp_simulator_key_files
-    isp_routed_suburban  = local.isp_simulator_key_files
-    isp_webpass_suburban = local.isp_simulator_key_files
-  }
-
-  isp_simulator_key_files = ["/etc/ssh/authorized_keys.d/mwan-testbed"]
-
   scripts_updater_timer_default = {
     activation_run           = true
     randomized_delay_seconds = 300
@@ -44,10 +29,6 @@ locals {
 
   scripts_updater_timer_overrides = {
     mwan = {
-      activation_run           = false
-      randomized_delay_seconds = 3600
-    }
-    mwan_suburban = {
       activation_run           = false
       randomized_delay_seconds = 3600
     }
@@ -67,7 +48,7 @@ locals {
       node                        = local.service_mapping[name].node
       timezone                    = var.timezone
       authorized_key_lines        = try(local.authorized_key_lines_overrides[name], null)
-      extra_authorized_keys_files = try(local.authorized_keys_files_overrides[name], [])
+      extra_authorized_keys_files = []
       scripts_updater_timer = try(
         local.scripts_updater_timer_overrides[name],
         local.scripts_updater_timer_default,
@@ -79,8 +60,6 @@ locals {
     "clyde_suburban",
     "mwan",
     "mwan_failover",
-    "mwan_failover_suburban",
-    "mwan_suburban",
     "seaweedfs_suburban",
     "tack",
     "tack_app2_suburban",

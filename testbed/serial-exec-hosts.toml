@@ -1,4 +1,0 @@
-[hosts.mwan]
-device = "unix:///var/run/qemu-server/950.serial0"
-prompt = '(?m)[#$] $'
-user = "root"
