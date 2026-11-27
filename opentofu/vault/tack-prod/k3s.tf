@@ -30,7 +30,7 @@ module "tack_k3s_base" {
   kind = "qemu"
   name = module.tack_k3s_vm.guest.service_key
 
-  networkd_wait_online_enabled = true
+  networkd_wait_online_enabled = null
 
   public_keys                              = local.k3s_preparation.public_keys
   restricted_key_lines                     = []
@@ -40,6 +40,18 @@ module "tack_k3s_base" {
   revision_file                            = local.k3s_preparation.revision_file
   scripts_updater_activation_run           = local.k3s_preparation.scripts_updater_activation_run
   scripts_updater_randomized_delay_seconds = local.k3s_preparation.scripts_updater_randomized_delay_seconds
+}
+
+# Netplan requests this unit on every boot, even after systemctl disable.
+resource "pveguest_systemd_unit" "networkd_wait_online" {
+  node = module.tack_k3s_vm.guest.node
+  vmid = module.tack_k3s_vm.vmid
+  kind = "qemu"
+
+  name    = "systemd-networkd-wait-online.service"
+  enabled = false
+  active  = false
+  masked  = true
 }
 
 module "tack_k3s" {
