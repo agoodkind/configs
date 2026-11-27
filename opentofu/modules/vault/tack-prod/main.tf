@@ -61,60 +61,6 @@ resource "proxmox_virtual_environment_container" "tack" {
   }
 }
 
-resource "proxmox_virtual_environment_container" "tack_app2" {
-  node_name = module.host.node.name
-  vm_id     = local.service_mapping.tack_app2.vmid
-
-  initialization {
-    hostname = split(".", local.service_mapping.tack_app2.hostname)[0]
-    dns {
-      domain = regex("^[^.]+\\.(.+)$", local.service_mapping.tack_app2.hostname)[0]
-    }
-    user_account {
-      keys = [var.ssh_keys]
-    }
-  }
-
-  features {
-    nesting = true
-  }
-
-  disk {
-    datastore_id  = "local-lvm"
-    size          = 40
-    mount_options = ["discard"]
-  }
-
-  memory {
-    dedicated = 4096
-  }
-
-  cpu {
-    cores = 4
-  }
-
-  tags = ["lxc", "tack", "tack-app", "docker"]
-
-  operating_system {
-    template_file_id = "storage:vztmpl/debian-13-standard_13.1-2_amd64.tar.zst"
-    type             = "debian"
-  }
-
-  started       = !contains(var.stopped_guest_ids, local.service_mapping.tack_app2.vmid)
-  start_on_boot = !contains(var.stopped_guest_ids, local.service_mapping.tack_app2.vmid)
-  unprivileged  = true
-
-  lifecycle {
-    prevent_destroy = true
-    ignore_changes = [
-      # Proxmox does not return injected SSH keys, and the template name is not
-      # stored in pct config, so both read as changes that force replacement.
-      initialization[0].user_account,
-      operating_system[0].template_file_id,
-    ]
-  }
-}
-
 resource "proxmox_virtual_environment_container" "tack_data1" {
   node_name = module.host.node.name
   vm_id     = local.service_mapping.tack_data1.vmid
@@ -336,12 +282,6 @@ variable "service_mapping" { type = object({
   tack = object({
     vmid     = number
     hostname = string
-  })
-  tack_app2 = object({
-    vmid        = number
-    hostname    = string
-    ipv6        = string
-    mac_address = string
   })
   tack_data1 = object({
     vmid        = number

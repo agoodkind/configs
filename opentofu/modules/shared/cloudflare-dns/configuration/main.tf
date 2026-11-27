@@ -1,6 +1,5 @@
 module "seaweedfs" { source = "../../../configuration/services/seaweedfs" }
 module "tack" { source = "../../../configuration/services/tack" }
-module "tack_app2" { source = "../../../configuration/services/tack_app2" }
 module "tack_data1" { source = "../../../configuration/services/tack_data1" }
 module "tack_data2" { source = "../../../configuration/services/tack_data2" }
 module "tack_data3" { source = "../../../configuration/services/tack_data3" }
@@ -11,7 +10,6 @@ locals {
     poweredge_hypervisor = module.poweredge_hypervisor.value
     seaweedfs            = module.seaweedfs.value
     tack                 = module.tack.value
-    tack_app2            = module.tack_app2.value
     tack_data1           = module.tack_data1.value
     tack_data2           = module.tack_data2.value
     tack_data3           = module.tack_data3.value

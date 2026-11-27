@@ -27,7 +27,7 @@ locals {
       secondary_ifname = "vfct102b"
       primary_member   = "vf1"
     }
-    # Remove these VF assignments and the static IPv6 address after the replacement Kubernetes VM serves Tack clients and private administration.
+    # Remove these VF assignments and the static IPv6 address after all Kafka clients use the replacement broker.
     tack = {
       vmid             = 117
       index            = 4
@@ -96,20 +96,6 @@ locals {
       secondary_mac    = "be:24:11:a3:52:22"
       secondary_ifname = "vfct122b"
       primary_member   = "vf1"
-    }
-    # Remove these VF assignments and the static IPv6 address after the replacement Kubernetes VM serves tack app2 clients and private administration.
-    tack_app2 = {
-      vmid             = 123
-      index            = 9
-      kind             = "lxc"
-      backend          = "ifupdown"
-      driver           = "iavf"
-      ifname           = "vfct123"
-      mac              = "bc:24:11:a3:52:23"
-      addresses        = ["3d06:bad:b01::123/64"]
-      secondary_mac    = "be:24:11:a3:52:23"
-      secondary_ifname = "vfct123b"
-      primary_member   = "vf0"
     }
     # Remove these VF assignments and addresses after the replacement Kubernetes VM serves tack search1 clients and private administration.
     tack_search1 = {
