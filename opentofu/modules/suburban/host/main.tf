@@ -97,7 +97,7 @@ resource "proxmox_network_linux_bridge" "routing_simulator" {
 resource "proxmox_network_linux_bridge" "trunk_suburban" {
   node_name = "hypervisor"
   name      = module.config.bridges.trunk_suburban
-  comment   = "MWAN-140 slice 1: VLAN-aware trunk for OPNsense iavf0 parity"
+  comment   = "VLAN-aware guest trunk"
 
   vlan_aware = true
   vids       = "64 100 200 300"

@@ -49,8 +49,7 @@ second router cannot receive return traffic for its own LANs.
    failover LXC because routers source-NAT v4 onto their transit address.
 6. **Routers announce what they own.** Every router announces its own
    prefixes over iBGP in AS 4200000001. For OPNsense that is FRR network
-   statements per family, applied by hand through the GUI (over the
-   documented SSH forward on the testbed) or through the serial daemon,
+   statements per family, applied by hand through the GUI or through the serial daemon,
    followed by the Quagga template reload and `configctl quagga reload`,
    which diffs the regenerated file against the running config and issues
    the matching `no` commands. A plain FRR restart cycles only the

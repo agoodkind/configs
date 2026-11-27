@@ -1,7 +1,3 @@
-[hosts.opnsense]
-device = "unix:///var/run/qemu-server/201.serial0"
-prompt = '(?m)(~|/) # '
-
 [hosts.mwan]
 device = "unix:///var/run/qemu-server/950.serial0"
 prompt = '(?m)[#$] $'

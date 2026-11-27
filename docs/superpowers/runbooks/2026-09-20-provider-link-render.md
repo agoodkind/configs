@@ -211,7 +211,7 @@ A `curl` from the gateway itself does not prove anything about this drill and re
 `000` in both families during it. The rule the drill moves selects traffic
 arriving on the internal bridge, and the gateway's own sockets use the main
 table instead. Observe LAN fallback from a LAN host, as the 2026-09-18 drill
-did from the QA guest and the testbed router at the simulator ingress
+did at the simulator ingress
 `veth902i0`.
 
 ### A link absent at boot

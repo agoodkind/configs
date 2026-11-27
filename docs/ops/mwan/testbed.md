@@ -9,11 +9,8 @@ Each bridge carries one role:
 - The VM management bridge is the uplink behind suburban: the ISP sims default
   through it, so replies to tunnel and testbed sources drain to suburban, and
   their internet traffic masquerades onward to Comcast.
-- The MWAN internal bridge is the OPNsense transit link. Suburban does not have an
-  address on it, matching vault. Suburban accesses the guests through the router
-  rather than across the bridge.
-- The VLAN-aware trunk carries VMNET, the guest segment every testbed guest
-  and the router share, plus the tagged VLANs mirroring production.
+- The MWAN VM uses a separate bridge for its internal link.
+- The VLAN-aware trunk carries VMNET, the guest segment for testbed guests, plus the tagged VLANs mirroring production.
 - Each simulated ISP has its own bare-L2 bridge terminating one WAN link for
   the MWAN VM; the Monkeybrains one also carries the failover's upstream NIC.
 
@@ -27,9 +24,6 @@ That separation is what makes a misdirected command safe. The hypervisors are
 independent Proxmox installations rather than a cluster, so a shared id is legal,
 but a command that lands on the wrong host then finds a guest at that id and
 succeeds against it. With no id in common the same mistake fails outright.
-
-The [testbed OPNsense recovery guide](../opnsense/testbed/access.md) uses the
-serial channel when network access is unavailable.
 
 Each ISP simulator terminates one WAN link for the MWAN VM and uplinks through
 suburban, which returns tunnel and testbed traffic and masquerades internet
@@ -66,7 +60,6 @@ prefix, and NPT does not translate a prefix for it.
 | -------------- | ------------------------------ | ---------------------------------- |
 | MWAN VM        | mwan.home.goodkind.io          | mwan.suburban.goodkind.io          |
 | Failover LXC   | mwan-failover.home.goodkind.io | mwan-failover.suburban.goodkind.io |
-| OPNsense       | router.home.goodkind.io        | router.suburban.goodkind.io        |
 | Hypervisor     | vault                          | suburban                           |
 
 ## Suburban gotchas
@@ -77,10 +70,9 @@ unknown.
 - **Cloud-init drive storage.** `local-lvm` is disabled on suburban; only
   `local-zfs` is active. Guest `initialization.datastore_id` must be `local-zfs`,
   or a cloud-init drive regen fails with `storage 'local-lvm' is not available`.
-- **`args` ownership.** VMs with a virtio-serial or vsock device (the MWAN VM and the OPNsense guest)
-  carry their `args` set by Ansible as `root@pam`, because the Proxmox API rejects
-  `args` writes from a token. OpenTofu must not manage `kvm_arguments` for those
-  VMs (`lifecycle.ignore_changes = [kvm_arguments]`), or a plan tries to null the
+- **`args` ownership.** The MWAN VM uses a vsock device and has its `args` set by Ansible as `root@pam`, because the Proxmox API rejects
+  `args` writes from a token. OpenTofu must not manage `kvm_arguments` for the
+  VM (`lifecycle.ignore_changes = [kvm_arguments]`), or a plan tries to null the
   field and the apply fails with `VM is locked`. See
   [OPNsense operations](../opnsense/operations.md) Rule 8.
 - **Management return path.** The MWAN VM's management interface does not have a
@@ -92,9 +84,7 @@ unknown.
   workstation. A probe flow survives only when its reply returns the way the
   request came. The suburban cloudflared connector therefore sources proxied
   pings from its own address on the guest segment, so replies come back
-  on-link. A probe sourced from an off-link address reads a healthy guest as
-  down, because the reply crosses the testbed router stateless and its
-  default deny drops it.
+  on-link.
 - **Watchdog host config address.** The suburban watchdog must target the
   MWAN VM's current management address. A stale address degrades its VM
   health probe to the TCP and PVE fallback channels (the vsock channel still

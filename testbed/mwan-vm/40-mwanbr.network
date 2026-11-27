@@ -1,4 +1,4 @@
-# Internal link to OPNsense
+# MWAN internal link
 
 [Match]
 Name=enmwanbr0

@@ -10,10 +10,7 @@ hardware-address match, IPv4 by DHCP at route metric 6000, an `ipv6` block with
 and source priority 58. The entry does not declare a translation prefix. The daemon renders
 `20-enastound0.link` and `20-enastound0.network` from it. The simulator is LXC
 903 on `suburban`; its ingress from the gateway is `veth903i0` and its uplink is
-`veth903i1`. The LAN IPv4 client for every fetch below is the testbed router,
-VM 201, driven with `qm guest exec 201` on `suburban`; its default route is
-`10.240.240.3`, the gateway's address on `enmwanbr0`. The LAN guests on the
-management network do not have IPv4 and cannot serve that role.
+`veth903i1`. The LAN client used the MWAN gateway at `10.240.240.3` for IPv4.
 
 The testbed gateway is the guest named `mwan.suburban.goodkind.io` on the
 hypervisor `suburban`. Commands marked "gateway" ran there over ssh through
@@ -91,11 +88,10 @@ Suburban, 15:18:01: `ip link set veth903i1 up`. Gateway at 15:18:24:
 
 ## Idle at a lower tier
 
-With all four providers healthy, suburban and the router at 15:17:
+With all four providers healthy, the simulator capture at 15:17:
 
 ```bash
 timeout 15 tcpdump -ni veth903i0 -c 4 -q host 1.1.1.1 and tcp port 443
-qm guest exec 201 --timeout 20 -- /usr/local/bin/curl -4 -s -o /dev/null -w "%{http_code} %{remote_ip}" --max-time 10 https://1.1.1.1
 ```
 
 The fetch returned `301 1.1.1.1`. The capture ended at its timeout with
@@ -117,14 +113,13 @@ HTTP probes waits out a 22-second timeout before the cycle ends. At 15:28:20
 both families had `50: from all iif enmwanbr0 lookup astound`, IPv4 kept rule
 600, and IPv6 did not keep any other provider rule.
 
-Suburban and the router at 15:28:
+Simulator capture at 15:28:
 
 ```bash
 timeout 20 tcpdump -ni veth903i0 -c 6 -q host 1.1.1.1 and tcp port 443
-qm guest exec 201 --timeout 25 -- /usr/local/bin/curl -4 -s -o /dev/null -w "%{http_code} %{remote_ip}" --max-time 15 https://1.1.1.1
 ```
 
-The router got its 301 through astound this time. The capture at 15:28:29
+The LAN client got its 301 through astound this time. The capture at 15:28:29
 recorded `10.240.207.2.21766 > 1.1.1.1.443` and the reply from `1.1.1.1.443`,
 the gateway's astound address as source on the hypervisor side of the
 simulator, before the simulator masquerades.
@@ -149,7 +144,7 @@ AT&T and webpass unhealthy, no rule at priority 50, IPv4 rules 300 and 600
 only, and the three balancer rules in `nft list table inet mwan_steer` read
 `numgen random mod 2 map { 0 : 0x03000000, 16777216 : 0x04000000 }`.
 
-Three router fetches of `https://1.1.1.1`, `/cdn-cgi/trace` and `/dns-query`
+Three LAN client fetches of `https://1.1.1.1`, `/cdn-cgi/trace` and `/dns-query`
 returned 301, 200 and 400. The capture on `veth903i0` at 15:58:25 recorded
 `10.240.207.2.24224 > 1.1.1.1.443`: one of the three flows was balanced onto
 astound.

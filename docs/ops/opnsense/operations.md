@@ -153,7 +153,7 @@ those routes cover, not the default. So it's safe assuming Rule 1 holds.
 
 ### Rule 6: Duplicate `<if>device</if>` declarations silently drop the loser
 
-`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but does not bind an address to any kernel interface. The testbed substitutions transform strips `opt6` so MANAGEMENT remains the only untagged interface mapped to `vtnet0`.
+`interfaces_configure` builds `$hardware[$ifcfg['if']] = $if`, keyed by device name. Two interface entries on the same untagged device cause the second to overwrite the first in the map. Iteration order is alphabetical by `<descr>` via `strnatcmp` in `config.inc:340`. The losing interface stays in the GUI config but does not bind an address to any kernel interface.
 
 ### Rule 7: `pkg upgrade -y` must run BEFORE `pkg install`
 
@@ -217,6 +217,6 @@ to any -> (vtnet1:0)` rule.
 
 ## Snapshots without saved RAM
 
-Take every OPNsense snapshot without saved RAM, on production and testbed alike. A snapshot that saves RAM resumes on rollback with a stale wall clock, dead TCP sockets, and a stale resolver cache, which wastes hours chasing a failure that is really stale state. The web GUI defaults saved RAM on for a running VM, so do not take these snapshots from the GUI.
+Take every OPNsense snapshot without saved RAM. A snapshot that saves RAM resumes on rollback with a stale wall clock, dead TCP sockets, and a stale resolver cache, which wastes hours chasing a failure that is really stale state. The web GUI defaults saved RAM on for a running VM, so do not take these snapshots from the GUI.
 
 After a rollback, confirm the guest agent and serial console respond, SSH and the web UI answer, DNS resolves, and the default routes, firewall rules, and BGP state are sane before trusting the router again.
