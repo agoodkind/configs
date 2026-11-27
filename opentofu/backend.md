@@ -7,7 +7,10 @@ bucket is outside the homelab and survives the loss of a hypervisor or a
 workstation. The backend uses the S3 protocol with a lock file. A second run
 waits for the lock.
 
-Run tofu commands through configsctl, except for the manual
+Edit [state-backend.json](modules/contracts/state-backend.json) to change the
+shared S3 settings. Each workspace defines its own state key.
+
+Run tofu commands through configsctl, except for the
 [1Password provisioning procedure](../docs/ops/infra/onepassword.md).
 configsctl reads the credentials from the Ansible vault.
 
