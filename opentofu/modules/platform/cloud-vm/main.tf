@@ -56,6 +56,10 @@ resource "proxmox_virtual_environment_vm" "server" {
   boot_order    = ["scsi0"]
   scsi_hardware = "virtio-scsi-single"
 
+  dynamic "smbios" {
+    for_each = var.smbios_family == null ? [] : [var.smbios_family]
+    content { family = smbios.value }
+  }
   cpu {
     cores = var.vm_capacity.cores
     type  = "host"

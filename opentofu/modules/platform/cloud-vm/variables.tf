@@ -91,3 +91,9 @@ variable "started" {
   type    = bool
   default = true
 }
+
+variable "smbios_family" {
+  description = "Set the SMBIOS family to expose the Proxmox-generated VM UUID."
+  type        = string
+  default     = null
+}

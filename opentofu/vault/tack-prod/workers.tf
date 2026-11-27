@@ -45,6 +45,7 @@ module "k3s_worker_vm" {
   source                = "../../modules/platform/cloud-vm"
   for_each              = module.configuration.k3s_workers
   guest                 = each.value
+  smbios_family         = "k3s-worker"
   cloud_image           = null
   shared_cloud_image_id = module.tack_k3s_vm.cloud_image_id
   vm_capacity           = module.configuration.vm_capacity
@@ -82,29 +83,19 @@ module "k3s_worker_base" {
 }
 
 module "k3s_agent" {
-  source             = "../../modules/platform/k3s-agent"
-  for_each           = module.k3s_worker_vm
-  guest              = each.value.guest
-  server_ipv6        = module.configuration.tack_k3s.guest.ipv6
-  artifact           = module.configuration.tack_k3s.artifact
-  join_token         = var.vault_tack_k3s_agent_token
-  join_token_version = 1
-  taints             = ["workload=opt-in:NoSchedule"]
+  source      = "../../modules/platform/k3s-agent"
+  for_each    = module.k3s_worker_vm
+  guest       = each.value.guest
+  server_ipv6 = module.configuration.tack_k3s.guest.ipv6
+  artifact    = module.configuration.tack_k3s.artifact
+  build_uuid  = each.value.build_uuid
+  server_vmid = module.configuration.tack_k3s.guest.vmid
+  hypervisor  = local.service_mapping.vault_hypervisor.hostname
+  taints      = ["workload=opt-in:NoSchedule"]
   registry_credentials = {
     username = module.configuration.vm_recipe.registry_username
     token    = var.vault_tack_ghcr_pull_token
   }
   registry_credentials_version = module.configuration.tack_k3s_application.registry_credentials_version
   depends_on                   = [module.k3s_worker_base]
-}
-
-variable "vault_tack_k3s_agent_token" {
-  description = "Secure agent bootstrap token from k3s token create on the production server."
-  type        = string
-  ephemeral   = true
-  sensitive   = true
-  validation {
-    condition     = can(regex("^K10[0-9a-f]{64}::[a-z0-9]{6}\\.[a-z0-9]{16}$", trimspace(var.vault_tack_k3s_agent_token)))
-    error_message = "Supply a secure k3s bootstrap token for agent registration."
-  }
 }
