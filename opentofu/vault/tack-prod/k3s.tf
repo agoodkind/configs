@@ -4,8 +4,8 @@ module "tack_k3s_vm" {
   cloud_image           = module.configuration.tack_k3s.cloud_image
   vm_capacity           = module.configuration.vm_capacity
   tags                  = module.configuration.vm_recipe.tags
-  pci_mapping           = proxmox_hardware_mapping_pci.tack.name
-  secondary_pci_mapping = proxmox_hardware_mapping_pci.tack_secondary.name
+  pci_mapping           = proxmox_hardware_mapping_pci.guest["tack_k3s"].name
+  secondary_pci_mapping = proxmox_hardware_mapping_pci.guest["tack_k3s-secondary"].name
   started               = !contains(var.stopped_guest_ids, local.tack_vf.vmid)
   initialization = {
     public_keys     = local.k3s_preparation.public_keys
@@ -69,6 +69,8 @@ module "tack_k3s" {
   snapshot_credentials_version = module.configuration.tack_k3s.snapshot_credentials_version
   server_token                 = trimspace(var.vault_tack_k3s_server_token)
   server_token_version         = module.configuration.tack_k3s.server_token_version
+  agent_token                  = var.vault_tack_k3s_agent_token
+  agent_token_version          = module.configuration.tack_k3s.agent_token_version
 
   registry_credentials = {
     username = module.configuration.vm_recipe.registry_username

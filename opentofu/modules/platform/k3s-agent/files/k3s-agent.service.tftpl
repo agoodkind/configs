@@ -1,0 +1,22 @@
+[Unit]
+Description=K3s agent
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=notify
+ExecStartPre=/sbin/modprobe br_netfilter
+ExecStartPre=/sbin/modprobe overlay
+ExecStart=/usr/local/sbin/start-k3s-agent ${server_ipv6}
+KillMode=process
+Delegate=yes
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+TimeoutStartSec=0
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

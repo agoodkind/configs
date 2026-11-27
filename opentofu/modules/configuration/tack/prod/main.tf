@@ -35,6 +35,10 @@ locals {
     ], module.vault_host.guest_networks[key].kind == "lxc" ? ["pveguest_container_options.hostnic[0]"] : []) :
     "module.guest_network[${jsonencode(key)}].${resource}" => "vault"
   }]...)
+  worker_vm_locks = merge([for key in keys(local.k3s_workers) : {
+    "module.k3s_worker_vm[${jsonencode(key)}]"                            = "vault"
+    "proxmox_virtual_environment_file.worker_network[${jsonencode(key)}]" = "vault"
+  }]...)
   lock_targets = {
     module_hosts = merge({
       "module.tack_k3s_vm"      = "vault"
@@ -44,7 +48,7 @@ locals {
       "module.vault"                 = "vault"
       "proxmox_hardware_mapping_pci" = "vault"
       "module.tack_k3s"              = "vault"
-    }, local.network_lock_hosts, { for address, key in local.static_guest_locks : address => local.locked_guests[key].hostname })
+    }, local.worker_vm_locks, local.network_lock_hosts, { for address, key in local.static_guest_locks : address => local.locked_guests[key].hostname })
   }
 }
 locals { guest_keys = toset(["tack", "tack_data1", "tack_data2", "tack_data3", "tack_search1"]) }
@@ -64,6 +68,7 @@ output "lock_targets" { value = merge(local.lock_targets, {
 locals {
   provisioned_guests = merge(
     local.container_services,
+    local.k3s_workers,
     { (local.tack_k3s.guest.service_key) = local.tack_k3s.guest },
   )
 }

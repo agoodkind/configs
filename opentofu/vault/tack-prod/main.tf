@@ -26,7 +26,7 @@ locals {
   github_keys = module.github_keys.public_keys
   nodes = {
     (module.configuration.tack_k3s.guest.node) = {
-      endpoint  = regex("^https://[^/]+", var.proxmox_endpoint)
+      endpoint  = local.service_mapping.vault_hypervisor.api_endpoint
       api_token = "${local.proxmox_token_principal}=${var.vault_proxmox_token_secret}"
       insecure  = true
       node_name = module.configuration.tack_k3s.guest.node_name
@@ -109,6 +109,8 @@ data "http" "github_ssh_keys" {
   }
 }
 
-locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
+locals {
+  proxmox_token_principal = module.contracts.proxmox_token_principal
+}
 
 module "configuration" { source = "../../modules/configuration/tack/prod" }

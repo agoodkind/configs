@@ -38,6 +38,8 @@ data "http" "github_ssh_keys" {
   }
 }
 
-locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
+locals {
+  proxmox_token_principal = module.contracts.proxmox_token_principal
+}
 
 module "configuration" { source = "../../modules/vault/seaweedfs/configuration" }
