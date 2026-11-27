@@ -76,7 +76,7 @@ resource "terrakube_federated_credential" "deploy_queue" {
 
   name       = "configs-deploy-${each.value.name}"
   issuer_url = "https://token.actions.githubusercontent.com"
-  audience   = "terrakube-configs-deploy"
+  audience   = "terrakube-deploy"
 }
 
 resource "terrakube_federated_credential_claim" "deploy_queue" {
