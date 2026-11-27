@@ -45,7 +45,6 @@ resource "proxmox_virtual_environment_container" "debianct" {
   unprivileged  = true
 
   lifecycle {
-    prevent_destroy = true
     ignore_changes = [
       operating_system[0].template_file_id,
     ]
