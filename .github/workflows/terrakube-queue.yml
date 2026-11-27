@@ -99,6 +99,7 @@ jobs:
           ref: refs/heads/main
           fetch-depth: 0
           token: ${{ steps.publisher.outputs.token }}
+          persist-credentials: false
           path: configs
       - name: Submit the next reviewed commit
         env:
@@ -109,4 +110,5 @@ jobs:
           TERRAKUBE_BASELINE_SHA: ${{ vars.TERRAKUBE_BASELINE_SHA }}
           WORKSPACE: ${{ matrix.target.name }}
           PROMOTION_ENVIRONMENT: ${{ matrix.target.environment }}
+          PROMOTION_GITHUB_TOKEN: ${{ steps.publisher.outputs.token }}
         run: '"$RUNNER_TEMP/terrakube-queue" "$WORKSPACE" "$GITHUB_WORKSPACE/configs"'
