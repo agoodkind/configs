@@ -1,5 +1,5 @@
 provider "proxmox" {
-  endpoint  = var.proxmox_endpoint
+  endpoint  = local.vault_host.api_endpoint
   api_token = "${local.proxmox_token_principal}=${var.vault_proxmox_token_secret}"
   insecure  = true
 }
@@ -17,7 +17,7 @@ terraform {
 
 provider "pveguest" {
   nodes = { vault = {
-    endpoint  = trimsuffix(var.proxmox_endpoint, "/")
+    endpoint  = local.vault_host.api_endpoint
     api_token = "${local.proxmox_token_principal}=${var.vault_proxmox_token_secret}"
     insecure  = true
   } }

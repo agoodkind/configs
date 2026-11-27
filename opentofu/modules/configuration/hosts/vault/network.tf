@@ -13,20 +13,6 @@ locals {
       secondary_ifname = "vfct100b"
       primary_member   = "vf0"
     }
-    # Remove these VF assignments after a Kubernetes VM replaces the UniFi LXC.
-    unifi = {
-      vmid             = 102
-      index            = 2
-      kind             = "lxc"
-      backend          = "ifupdown"
-      driver           = "iavf"
-      ifname           = "vfct102"
-      mac              = "bc:24:11:9e:dc:6d"
-      addresses        = []
-      secondary_mac    = "be:24:11:9e:dc:6d"
-      secondary_ifname = "vfct102b"
-      primary_member   = "vf1"
-    }
     # Remove these VF assignments and the static IPv6 address after all Kafka clients use the replacement broker.
     tack = {
       vmid             = 117

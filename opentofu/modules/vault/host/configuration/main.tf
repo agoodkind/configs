@@ -1,7 +1,6 @@
 module "vault_hypervisor" { source = "../../../configuration/services/vault_hypervisor" }
 locals {
   service_mapping = {
-    unifi            = { node = "vault", vmid = module.vault_host.guest_networks.unifi.vmid, hostname = "unifi-docker" }
     vault_hypervisor = module.vault_hypervisor.value
   }
 }
@@ -10,21 +9,22 @@ locals {
   lock_targets = {
     node_hosts = { (module.vault_host.node.key) = "vault" }
     module_hosts = {
-      "module.overlay[\"vault\"]"                   = "vault"
-      "proxmox_acme_account.vault"                  = "vault"
-      "proxmox_acme_certificate.vault"              = "vault"
-      "proxmox_acme_dns_plugin.vault"               = "vault"
-      "proxmox_storage_directory.local"             = "vault"
-      "proxmox_virtual_environment_dns.vault"       = "vault"
-      "terraform_data"                              = "vault"
-      "proxmox_virtual_environment_container.unifi" = "vault"
-      "proxmox_network_applier"                     = "vault"
-      "linux_sysctl"                                = "vault"
-      "linux_file"                                  = "vault"
-      "linux_systemd_unit"                          = "vault"
-      "module.unattended_upgrades"                  = "vault"
-      "module.mail"                                 = "vault"
-      "module.smtp2go"                              = "vault"
+      "module.overlay[\"vault\"]"             = "vault"
+      "proxmox_acme_account.vault"            = "vault"
+      "proxmox_acme_certificate.vault"        = "vault"
+      "proxmox_acme_dns_plugin.vault"         = "vault"
+      "proxmox_storage_directory.local"       = "vault"
+      "proxmox_virtual_environment_dns.vault" = "vault"
+      "terraform_data"                        = "vault"
+      "proxmox_network_applier"               = "vault"
+      "linux_sysctl"                          = "vault"
+      "linux_file"                            = "vault"
+      "linux_file_line"                       = "vault"
+      "linux_hostname"                        = "vault"
+      "linux_systemd_unit"                    = "vault"
+      "module.unattended_upgrades"            = "vault"
+      "module.mail"                           = "vault"
+      "module.smtp2go"                        = "vault"
     }
   }
 }
@@ -33,4 +33,4 @@ output "lock_targets" { value = merge(local.lock_targets, { lock_endpoints = {
   "vault" = module.vault_host.lock_endpoint
 } }) }
 
-output "managed_guests" { value = { unifi = local.service_mapping.unifi } }
+output "managed_guests" { value = {} }

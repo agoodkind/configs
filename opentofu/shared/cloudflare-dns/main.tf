@@ -66,7 +66,7 @@ locals {
     }
     "goodkind.io/A/hypervisor.home.goodkind.io/9f586dc5" = {
       zone    = "goodkind.io"
-      name    = "hypervisor.home.goodkind.io"
+      name    = local.service_mapping.vault_hypervisor.fqdn
       type    = "A"
       content = split("/", var.management_ipv4_cidr)[0]
       ttl     = 1
@@ -122,7 +122,7 @@ locals {
     }
     "goodkind.io/AAAA/hypervisor.home.goodkind.io/ec2ffb07" = {
       zone    = "goodkind.io"
-      name    = "hypervisor.home.goodkind.io"
+      name    = local.service_mapping.vault_hypervisor.fqdn
       type    = "AAAA"
       content = split("/", var.management_ipv6_cidr)[0]
       ttl     = 1

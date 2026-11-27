@@ -10,12 +10,6 @@ variable "cloudflare_owner_email" {
   default     = "alex@goodkind.io"
 }
 
-variable "proxmox_endpoint" {
-  description = "Proxmox API base URL for the production vault host including port"
-  type        = string
-  default     = "https://hypervisor.home.goodkind.io:8006/"
-}
-
 variable "vault_proxmox_acme_cloudflare_token" {
   description = "Cloudflare DNS token that the production vault host uses for ACME DNS challenges"
   type        = string
