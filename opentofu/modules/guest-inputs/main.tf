@@ -83,7 +83,6 @@ locals {
     "mwan_suburban",
     "seaweedfs_suburban",
     "tack",
-    "tack_app2",
     "tack_app2_suburban",
     "tack_data1",
     "tack_data1_suburban",

@@ -12,7 +12,7 @@ locals {
   tack_static_route_label = "tack-tmp-statics"
   tack_static_guests = [
     "tack", "seaweedfs", "tack_data1", "tack_data2", "tack_data3",
-    "tack_app2", "tack_k3s", "tack_search1",
+    "tack_k3s", "tack_search1",
   ]
   tack_static_routes = contains(var.tack_k3s_environments, "prod") ? flatten([
     for guest in local.tack_static_guests : [

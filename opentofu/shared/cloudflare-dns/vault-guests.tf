@@ -2,7 +2,6 @@ locals {
   vault_guest_keys = toset([
     "seaweedfs",
     "tack",
-    "tack_app2",
     "tack_data1",
     "tack_data2",
     "tack_data3",
@@ -20,10 +19,6 @@ resource "cloudflare_dns_record" "vault_guests" {
   content = each.value.ipv6
   ttl     = 1
   proxied = false
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "cloudflare_dns_record" "tack_public" {

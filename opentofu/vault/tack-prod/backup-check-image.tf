@@ -13,6 +13,7 @@ resource "pveguest_file" "backup_check_image" {
   content = join("\n", [
     "[Service]",
     "Environment=TACK_IMAGE_TAG=${local.backup_check_tag}",
+    "Environment=TACK_OPS_IMAGE=${local.backup_check_image}",
     "",
   ])
 }

@@ -1,14 +1,11 @@
 locals {
-  k3s_kafka_guest = local.guests["tack"]
+  k3s_kafka_guest   = local.guests["tack"]
+  k3s_kafka_address = cidrhost(local.service_mapping.tack.docker_v6_subnet, 4)
   k3s_kafka_compose = templatefile("${path.module}/files/k3s-kafka.compose.yml.tftpl", {
     subnet        = local.service_mapping.tack.docker_v6_subnet
     dynamic_range = cidrsubnet(local.service_mapping.tack.docker_v6_subnet, 1, 1)
+    kafka_address = local.k3s_kafka_address
   })
-
-  k3s_kafka_services = yamldecode(local.k3s_kafka_compose).services
-  k3s_kafka_proxy_neighbors = toset([
-    for name in ["app", "kafka"] : local.k3s_kafka_services[name].networks.default.ipv6_address
-  ])
 }
 
 resource "pveguest_file" "k3s_kafka_overlay" {

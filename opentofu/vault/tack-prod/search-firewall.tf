@@ -3,8 +3,6 @@ locals {
   search_callers = [
     local.service_mapping.tack.ipv6,
     local.service_mapping.tack.docker_v6_subnet,
-    local.service_mapping.tack_app2.ipv6,
-    local.service_mapping.tack_app2.docker_v6_subnet,
     module.configuration.tack_k3s.guest.ipv6,
   ]
 }
