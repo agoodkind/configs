@@ -16,7 +16,7 @@ While the chardev fd stays open, a guest write may spin or block transiently, bu
 completes it once the host resumes reading. Therefore a permanent wedge is impossible as long
 as the chardev fd never closes while the VM is up.
 
-Proven this session by sub-second register sampling on the testbed OPNsense guest (qemu 11.0.0):
+Register samples on QEMU 11.0.0 showed the following behavior:
 
 - fd-store OFF, drainer `kill -9` mid-pull: the host fd closed on process death, qemu saw a
   disconnect, and the guest wedged permanently (the positive control).

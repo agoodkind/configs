@@ -1,9 +1,7 @@
 # OPNsense UI testing
 
 Use this page when a local browser needs to reach an OPNsense UI page through
-an SSH forward. The forwarding values come from the current testbed inventory
-and access documentation, so this page does not own hostnames, addresses, or
-site-specific ports.
+an SSH forward. Use the SSH host and UI port for the router under test.
 
 Use the service repository for service-specific UI paths. For the Cloudflared
 OPNsense plugin, the settings page path is:
@@ -66,7 +64,7 @@ LOCAL_URL="https://${LOCAL_BIND_SPEC}:${LOCAL_PORT}${REMOTE_PATH}"
 printf '%s\n' "${LOCAL_URL}"
 ```
 
-For testbed systems that use a self-signed or locally issued certificate,
+For local tests against a router that uses a self-signed or locally issued certificate,
 expect browser automation to ignore certificate errors only for this local
 test run.
 

@@ -129,7 +129,7 @@ Gateway: both providers unhealthy by 16:13:28; in both families the rules
 became `iif enmwanbr0 lookup monkeybrains` at priority 50. IPv6: a `curl` from
 the QA guest to `2606:4700:4700::1111` left the Monkeybrains simulator's
 ingress `veth902i0` as `3d06:bad:b01:2400::217`. IPv4: a fetch of
-`https://1.1.1.1` from the testbed router exited 0 and left `veth902i0` as
+`https://1.1.1.1` from the LAN client exited 0 and left `veth902i0` as
 `10.240.206.100`. Name resolution failed for about a minute during the switch
 (`curl` exit 6 at 16:13:40) and worked at 16:14:54.
 

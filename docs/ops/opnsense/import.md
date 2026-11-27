@@ -30,9 +30,7 @@ pre-reboot interface check.
 If the new config names an interface device the host does not have, the GUI
 postpones the reboot and routes the operator to interface assignment. The
 boot-time check instead drops the boot into an interactive console prompt,
-which stalls a headless guest. The pre-import interface gate in our transform
-exists to prevent exactly that stall: before writing the new config, every
-interface device it names must resolve on the host, or the import stops.
+which stalls a headless guest. Verify each interface device on the host before writing the new config.
 
 A single `<lock>` flag on any one interface entry disables the entire
 boot-time mismatch check, not just the check for that interface. The GUI's
@@ -69,6 +67,3 @@ rollback target.
 - OPNsense does not provide a transaction across services. Once interfaces
   reconfigure, a later plugin failure does not roll them back. Design around apply, observe,
   decide, never all-or-nothing.
-
-The testbed import runbook with its per-change gates is
-[the testbed import page](testbed/import.md).

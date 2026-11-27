@@ -20,7 +20,6 @@ terraform.d/
 .terraform.lock.hcl
 # Track this lockfile so tofu init verifies the same provider packages on
 # darwin_arm64, linux_amd64, and linux_arm64.
-!/opentofu/suburban/mwan/.terraform.lock.hcl
 !/opentofu/vault/*/.terraform.lock.hcl
 terraform.tfvars
 *.tfstate
@@ -35,7 +34,6 @@ terraform.tfvars
 # Binary artifacts
 /mwan-binary
 /bin/
-HANDOFF_MWAN_OPNSENSE_TESTBED.txt
 
 /.make/
 

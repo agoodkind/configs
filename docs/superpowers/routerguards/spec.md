@@ -201,7 +201,9 @@ before blaming a gateway deploy.
 
 ## Acceptance criteria
 
-AC1: with a spare device added to the testbed router after its existing slots
+Run these checks on an isolated router VM.
+
+AC1: with a spare device added to the router after its existing slots
 and no reboot taken, an upgrade started from that router's web interface
 aborts naming undeclared hardware, the firmware log carries the hook's
 reason, and the guest still runs its previous firmware. This placement
@@ -216,51 +218,46 @@ upgrade proceeds, and the hook's warning appears in the firmware log.
 AC4: both hooks are present and executable on the guest after a completed
 firmware upgrade.
 
-AC5: adding a device to a guarded testbed guest raises one alert within a
+AC5: adding a device to a guarded guest raises one alert within a
 single timer interval naming the guest and the difference, and removing it
 clears the alert.
 
-AC6: rebooting the testbed router from its web interface records a change
+AC6: rebooting the router from its web interface records a change
 window on the hypervisor before the guest stops, and the same reboot taken
 while a testbed gateway deploy sits inside its own window leaves the gateway
 untouched.
 
-AC7: with the testbed router's transit link broken so egress does not return,
+AC7: with the router's transit link broken so egress does not return,
 the watchdog rolls the router back to its newest healthy snapshot, and the
 post-rollback checks the router runbook already lists all pass.
 
-AC8: restarting the host bridge while a testbed router reboot is arming leaves
+AC8: restarting the host bridge while a router reboot is arming leaves
 both guest processors idle rather than one polling a virtual queue and one
 delayed on a lock, and the router completes its reboot.
 
-AC9 (residual, production topology only): both routers carry two devices, but
-the testbed router occupies consecutive slots while the production router
-occupies the first and fourth. The drift check's handling of a
-non-consecutive slot list is therefore proven only by the first production
-run after this ships.
+AC9: verify that the drift check accepts devices in the first and fourth slots, matching the production layout.
 
-AC10: with the testbed router's two devices exchanged between their slots and
+AC10: with the router's two devices exchanged between their slots and
 no reboot taken, an upgrade started from that router's web interface aborts
 and names the reordering. Nothing changes inside the running guest in this
 case, so neither a set nor a count nor any guest-local copy of the baseline
 would have caught it.
 
-AC11: with the host bridge stopped, a testbed router reboot still completes in
+AC11: with the host bridge stopped, a router reboot still completes in
 its normal time, and the hook reports that it could not confirm a change
 window.
 
-AC12: with the host bridge stopped, an upgrade started from the testbed
-router's web interface aborts, naming the unreachable hypervisor as the
+AC12: with the host bridge stopped, an upgrade started from the router's web interface aborts, naming the unreachable hypervisor as the
 reason, and proceeds when the override marker is present. The result does not
 depend on how long ago the bridge stopped.
 
-AC13: with the testbed router's two devices exchanged between their slots at
+AC13: with the router's two devices exchanged between their slots at
 the hypervisor and the declared record edited to match, and no reboot taken,
 an upgrade still aborts. Declaring a layout does not make a guest that has
 not booted into it safe to reboot, and this is the case that separates the
 two comparisons: the declared one now passes while the order one refuses.
 
-AC14: with a device appended after the testbed router's existing slots and
+AC14: with a device appended after the router's existing slots and
 the declared record edited to match, an upgrade proceeds. Appending does not renumber
 any interface, so a refusal here would be a false one.
 
@@ -268,33 +265,32 @@ AC15: an answer to a request that already timed out is refused by the next
 hook run, including when the guest daemon restarted between the two, and
 including when the answer says the reboot is safe.
 
-AC16: with a device resolving to the same driver inserted before the testbed
-router's existing slots and the declared record edited to match, an upgrade
+AC16: with a device resolving to the same driver inserted before the router's existing slots and the declared record edited to match, an upgrade
 aborts. The guest's own interfaces are unchanged and every one of them would
 come back under a different name, so this is the case that proves the
 numbering runs over the hypervisor's devices rather than over the ones the
 guest already has.
 
 AC17: with a device resolving to a different driver inserted before the
-testbed router's existing slots and the declared record edited to match, an
+router's existing slots and the declared record edited to match, an
 upgrade proceeds. It counts in its own driver's sequence and does not change a name in
 another, so numbering every device in one sequence would have refused this
 falsely.
 
 AC18: with a device written as a different adapter model but resolving to the
-driver the guest already uses, inserted before the testbed router's existing
+driver the guest already uses, inserted before the router's existing
 slots and the declared record edited to match, an upgrade aborts. The two
 models differ while the driver they share does not, so grouping by the model
 as written would have passed a reboot that renumbers every interface in that
 driver's sequence.
 
-AC19: with one of the testbed router's devices changed to a model resolving to
+AC19: with one of the router's devices changed to a model resolving to
 a different driver in its own slot, and the declared record edited to match,
 an upgrade aborts. The slot does not move and the unit can stay the same, so
 only a comparison of full interface names catches that the guest loses the
 interface its configuration names.
 
-AC20: with one of the testbed router's devices changed to a model the
+AC20: with one of the router's devices changed to a model the
 resolution table does not carry, and the declared record edited to match, an
 upgrade aborts naming the unknown model, because a driver the hook cannot
 resolve is a name it cannot predict. Editing the record is what isolates the

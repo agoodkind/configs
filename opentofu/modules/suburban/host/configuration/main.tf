@@ -4,9 +4,6 @@ locals {
   service_mapping = {
     suburban_hypervisor = module.suburban_hypervisor.value
     vmbr1_suburban      = module.vmbr1_suburban.value
-    vmbrtrunk_suburban = {
-      "ipv4" = "10.240.4.5"
-    }
   }
 }
 output "service_mapping" { value = local.service_mapping }
