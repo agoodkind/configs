@@ -8,7 +8,7 @@ locals {
       guest           = module.tack_prod.tack_k3s.guest
       token_version   = 1
       hypervisor = {
-        address   = module.tack_prod.service_mapping.vault_hypervisor.hostname
+        address   = module.tack_prod.service_mapping.vault_hypervisor.fqdn
         node_name = module.tack_prod.tack_k3s.guest.node_name
       }
     }

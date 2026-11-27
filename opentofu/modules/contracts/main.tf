@@ -26,6 +26,8 @@ locals {
     "goodkind.io"      = "13ccc5ba064b1661495c0ec86511e9a7"
     "silver-flare.com" = "de02872854ceebbe1d731e3aef200de2"
   }
+
+  management_domain = "management.collingwood.goodkind.io"
 }
 
 output "shared_vars" { value = local.shared_vars }
@@ -33,3 +35,4 @@ output "proxmox_token_principal" { value = "${local.shared_vars.proxmox_api_user
 output "cloudflare_zone_ids" { value = local.cloudflare_zone_ids }
 output "tack_domain_aliases" { value = local.tack_domain_aliases }
 output "tack_k3s_tunnel_names" { value = local.tack_k3s_tunnel_names }
+output "management_domain" { value = local.management_domain }

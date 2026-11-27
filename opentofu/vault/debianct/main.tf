@@ -16,6 +16,8 @@ module "vault" {
 }
 
 
-locals { proxmox_token_principal = module.contracts.proxmox_token_principal }
+locals {
+  proxmox_token_principal = module.contracts.proxmox_token_principal
+}
 
 module "configuration" { source = "../../modules/vault/debianct/configuration" }

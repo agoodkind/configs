@@ -5,6 +5,7 @@ module "tack_data2" { source = "../../../configuration/services/tack_data2" }
 module "tack_data3" { source = "../../../configuration/services/tack_data3" }
 module "tack_search1" { source = "../../../configuration/services/tack_search1" }
 module "poweredge_hypervisor" { source = "../../../poweredge/services/poweredge_hypervisor" }
+module "vault_hypervisor" { source = "../../../configuration/services/vault_hypervisor" }
 locals {
   service_mapping = {
     poweredge_hypervisor = module.poweredge_hypervisor.value
@@ -14,6 +15,7 @@ locals {
     tack_data2           = module.tack_data2.value
     tack_data3           = module.tack_data3.value
     tack_search1         = module.tack_search1.value
+    vault_hypervisor     = module.vault_hypervisor.value
   }
 }
 output "service_mapping" { value = local.service_mapping }
