@@ -41,3 +41,4 @@ auto-approved `apply` or `destroy` write to a file.
 - [Deploy and restore Kea configuration](opnsense/kea.md)
 - [Configuration checks](ansible/quality.md)
 - [Infrastructure](infra/access.md)
+- [Provision service vaults in 1Password](infra/onepassword.md)

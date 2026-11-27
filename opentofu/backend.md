@@ -7,8 +7,9 @@ bucket is outside the homelab and survives the loss of a hypervisor or a
 workstation. The backend uses the S3 protocol with a lock file. A second run
 waits for the lock.
 
-Run every tofu command through configsctl. configsctl reads the credentials
-from the Ansible vault.
+Run tofu commands through configsctl, except for the manual
+[1Password provisioning procedure](../docs/ops/infra/onepassword.md).
+configsctl reads the credentials from the Ansible vault.
 
 ```bash
 ./configsctl tofu suburban/tack-qa plan
