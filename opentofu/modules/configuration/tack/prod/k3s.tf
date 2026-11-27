@@ -1,4 +1,14 @@
 locals {
+  worker_hostnames = {
+    tack_k3s_worker_1 = "tack-k3s-worker-1.vault.goodkind.io"
+  }
+  k3s_workers = { for key, hostname in local.worker_hostnames : key => merge(module.vault_host.guest, {
+    hostname    = hostname
+    node        = module.vault_host.node.key
+    vmid        = module.vault_host.guest_networks[key].vmid
+    service_key = key
+    mac_address = module.vault_host.guest_networks[key].mac
+  }) }
   tack_k3s_guest = {
     hostname    = "tack-k3s.vault.goodkind.io"
     service_key = "tack_k3s"
@@ -28,6 +38,8 @@ locals {
     }
     snapshot_credentials_version             = 1
     server_token_version                     = 1
+    agent_token_version                      = 1
+    server_ca_hash                           = "73ae1f9542057e31c1725475a3db55652902c9745ff1eac53b1a358bad408d16"
     scripts_updater_activation_run           = true
     scripts_updater_randomized_delay_seconds = 300
   }
@@ -36,3 +48,5 @@ locals {
 output "tack_k3s" {
   value = local.tack_k3s
 }
+
+output "k3s_workers" { value = local.k3s_workers }

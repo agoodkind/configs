@@ -18,3 +18,10 @@ variable "vault_tack_k3s_server_token" {
   sensitive   = true
   ephemeral   = true
 }
+
+variable "vault_tack_k3s_agent_token" {
+  description = "Shared worker credential from the encrypted vault."
+  type        = string
+  sensitive   = true
+  ephemeral   = true
+}

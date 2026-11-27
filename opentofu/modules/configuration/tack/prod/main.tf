@@ -37,9 +37,13 @@ locals {
   }]...)
   lock_targets = {
     module_hosts = merge({
-      "module.tack_k3s_vm"      = "vault"
-      "module.tack_k3s_base"    = "vault"
-      "module.tack_application" = "vault"
+      "module.tack_k3s_vm"                              = "vault"
+      "module.k3s_worker_base"                          = "vault"
+      "module.k3s_worker_vm"                            = "vault"
+      "module.k3s_agent"                                = "vault"
+      "proxmox_virtual_environment_file.worker_network" = "vault"
+      "module.tack_k3s_base"                            = "vault"
+      "module.tack_application"                         = "vault"
 
       "module.vault"                 = "vault"
       "proxmox_hardware_mapping_pci" = "vault"
@@ -64,6 +68,7 @@ output "lock_targets" { value = merge(local.lock_targets, {
 locals {
   provisioned_guests = merge(
     local.container_services,
+    local.k3s_workers,
     { (local.tack_k3s.guest.service_key) = local.tack_k3s.guest },
   )
 }
