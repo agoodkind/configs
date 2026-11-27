@@ -19,6 +19,11 @@ moved {
 }
 
 moved {
+  from = module.tack_k3s_base.pveguest_systemd_unit.networkd_wait_online[0]
+  to   = pveguest_systemd_unit.networkd_wait_online
+}
+
+moved {
   from = module.tack_k3s.pveguest_file.application_manifest
   to   = module.tack_application.pveguest_file.application_manifest
 }
