@@ -48,7 +48,7 @@ locals {
   overlay_hosts = { vault = {
     ssh_host       = local.vault_host.fqdn
     node_name      = "vault"
-    commit         = "7bfcf61825698c49af0f822c31def8525707f79d"
+    commit         = "9bd8a68b603a42cf2ef6901a8bc4c1b513c0bc19"
     guest_api      = true
     kernel_modules = { allow = ["bonding"] }
 

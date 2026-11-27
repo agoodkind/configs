@@ -62,18 +62,10 @@ locals {
   overlay_hosts = { poweredge = {
     ssh_host  = local.host.ipv6
     node_name = "poweredge"
-    commit    = "0e16e7fc3a4a59934cd0b31e4e1ac6ee47eb0cf7"
+    commit    = "9bd8a68b603a42cf2ef6901a8bc4c1b513c0bc19"
     guest_api = true
     kernel_modules = {
       allow = module.poweredge_config.kernel_modules
-    }
-    base_patch_sources = {
-      "patches/pve-access-control.patch" = ["patches/pve-access-control.patch"]
-      "patches/pve-container.patch"      = ["patches/pve-container.patch"]
-      "patches/pve-http-server.patch"    = ["patches/pve-http-server.patch"]
-      "patches/pve-manager-acme.patch"   = ["patches/pve-manager-acme.patch"]
-      "patches/pve-manager.patch"        = ["patches/pve-manager.patch"]
-      "patches/qemu-server.patch"        = ["patches/qemu-server.patch"]
     }
     container_options          = null
     grub_cmdline_linux_default = "systemd.show_status=1"
@@ -90,7 +82,6 @@ module "overlay" {
   guest_api             = each.value.guest_api
   automation_user       = local.shared_vars.proxmox_api_user
   kernel_modules        = each.value.kernel_modules
-  base_patch_sources    = each.value.base_patch_sources
   acme_account          = local.acme_account
   acme_plugin           = local.acme_plugin
   retain_node_acme_role = true

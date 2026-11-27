@@ -224,6 +224,12 @@ locals {
   source = "https://raw.githubusercontent.com/agoodkind/proxmox-overlays/${var.commit}"
   script = "/usr/local/sbin/pve-overlay"
 
+  template_directory = "/usr/local/share/pve-overlay/templates"
+  template_sources = toset([
+    "templates/apt-hook.conf",
+    "templates/upgrade-conflict.eml",
+  ])
+
   file_sources = merge({
     "pve-overlay" = ["pve-overlay"]
     "patches/pve-access-control.patch" = [
@@ -495,7 +501,7 @@ locals {
 }
 
 data "http" "files" {
-  for_each = toset(flatten(values(local.file_sources)))
+  for_each = setunion(toset(flatten(values(local.file_sources))), local.template_sources)
 
   url = "${local.source}/${each.key}"
 
@@ -505,6 +511,35 @@ data "http" "files" {
       error_message = "GitHub returned ${self.status_code} for ${each.key} at ${var.commit}."
     }
   }
+}
+
+resource "terraform_data" "template_directory" {
+  connection {
+    type  = "ssh"
+    host  = var.ssh_host
+    user  = "root"
+    agent = true
+  }
+
+  provisioner "remote-exec" {
+    inline = ["install -d -m 0755 -o root -g root ${local.template_directory}"]
+  }
+}
+
+resource "remote_file" "templates" {
+  for_each = local.template_sources
+
+  conn {
+    host  = local.remote_host
+    user  = "root"
+    agent = true
+  }
+
+  path        = "${local.template_directory}/${basename(each.key)}"
+  content     = data.http.files[each.key].response_body
+  permissions = "0644"
+
+  depends_on = [terraform_data.template_directory]
 }
 
 resource "remote_file" "files" {
@@ -519,14 +554,16 @@ resource "remote_file" "files" {
   path        = each.key == "pve-overlay" ? local.script : "/usr/local/share/pve-overlay-${trimprefix(each.key, "patches/")}"
   content     = join("", [for source in each.value : data.http.files[source].response_body])
   permissions = each.key == "pve-overlay" ? "0755" : "0644"
+
+  # The dpkg hook can invoke the installed script during a package operation.
+  depends_on = [remote_file.templates]
 }
 
-# `pve-overlay apply` also installs a dpkg hook. The hook runs
-# `pve-overlay apply` after each package operation on the hypervisor.
+# The APT hook checks proposed packages before installation. The dpkg hook
+# reapplies overlays after each package operation.
 resource "terraform_data" "apply" {
   triggers_replace = [
-    for name in keys(remote_file.files) :
-    sha256(remote_file.files[name].content)
+    for file in merge(remote_file.files, remote_file.templates) : sha256(file.content)
   ]
 
   connection {
