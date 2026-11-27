@@ -1,10 +1,12 @@
 locals {
-  k3s_kafka_guest   = local.guests["tack"]
-  k3s_kafka_address = cidrhost(local.service_mapping.tack.docker_v6_subnet, 4)
+  k3s_kafka_guest        = local.guests["tack"]
+  k3s_kafka_address      = cidrhost(local.service_mapping.tack.docker_v6_subnet, 4)
+  audit_consumer_address = cidrhost(local.service_mapping.tack.docker_v6_subnet, 5)
   k3s_kafka_compose = templatefile("${path.module}/files/k3s-kafka.compose.yml.tftpl", {
-    subnet        = local.service_mapping.tack.docker_v6_subnet
-    dynamic_range = cidrsubnet(local.service_mapping.tack.docker_v6_subnet, 1, 1)
-    kafka_address = local.k3s_kafka_address
+    subnet           = local.service_mapping.tack.docker_v6_subnet
+    dynamic_range    = cidrsubnet(local.service_mapping.tack.docker_v6_subnet, 1, 1)
+    kafka_address    = local.k3s_kafka_address
+    consumer_address = local.audit_consumer_address
   })
 }
 
