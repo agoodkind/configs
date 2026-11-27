@@ -130,7 +130,7 @@ variable "timezone" {
 }
 
 variable "networkd_wait_online_enabled" {
-  description = "Whether systemd-networkd-wait-online.service stays enabled while inactive."
+  description = "Whether to enable systemd-networkd-wait-online.service. Set to null when the guest manages this unit separately."
   type        = bool
   default     = false
 }
@@ -253,7 +253,7 @@ locals {
       content = file("${path.module}/files/sshd-disable-password-auth.conf")
     }
     global_authorized_keys = {
-      path = "${local.sshd_dropin_dir}/99-sshpiper-global-authorized-keys.conf"
+      path = "${local.sshd_dropin_dir}/99-global-authorized-keys.conf"
       content = templatefile(
         "${path.module}/files/sshd-global-authorized-keys.conf.tftpl",
         {
@@ -297,6 +297,10 @@ resource "pveguest_file" "sshd_dropin" {
     destination = each.value.path
     dropin_dir  = local.sshd_dropin_dir
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   depends_on = [
     pveguest_file.authorized_keys,
@@ -424,7 +428,14 @@ resource "pveguest_systemd_unit" "scripts_updater_timer" {
   ]
 }
 
+moved {
+  from = pveguest_systemd_unit.networkd_wait_online
+  to   = pveguest_systemd_unit.networkd_wait_online[0]
+}
+
 resource "pveguest_systemd_unit" "networkd_wait_online" {
+  count = var.networkd_wait_online_enabled == null ? 0 : 1
+
   node = var.node
   vmid = var.vmid
   kind = var.kind
@@ -480,15 +491,6 @@ resource "pveguest_file" "environment" {
 
   path    = "/etc/profile.d/98-prep-guests-environment.sh"
   content = file("${path.module}/files/environment.sh")
-}
-
-resource "pveguest_file" "pip" {
-  node = var.node
-  vmid = var.vmid
-  kind = var.kind
-
-  path    = "/etc/pip.conf"
-  content = file("${path.module}/files/pip.conf")
 }
 
 resource "pveguest_file" "locale_gen" {
@@ -622,7 +624,6 @@ resource "pveguest_file" "revision" {
     pveguest_file.console_autologin,
     pveguest_systemd_unit.console_getty,
     pveguest_file.environment,
-    pveguest_file.pip,
     pveguest_file.locale_gen,
     pveguest_locales.generated,
     pveguest_file.locale_conf,
