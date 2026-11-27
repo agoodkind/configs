@@ -45,15 +45,22 @@ locals {
   })
 }
 
-resource "pveguest_download" "k3s" {
-  node   = var.guest.node
-  vmid   = var.guest.vmid
-  kind   = "qemu"
-  url    = var.k3s_artifact.url
-  sha256 = var.k3s_artifact.sha256
-  fetch  = "guest"
-  path   = "/usr/local/bin/k3s"
-  mode   = "0755"
+module "runtime" {
+  source                       = "../k3s-runtime"
+  guest                        = var.guest
+  k3s_artifact                 = var.k3s_artifact
+  registry_credentials         = var.registry_credentials
+  registry_credentials_version = var.registry_credentials_version
+}
+
+moved {
+  from = pveguest_download.k3s
+  to   = module.runtime.pveguest_download.k3s
+}
+
+moved {
+  from = pveguest_file.registry
+  to   = module.runtime.pveguest_file.registry
 }
 
 resource "pveguest_file" "configuration" {
@@ -73,6 +80,19 @@ resource "pveguest_file" "server_token" {
   mode               = "0600"
   content_wo         = "${trimspace(var.server_token)}\n"
   content_wo_version = var.server_token_version
+}
+
+resource "pveguest_file" "agent_token" {
+  count = var.agent_token_version == null ? 0 : 1
+  node  = var.guest.node
+  vmid  = var.guest.vmid
+  kind  = "qemu"
+  path  = "/etc/rancher/k3s/config.yaml.d/80-agent-token.yaml"
+  mode  = "0600"
+  content_wo = yamlencode({
+    agent-token = var.agent_token
+  })
+  content_wo_version = var.agent_token_version
 }
 
 resource "pveguest_file" "snapshot_credentials" {
@@ -116,14 +136,18 @@ resource "pveguest_systemd_unit" "server" {
   enabled = true
   active  = true
 
-  restart_on = merge({
-    binary               = pveguest_download.k3s.write_id
-    configuration        = pveguest_file.configuration.write_id
-    server_token         = pveguest_file.server_token.write_id
-    snapshot_credentials = try(pveguest_file.snapshot_credentials[0].write_id, "disabled")
-    registry             = pveguest_file.registry.write_id
-    service              = pveguest_file.service.write_id
-  }, { for key, certificate in pveguest_file.snapshot_ca : key => certificate.write_id })
+  restart_on = merge(
+    {
+      binary               = module.runtime.binary_write_id
+      configuration        = pveguest_file.configuration.write_id
+      server_token         = pveguest_file.server_token.write_id
+      snapshot_credentials = try(pveguest_file.snapshot_credentials[0].write_id, "disabled")
+      registry             = module.runtime.registry_write_id
+      service              = pveguest_file.service.write_id
+    },
+    { for key, certificate in pveguest_file.snapshot_ca : key => certificate.write_id },
+    { for file in pveguest_file.agent_token : "agent_token" => file.write_id },
+  )
 }
 
 moved {
