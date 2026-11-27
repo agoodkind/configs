@@ -1,18 +1,5 @@
 locals {
   guest_networks = {
-    debianct = {
-      vmid             = 100
-      index            = 1
-      kind             = "lxc"
-      backend          = "ifupdown"
-      driver           = "iavf"
-      ifname           = "vfct100"
-      mac              = "bc:24:11:73:b0:3c"
-      addresses        = []
-      secondary_mac    = "be:24:11:73:b0:3c"
-      secondary_ifname = "vfct100b"
-      primary_member   = "vf0"
-    }
     # Remove these VF assignments after a Kubernetes VM replaces the UniFi LXC.
     unifi = {
       vmid             = 102

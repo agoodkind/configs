@@ -2199,7 +2199,7 @@
       <interface>opt6</interface>
       <ipprotocol>inet6</ipprotocol>
       <statetype>keep state</statetype>
-      <descr>DebianCT -&gt; NAS 3923</descr>
+      <descr>Proxy -&gt; NAS 3923</descr>
       <direction>in</direction>
       <log>1</log>
       <quick>1</quick>
@@ -2283,7 +2283,7 @@
       <interface>opt6</interface>
       <ipprotocol>inet6</ipprotocol>
       <statetype>keep state</statetype>
-      <descr>DebianCT -&gt; NAS ping</descr>
+      <descr>VMNET -&gt; NAS ping</descr>
       <direction>in</direction>
       <log>1</log>
       <quick>1</quick>
@@ -3503,23 +3503,6 @@ __opt6_network</content>
             <updatefreq/>
             <content>10.250.0.254
 3d06:bad:b01::254</content>
-            <password/>
-            <username/>
-            <authtype/>
-            <expire/>
-            <categories/>
-            <description/>
-          </alias>
-          <alias uuid="880f859f-0b83-4bf7-8734-6d8ad859a5f6">
-            <enabled>1</enabled>
-            <name>debianct</name>
-            <type>host</type>
-            <path_expression/>
-            <proto/>
-            <interface/>
-            <counters>0</counters>
-            <updatefreq/>
-            <content>3d06:bad:b01::100</content>
             <password/>
             <username/>
             <authtype/>
