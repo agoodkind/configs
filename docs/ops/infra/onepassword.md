@@ -7,23 +7,28 @@ vault, even when the process already supplies credentials.
 
 ## Install the provider
 
-Use OpenTofu 1.11 or later. The provider release packaging change remains
-pending upstream; a published `0.1.0` release does not yet exist. Obtain an
-archive from a reviewed build of
-[pleme-io/onepassword-admin](https://github.com/pleme-io/onepassword-admin).
-The archive must match the operating system and architecture of the machine
-that runs OpenTofu.
+Use OpenTofu 1.11 or later and the
+[v0.1.0 release](https://github.com/agoodkind/onepassword-admin/releases/tag/v0.1.0)
+from the owned fork. The archive must match the operating system and
+architecture of the machine that runs OpenTofu.
 
 1. Set `OPADMIN_PLATFORM` to the matching platform, such as `darwin_arm64` or
    `linux_amd64`. Set `OPADMIN_ARCHIVE` to the absolute path of
-   `terraform-provider-opadmin_0.1.0_<os>_<arch>.zip`. Verify the archive against
-   the build's signed checksums before installing it.
-2. Extract only the executable into the existing provider mirror. Run these
+   `terraform-provider-opadmin_0.1.0_<os>_<arch>.zip` downloaded from that release.
+2. Download `terraform-provider-opadmin_0.1.0_SHA256SUMS` and its `.sig` file
+   from the release. Import the fork's
+   [release-signing-key.asc](https://github.com/agoodkind/onepassword-admin/blob/v0.1.0/release-signing-key.asc)
+   with `gpg --import`. Run `gpg --verify` with the signature file and then the
+   checksum file as its arguments. Require a valid signature from that key.
+3. Run `shasum -a 256 "${OPADMIN_ARCHIVE:?Set OPADMIN_ARCHIVE}"` and compare
+   its digest with the archive's entry in the verified checksum file. Continue
+   only when the digests match.
+4. Extract only the executable into the existing provider mirror. Run these
    commands from the repository root:
 
    ```sh
-   mkdir -p "opentofu/terraform.d/plugins/registry.opentofu.org/pleme-io/opadmin/0.1.0/${OPADMIN_PLATFORM:?Set OPADMIN_PLATFORM}"
-   unzip -n "${OPADMIN_ARCHIVE:?Set OPADMIN_ARCHIVE}" terraform-provider-opadmin_v0.1.0 -d "opentofu/terraform.d/plugins/registry.opentofu.org/pleme-io/opadmin/0.1.0/${OPADMIN_PLATFORM}"
+   mkdir -p "opentofu/terraform.d/plugins/registry.opentofu.org/agoodkind/opadmin/0.1.0/${OPADMIN_PLATFORM:?Set OPADMIN_PLATFORM}"
+   unzip "${OPADMIN_ARCHIVE:?Set OPADMIN_ARCHIVE}" terraform-provider-opadmin_v0.1.0 -d "opentofu/terraform.d/plugins/registry.opentofu.org/agoodkind/opadmin/0.1.0/${OPADMIN_PLATFORM}"
    ```
 
 ## Supply credentials
