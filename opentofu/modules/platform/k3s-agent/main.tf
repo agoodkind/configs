@@ -21,10 +21,20 @@ resource "pveguest_file" "configuration" {
   mode = "0600"
   content = yamlencode({
     server     = "https://[${var.server_ipv6}]:6443"
-    token-file = "/etc/rancher/k3s/agent-token"
-    node-name  = local.node_name
+    token-file = pveguest_file.agent_token.path
+    node-name  = "worker-${var.guest.vmid}-${lower(var.build_uuid)}"
     node-taint = var.taints
   })
+}
+
+resource "pveguest_file" "agent_token" {
+  node               = var.guest.node
+  vmid               = var.guest.vmid
+  kind               = "qemu"
+  path               = "/etc/rancher/k3s/agent-token"
+  mode               = "0600"
+  content_wo         = "${var.agent_token}\n"
+  content_wo_version = var.agent_token_version
 }
 
 resource "pveguest_file" "start" {
@@ -56,7 +66,7 @@ resource "pveguest_systemd_unit" "agent" {
     binary        = module.runtime.binary_write_id
     registry      = module.runtime.registry_write_id
     configuration = pveguest_file.configuration.write_id
-    enrollment    = terraform_data.enrollment.id
+    agent_token   = pveguest_file.agent_token.write_id
     start         = pveguest_file.start.write_id
     service       = pveguest_file.service.write_id
   }

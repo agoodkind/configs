@@ -21,12 +21,14 @@ variable "taints" {
   type = list(string)
 }
 
-variable "server_vmid" {
-  type = number
+variable "agent_token" {
+  type      = string
+  sensitive = true
+  ephemeral = true
 }
 
-variable "hypervisor" {
-  type = string
+variable "agent_token_version" {
+  type = number
 }
 
 variable "build_uuid" {

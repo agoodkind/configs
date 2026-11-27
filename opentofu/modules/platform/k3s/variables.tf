@@ -139,6 +139,23 @@ variable "server_token_version" {
     error_message = "Set server_token_version to a positive integer."
   }
 }
+
+variable "agent_token" {
+  type      = string
+  sensitive = true
+  ephemeral = true
+  default   = null
+
+  validation {
+    condition     = var.agent_token_version == null ? var.agent_token == null : try(length(trimspace(var.agent_token)) > 0, false)
+    error_message = "Supply the dedicated agent token and its version together."
+  }
+}
+
+variable "agent_token_version" {
+  type    = number
+  default = null
+}
 variable "snapshots_enabled" {
   description = "Enable scheduled embedded etcd snapshots and their S3 destination."
   type        = bool

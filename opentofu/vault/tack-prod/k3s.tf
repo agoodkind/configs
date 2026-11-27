@@ -69,6 +69,8 @@ module "tack_k3s" {
   snapshot_credentials_version = module.configuration.tack_k3s.snapshot_credentials_version
   server_token                 = trimspace(var.vault_tack_k3s_server_token)
   server_token_version         = module.configuration.tack_k3s.server_token_version
+  agent_token                  = var.vault_tack_k3s_agent_token
+  agent_token_version          = module.configuration.tack_k3s.agent_token_version
 
   registry_credentials = {
     username = module.configuration.vm_recipe.registry_username

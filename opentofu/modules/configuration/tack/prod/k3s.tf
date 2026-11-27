@@ -38,6 +38,8 @@ locals {
     }
     snapshot_credentials_version             = 1
     server_token_version                     = 1
+    agent_token_version                      = 1
+    server_ca_hash                           = "73ae1f9542057e31c1725475a3db55652902c9745ff1eac53b1a358bad408d16"
     scripts_updater_activation_run           = true
     scripts_updater_randomized_delay_seconds = 300
   }

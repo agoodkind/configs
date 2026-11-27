@@ -91,19 +91,19 @@ module "k3s_worker_base" {
 }
 
 module "k3s_agent" {
-  source      = "../../modules/platform/k3s-agent"
-  for_each    = module.k3s_worker_vm
-  guest       = each.value.guest
-  server_ipv6 = module.configuration.tack_k3s.guest.ipv6
-  artifact    = module.configuration.tack_k3s.artifact
-  build_uuid  = each.value.build_uuid
-  server_vmid = module.configuration.tack_k3s.guest.vmid
-  hypervisor  = local.service_mapping.vault_hypervisor.hostname
-  taints      = ["workload=opt-in:NoSchedule"]
+  source              = "../../modules/platform/k3s-agent"
+  for_each            = module.k3s_worker_vm
+  guest               = each.value.guest
+  server_ipv6         = module.configuration.tack_k3s.guest.ipv6
+  artifact            = module.configuration.tack_k3s.artifact
+  build_uuid          = each.value.build_uuid
+  agent_token         = "K10${module.configuration.tack_k3s.server_ca_hash}::node:${var.vault_tack_k3s_agent_token}"
+  agent_token_version = module.configuration.tack_k3s.agent_token_version
+  taints              = ["workload=opt-in:NoSchedule"]
   registry_credentials = {
     username = module.configuration.vm_recipe.registry_username
     token    = var.vault_tack_ghcr_pull_token
   }
   registry_credentials_version = module.configuration.tack_k3s_application.registry_credentials_version
-  depends_on                   = [module.k3s_worker_base]
+  depends_on                   = [module.k3s_worker_base, module.tack_k3s]
 }
