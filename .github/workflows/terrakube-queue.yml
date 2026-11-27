@@ -110,5 +110,6 @@ jobs:
           TERRAKUBE_BASELINE_SHA: ${{ vars.TERRAKUBE_BASELINE_SHA }}
           WORKSPACE: ${{ matrix.target.name }}
           PROMOTION_ENVIRONMENT: ${{ matrix.target.environment }}
+          PROMOTION_GITHUB_REPOSITORY: ${{ github.repository }}
           PROMOTION_GITHUB_TOKEN: ${{ steps.publisher.outputs.token }}
         run: '"$RUNNER_TEMP/terrakube-queue" "$WORKSPACE" "$GITHUB_WORKSPACE/configs"'
