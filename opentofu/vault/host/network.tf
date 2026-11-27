@@ -36,6 +36,43 @@ resource "pveguest_host_sriov" "guests" {
   depends_on = [proxmox_network_applier.guest_pf, module.overlay]
 }
 
+resource "linux_sysctl" "guest_pf_secondary_ipv6" {
+  name  = "net.ipv6.conf.${module.vault_network.guest_pf_secondary}.disable_ipv6"
+  value = "1"
+  file  = "/etc/sysctl.d/99-vault-guest-pf-secondary.conf"
+}
+
+resource "pveguest_host_network_interface" "guest_pf_secondary" {
+  node       = "vault"
+  name       = module.vault_network.guest_pf_secondary
+  autostart  = true
+  depends_on = [linux_sysctl.guest_pf_secondary_ipv6]
+}
+
+resource "proxmox_network_applier" "guest_pf_secondary" {
+  node_name  = "vault"
+  on_destroy = false
+  triggers   = { interface = pveguest_host_network_interface.guest_pf_secondary.change_id }
+}
+
+resource "pveguest_host_sriov" "guests_secondary" {
+  node   = "vault"
+  ifname = module.vault_network.guest_pf_secondary
+  numvfs = 16
+  vfs = { for guest in module.vault_network.guest_networks : tostring(guest.index) => {
+    mac    = guest.secondary_mac
+    driver = guest.driver
+    ifname = guest.secondary_ifname
+  } }
+  depends_on = [proxmox_network_applier.guest_pf_secondary, module.overlay]
+}
+
+resource "pveguest_host_kernel_modules" "vault" {
+  node       = "vault"
+  modules    = ["bonding"]
+  depends_on = [module.overlay]
+}
+
 resource "pveguest_host_network_interface" "management" {
   node      = "vault"
   name      = "enp4s0"

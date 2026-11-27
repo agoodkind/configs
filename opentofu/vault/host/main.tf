@@ -50,13 +50,13 @@ locals {
     node_name      = "vault"
     commit         = "7bfcf61825698c49af0f822c31def8525707f79d"
     guest_api      = true
-    kernel_modules = null
+    kernel_modules = { allow = ["bonding"] }
 
     container_options = {
       retained_roles = ["PVEAdmin", "AnsibleCT", "ansible-minimal", "SysModify", "PVEVMAdmin", "ScopedAcmeCertificate"]
       hostnic = {
         vmids = [for guest in module.vault_network.guest_networks : guest.vmid if guest.kind == "lxc"]
-        links = [for guest in module.vault_network.guest_networks : guest.ifname if guest.kind == "lxc"]
+        links = flatten([for guest in module.vault_network.guest_networks : [guest.ifname, guest.secondary_ifname] if guest.kind == "lxc"])
       }
       bpfdelegate = { vmids = [], cmds = [], maps = [], progs = [], attachs = [] }
     }

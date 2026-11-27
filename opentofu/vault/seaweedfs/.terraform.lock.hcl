@@ -73,12 +73,12 @@ provider "registry.opentofu.org/hashicorp/http" {
 }
 
 provider "tofu.home.arpa/agoodkind/pveguest" {
-  version     = "0.1.9"
-  constraints = ">= 0.1.9, 0.1.9"
+  version     = "0.1.10"
+  constraints = ">= 0.1.10, 0.1.10"
   hashes = [
-    "h1:2vCjzYQK6U0otQKB2PxHc7kihGepyGe9ElYl8yl9aCg=",
-    "h1:enSg1dlJ+YWf1xFrrY54ARstMyfOFWmq16zPExwWCGs=",
-    "h1:l+A3TfCvlcmdgj7mktBuvQRBzDbqHxilnuT7pXT7AiY=",
-    "h1:vFkXrtyMb/i7KKUH6Krmu86I3WTKWJLDdKQfxuUCNdc=",
+    "h1:8EsdBT58w/Hmbo7Vdb37VCXsyWUpjycy2PM9mSLPXb4=",
+    "h1:Qvxs1RuuB5G9TUMuaUg+Y+gx+irpsHM/6nW8j9UPrxw=",
+    "h1:xGkHzqZ8haI8BKqnA70qQjJTSFLd7zmoefJ36YiIkCU=",
+    "h1:zEu9bCoY6Yr+InMdydc2leesAux4gHPV5kQVw0gChik=",
   ]
 }

@@ -78,6 +78,13 @@ resource "proxmox_virtual_environment_vm" "server" {
       mapping = hostpci.value
     }
   }
+  dynamic "hostpci" {
+    for_each = var.secondary_pci_mapping == null ? [] : [var.secondary_pci_mapping]
+    content {
+      device  = "hostpci1"
+      mapping = hostpci.value
+    }
+  }
   lifecycle {
     precondition {
       condition     = (var.guest.bridge == null) != (var.pci_mapping == null)
