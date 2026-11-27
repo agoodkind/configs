@@ -15,14 +15,25 @@ resource "terraform_data" "enrollment" {
 
   provisioner "local-exec" {
     environment = local.enrollment
-    command     = "ssh -o BatchMode=yes -- \"root@$HYPERVISOR\" bash -s -- enroll \"$SERVER\" \"$WORKER\" \"$BUILD_UUID\" < \"$SCRIPT\""
+    command     = <<-SH
+      ssh -o BatchMode=yes -- "root@$HYPERVISOR" \
+        bash -s -- enroll "$SERVER" "$WORKER" "$BUILD_UUID" < "$SCRIPT"
+    SH
   }
 
   provisioner "local-exec" {
     when        = destroy
     environment = self.input
-    command     = "ssh -o BatchMode=yes -- \"root@$HYPERVISOR\" bash -s -- remove \"$SERVER\" \"$WORKER\" \"$BUILD_UUID\" < \"$SCRIPT\""
+    command     = <<-SH
+      ssh -o BatchMode=yes -- "root@$HYPERVISOR" \
+        bash -s -- remove "$SERVER" "$WORKER" "$BUILD_UUID" < "$SCRIPT"
+    SH
   }
 
-  depends_on = [module.runtime, pveguest_file.configuration, pveguest_file.start, pveguest_file.service]
+  depends_on = [
+    module.runtime,
+    pveguest_file.configuration,
+    pveguest_file.start,
+    pveguest_file.service,
+  ]
 }

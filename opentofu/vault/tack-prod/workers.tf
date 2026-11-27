@@ -15,11 +15,16 @@ resource "proxmox_virtual_environment_file" "worker_network" {
     data = yamlencode({
       version  = 2
       renderer = "networkd"
-      ethernets = { for name, mac in { vf0 = each.value.mac, vf1 = each.value.secondary_mac } : name => {
-        match    = { macaddress = mac }
-        set-name = name
-        optional = true
-      } }
+      ethernets = {
+        for name, mac in {
+          vf0 = each.value.mac
+          vf1 = each.value.secondary_mac
+          } : name => {
+          match    = { macaddress = mac }
+          set-name = name
+          optional = true
+        }
+      }
       bonds = {
         eth0 = {
           interfaces  = ["vf0", "vf1"]
@@ -27,7 +32,10 @@ resource "proxmox_virtual_environment_file" "worker_network" {
           accept-ra   = true
           nameservers = { addresses = module.vault_network.guest.dns_servers }
           # VM 124 also listens on a private address on this Ethernet segment.
-          routes = [{ to = "${module.configuration.tack_k3s.guest.ipv6}/128", scope = "link" }]
+          routes = [{
+            to    = "${module.configuration.tack_k3s.guest.ipv6}/128"
+            scope = "link"
+          }]
           parameters = {
             mode                    = "active-backup"
             primary                 = each.value.primary_member
