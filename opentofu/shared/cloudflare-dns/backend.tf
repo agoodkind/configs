@@ -1,27 +1,22 @@
+locals {
+  state_backend = jsondecode(file("${path.root}/../../modules/contracts/state-backend.json"))
+}
+
 terraform {
-  # `./configsctl tofu` sets AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from the
-  # vault keys vault_tofu_env_AWS_ACCESS_KEY_ID and
-  # vault_tofu_env_AWS_SECRET_ACCESS_KEY. The S3 backend rejects a sensitive
-  # variable in this block.
-  #
-  # The endpoint host name includes the Cloudflare account id. The account id
-  # is not a secret.
   backend "s3" {
-    bucket = "tofu-state"
+    bucket = local.state_backend.bucket
     key    = "shared/cloudflare-dns.tfstate"
-    region = "auto"
+    region = local.state_backend.region
 
-    endpoints = {
-      s3 = "https://ee7d7ca7d611ef8c2a07885e8362de0c.r2.cloudflarestorage.com"
-    }
+    endpoints = local.state_backend.endpoints
 
-    use_lockfile   = true
-    use_path_style = true
+    use_lockfile   = local.state_backend.use_lockfile
+    use_path_style = local.state_backend.use_path_style
 
-    skip_credentials_validation = true
-    skip_region_validation      = true
-    skip_requesting_account_id  = true
-    skip_metadata_api_check     = true
-    skip_s3_checksum            = true
+    skip_credentials_validation = local.state_backend.skip_credentials_validation
+    skip_region_validation      = local.state_backend.skip_region_validation
+    skip_requesting_account_id  = local.state_backend.skip_requesting_account_id
+    skip_metadata_api_check     = local.state_backend.skip_metadata_api_check
+    skip_s3_checksum            = local.state_backend.skip_s3_checksum
   }
 }
